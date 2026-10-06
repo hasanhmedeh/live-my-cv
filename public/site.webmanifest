@@ -1,0 +1,14 @@
+{
+  "name": "Hasan Hmedeh — Interactive CV",
+  "short_name": "Hasan's Fair",
+  "description": "Senior Full-Stack Developer — explore my CV as a 3D funfair.",
+  "start_url": "/",
+  "display": "standalone",
+  "background_color": "#1d1238",
+  "theme_color": "#1d1238",
+  "icons": [
+    { "src": "/favicon.svg", "sizes": "any", "type": "image/svg+xml" },
+    { "src": "/apple-touch-icon.png", "sizes": "180x180", "type": "image/png" },
+    { "src": "/icon-512.png", "sizes": "512x512", "type": "image/png" }
+  ]
+}

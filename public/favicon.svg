@@ -1,0 +1,7 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64">
+  <rect width="64" height="64" rx="14" fill="#1d1238"/>
+  <path d="M10 30 L32 10 L54 30 Z" fill="#ff4d6d"/>
+  <path d="M10 30 L21 30 L32 10 Z M32 10 L43 30 L54 30 Z" fill="#fff5e3"/>
+  <rect x="14" y="30" width="36" height="22" rx="3" fill="#ffc23d"/>
+  <text x="32" y="47.5" font-family="Arial Rounded MT Bold, Arial, sans-serif" font-weight="900" font-size="15" text-anchor="middle" fill="#1d1238">HH</text>
+</svg>
