@@ -71,13 +71,16 @@ export function buildTrack(start: THREE.Vector3, heading: THREE.Quaternion, elem
       const len = Math.abs(total) * e.radius;
       const n = Math.max(1, Math.round(len / DS));
       const bankMax = (e.bank ?? 0) * DEG * -Math.sign(total); // lean into the turn
+      // clothoid-style transitions: curvature and bank ease in/out together, so riders
+      // aren't thrown sideways at the start and end of a turn
+      const env = (k: number) => (k < 0.25 ? smooth(k / 0.25) : k > 0.75 ? smooth((1 - k) / 0.25) : 1);
+      const w: number[] = [];
+      for (let i = 0; i < n; i++) w.push(0.1 + env((i + 0.5) / n));
+      const wSum = w.reduce((a, b) => a + b, 0);
       for (let i = 0; i < n; i++) {
-        const k = i / n;
-        // ease bank in over the first quarter and out over the last quarter
-        const env = k < 0.25 ? smooth(k / 0.25) : k > 0.75 ? smooth((1 - k) / 0.25) : 1;
-        push(bankMax * env, z);
+        push(bankMax * env(i / n), z);
         advance();
-        qStep.setFromAxisAngle(WORLD_UP, total / n);
+        qStep.setFromAxisAngle(WORLD_UP, (total * w[i]) / wSum);
         q.premultiply(qStep);
       }
     } else if (e.t === 'pitch') {
@@ -215,30 +218,85 @@ export const LAYOUT_ELEMENTS: Element[] = [
   { t: 'straight', len: 18, zone: 'station' },
   { t: 'straight', len: 3 },
   // swing west onto the launch track
-  { t: 'turn', angle: -90, radius: 9, bank: 25 },
+  { t: 'turn', angle: -90, radius: 9, bank: 10 },
   { t: 'straight', len: 24, zone: 'launch' },
   // clothoid vertical loop (exit drifts north, beside the entry)
   { t: 'loop', rBottom: 12, rTop: 6, shift: 4.5 },
   { t: 'straight', len: 3 },
-  // banked turn north along the west edge
-  { t: 'turn', angle: -90, radius: 10, bank: 50 },
+  // steeply banked turn north along the west edge (taken at ~75 km/h)
+  { t: 'turn', angle: -90, radius: 14, bank: 72 },
   // airtime camelback heading north, finishing high
   { t: 'pitch', angle: 30, radius: 18 },
   { t: 'straight', len: 8 },
   { t: 'pitch', angle: -30, radius: 14 },
   { t: 'straight', len: 2 },
   // high over-banked turn east
-  { t: 'turn', angle: -90, radius: 11, bank: 70 },
-  { t: 'straight', len: 1.2 },
+  { t: 'turn', angle: -90, radius: 10, bank: 62 },
   // zero-g roll heading east, way up in the air
-  { t: 'pitch', angle: 10, radius: 22 },
-  { t: 'roll', len: 22 },
-  { t: 'pitch', angle: -10, radius: 22 },
+  { t: 'pitch', angle: 10, radius: 15 },
+  { t: 'roll', len: 18 },
+  { t: 'pitch', angle: -10, radius: 15 },
   // descending helix that unwinds right onto the station approach; its last quarter
   // dives through the tunnel, and the closing connector is the brake run
-  { t: 'pitch', angle: -9, radius: 24 },
+  { t: 'pitch', angle: -8.4, radius: 24 },
   { t: 'turn', angle: -360, radius: 10, bank: 55 },
-  { t: 'turn', angle: -90, radius: 10, bank: 30, zone: 'tunnel' },
-  { t: 'pitch', angle: 9, radius: 24, zone: 'tunnel' },
+  { t: 'turn', angle: -90, radius: 10, bank: 55, zone: 'tunnel' },
+  { t: 'pitch', angle: 8.4, radius: 24, zone: 'tunnel' },
 ];
 export const CONNECTOR_ZONE: Zone = 'brake';
+
+// ---------------------------------------------------------------------------------------
+// Ride physics: the train is locked to the rails (up-stops), gravity acts along the track,
+// plus the driver's linear motors, magnetic brakes, the auto-launch and drag.
+// ---------------------------------------------------------------------------------------
+export const PHYS = {
+  g: 9.81,
+  motor: 4.5, // m/s² from holding throttle
+  turbo: 9, // m/s² with turbo
+  brake: 10, // m/s² service brakes
+  maxPowered: 32, // motors stop pushing above this speed
+  launchTarget: 23, // the launch track always fires you to at least this
+  launchAccel: 12,
+  stationMax: 5, // tyre drive in the station
+  trimMax: 9, // magnetic trim brakes on the brake run
+  drag: 0.0021,
+  rolling: 0.1,
+};
+
+export interface RideInput {
+  throttle: number; // -1..1 (negative = brake)
+  turbo: boolean;
+}
+
+export interface RideState {
+  s: number;
+  v: number;
+  launching: boolean;
+}
+
+export function stepRide(d: TrackData, st: RideState, inp: RideInput, dt: number, tangent: THREE.Vector3) {
+  const z = zoneAt(d, st.s);
+  let a = -PHYS.g * tangent.y;
+  const thr = Math.max(-1, Math.min(1, inp.throttle));
+  if (thr > 0 && st.v < PHYS.maxPowered) a += thr * (inp.turbo ? PHYS.turbo : PHYS.motor);
+  st.launching = false;
+  if (z === 'launch' && st.v > -0.5 && st.v < PHYS.launchTarget) {
+    a += PHYS.launchAccel;
+    st.launching = true;
+  }
+  a -= PHYS.drag * st.v * Math.abs(st.v) + PHYS.rolling * Math.sign(st.v);
+  let v = st.v + a * dt;
+  if (thr < 0) {
+    const b = -thr * PHYS.brake * dt;
+    v = Math.abs(v) <= b ? 0 : v - Math.sign(v) * b;
+  }
+  // station tyres: gently roll trains through (and pull a stopped train out)
+  if (z === 'station') {
+    if (Math.abs(v) > PHYS.stationMax) v = Math.sign(v) * Math.max(PHYS.stationMax, Math.abs(v) - 14 * dt);
+    else if (thr >= 0 && v < 2.5) v = Math.min(2.5, v + 3 * dt);
+  }
+  if (z === 'brake' && Math.abs(v) > PHYS.trimMax) v = Math.sign(v) * Math.max(PHYS.trimMax, Math.abs(v) - 16 * dt);
+  st.v = v;
+  st.s += v * dt;
+  return z;
+}

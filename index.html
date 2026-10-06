@@ -95,6 +95,21 @@
       <div id="prompt" class="prompt" role="status" aria-live="polite" hidden></div>
       <div id="score" class="score" hidden></div>
       <div id="countdown" class="countdown" aria-live="assertive" hidden></div>
+      <div id="ride-hud" class="ride-hud" hidden>
+        <div class="rh-top">
+          <p class="rh-speed"><b id="rh-speed">0</b><span>km/h</span></p>
+          <p class="rh-g"><b id="rh-g">1.0</b><span>G</span></p>
+        </div>
+        <div class="rh-bar" aria-hidden="true"><i id="rh-throttle"></i></div>
+        <dl class="rh-stats">
+          <div><dt>Lap</dt><dd id="rh-lap">0:00.0</dd></div>
+          <div><dt>Best</dt><dd id="rh-best">—</dd></div>
+          <div><dt>Cam</dt><dd id="rh-cam">Driver</dd></div>
+        </dl>
+        <p class="rh-keys" id="rh-keys"><kbd>W</kbd> power · <kbd>S</kbd> brake · <kbd>Shift</kbd> turbo · <kbd>C</kbd> camera</p>
+        <p class="rh-toast" id="rh-toast" hidden></p>
+      </div>
+      <div id="gloc" class="gloc" aria-hidden="true"></div>
       <div id="ride-exit" class="ride-exit" hidden><button type="button" class="btn btn-small btn-cream">Exit ride <kbd>Esc</kbd></button></div>
       <aside id="panel" class="panel" aria-live="polite" hidden></aside>
 

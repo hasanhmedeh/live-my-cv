@@ -4,6 +4,7 @@ export class Sfx {
   private master: GainNode | null = null;
   private engine: { osc: OscillatorNode; gain: GainNode; filter: BiquadFilterNode } | null = null;
   private noiseBuffer: AudioBuffer | null = null;
+  private ride: { rumble: GainNode; rumbleF: BiquadFilterNode; wind: GainNode; windF: BiquadFilterNode; whine: OscillatorNode; whineG: GainNode } | null = null;
   private lastThunk = 0;
   muted = false;
 
@@ -99,6 +100,48 @@ export class Sfx {
     src.start(t);
     src.stop(t + dur + 0.05);
     return { f, t };
+  }
+
+  /** Continuous coaster sounds: wheel rumble, wind and the launch motors' whine. */
+  setCoaster(speed01: number, launching: boolean, active: boolean) {
+    if (!this.ctx || !this.master || !this.noiseBuffer) return;
+    const c = this.ctx;
+    if (!this.ride) {
+      const mk = (type: BiquadFilterType, f: number) => {
+        const src = c.createBufferSource();
+        src.buffer = this.noiseBuffer;
+        src.loop = true;
+        const filt = c.createBiquadFilter();
+        filt.type = type;
+        filt.frequency.value = f;
+        const g = c.createGain();
+        g.gain.value = 0;
+        src.connect(filt).connect(g).connect(this.master!);
+        src.start();
+        return { g, filt };
+      };
+      const r = mk('lowpass', 180);
+      const w = mk('bandpass', 900);
+      const whine = c.createOscillator();
+      whine.type = 'sawtooth';
+      const wf = c.createBiquadFilter();
+      wf.type = 'bandpass';
+      wf.frequency.value = 1200;
+      wf.Q.value = 3;
+      const whineG = c.createGain();
+      whineG.gain.value = 0;
+      whine.connect(wf).connect(whineG).connect(this.master);
+      whine.start();
+      this.ride = { rumble: r.g, rumbleF: r.filt, wind: w.g, windF: w.filt, whine, whineG };
+    }
+    const t = c.currentTime;
+    const k = active ? 1 : 0.35; // the ghost train is quieter
+    this.ride.rumble.gain.setTargetAtTime(Math.min(0.5, speed01 * 0.55) * k, t, 0.08);
+    this.ride.rumbleF.frequency.setTargetAtTime(120 + speed01 * 380, t, 0.1);
+    this.ride.wind.gain.setTargetAtTime(active ? Math.pow(speed01, 2) * 0.35 : 0, t, 0.1);
+    this.ride.windF.frequency.setTargetAtTime(500 + speed01 * 1800, t, 0.1);
+    this.ride.whine.frequency.setTargetAtTime(220 + speed01 * 900, t, 0.05);
+    this.ride.whineG.gain.setTargetAtTime(launching ? 0.09 * k : 0, t, 0.06);
   }
 
   honk() {

@@ -18,7 +18,7 @@ export class Input {
     });
   }
 
-  on(evt: 'action' | 'reset' | 'honk' | 'escape' | 'any', fn: () => void) {
+  on(evt: 'action' | 'reset' | 'honk' | 'escape' | 'camera' | 'any', fn: () => void) {
     (this.handlers[evt] ??= []).push(fn);
   }
 
@@ -44,6 +44,7 @@ export class Input {
     }
     if (e.code === 'KeyR') this.emit('reset');
     if (e.code === 'KeyH') this.emit('honk');
+    if (e.code === 'KeyC') this.emit('camera');
     if (e.code === 'Escape') this.emit('escape');
   };
 

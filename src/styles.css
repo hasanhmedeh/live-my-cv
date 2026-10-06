@@ -846,3 +846,143 @@ kbd {
 .is-cinematic .prompt {
   display: none;
 }
+
+/* Coaster driving HUD */
+.ride-hud {
+  position: absolute;
+  left: 16px;
+  bottom: max(16px, env(safe-area-inset-bottom));
+  width: 250px;
+  padding: 14px 16px 12px;
+  border-radius: 18px;
+  background: rgba(29, 18, 56, 0.72);
+  backdrop-filter: blur(10px);
+  -webkit-backdrop-filter: blur(10px);
+  box-shadow: var(--shadow);
+  color: var(--cream);
+}
+.rh-top {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+}
+.rh-top p {
+  margin: 0;
+  display: flex;
+  align-items: baseline;
+  gap: 4px;
+}
+.rh-top b {
+  font: 400 2.6rem/1 var(--display);
+  font-variant-numeric: tabular-nums;
+}
+.rh-g b {
+  font-size: 1.6rem !important;
+  transition: color 0.2s;
+}
+.rh-g.hot b {
+  color: var(--candy);
+}
+.rh-g.float b {
+  color: var(--teal);
+}
+.rh-top span {
+  font-weight: 700;
+  font-size: 0.8rem;
+  opacity: 0.7;
+}
+.rh-bar {
+  height: 6px;
+  margin: 8px 0 10px;
+  border-radius: 99px;
+  background: rgba(255, 245, 227, 0.15);
+  position: relative;
+  overflow: hidden;
+}
+.rh-bar i {
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  left: 50%;
+  width: 0;
+  border-radius: 99px;
+  background: var(--mustard);
+  transition: width 0.12s, left 0.12s, background 0.2s;
+}
+.rh-bar i.brake {
+  background: var(--candy);
+}
+.rh-bar i.turbo {
+  background: var(--teal);
+}
+.rh-stats {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: 6px;
+  margin: 0;
+}
+.rh-stats div {
+  margin: 0;
+}
+.rh-stats dt {
+  font-size: 0.68rem;
+  font-weight: 700;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+  opacity: 0.6;
+}
+.rh-stats dd {
+  margin: 0;
+  font-weight: 700;
+  font-variant-numeric: tabular-nums;
+}
+.rh-keys {
+  margin: 10px 0 0;
+  font-size: 0.74rem;
+  opacity: 0.8;
+}
+.rh-toast {
+  position: absolute;
+  left: 0;
+  right: 0;
+  bottom: calc(100% + 10px);
+  margin: 0;
+  padding: 8px 12px;
+  border-radius: 12px;
+  background: var(--mustard);
+  color: var(--ink);
+  font: 400 1.05rem/1.2 var(--display);
+  text-align: center;
+  box-shadow: var(--shadow);
+  animation: slide-in 0.35s ease-out;
+}
+.gloc {
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+  opacity: 0;
+  background: radial-gradient(ellipse at center, transparent 35%, rgba(120, 0, 20, 0.85) 100%);
+  transition: opacity 0.25s;
+}
+.gloc.grey {
+  background: radial-gradient(ellipse at center, transparent 30%, rgba(5, 5, 10, 0.9) 100%);
+}
+.is-riding-coaster .stick {
+  display: block;
+}
+@media (max-width: 720px) {
+  .ride-hud {
+    left: 50%;
+    transform: translateX(-50%);
+    bottom: 76px;
+    width: min(250px, calc(100% - 200px));
+    min-width: 170px;
+    padding: 10px 12px;
+  }
+  .rh-top b {
+    font-size: 1.9rem;
+  }
+  .rh-keys {
+    display: none;
+  }
+}

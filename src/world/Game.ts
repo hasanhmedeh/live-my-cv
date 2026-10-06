@@ -189,6 +189,8 @@ export class Game {
     this.input.on('escape', () => this.onEscape());
     this.input.on('reset', () => this.mode === 'drive' && this.teleport('entrance'));
     this.input.on('honk', () => this.sfx.honk());
+    this.input.on('camera', () => this.mode === 'coaster' && this.coaster.cycleCamera());
+    this.coaster.input = this.input;
     this.ui.onPromptClick = () => this.onAction();
     this.ui.onRideExit = () => this.onEscape();
     this.ui.onPanelClose = () => (this.panelZone = null);
@@ -244,6 +246,7 @@ export class Game {
     if (!this.running || this.ui.hud.hidden) return;
     if (this.mode === 'rocket') return this.rocket.action();
     if (this.mode === 'striker') return this.striker.action();
+    if (this.mode === 'coaster') return this.coaster.cycleCamera();
     if (this.mode !== 'drive') return;
     const z = this.zones.active;
     if (!z) return;
@@ -305,6 +308,7 @@ export class Game {
   }
 
   private endRide() {
+    this.camera.up.set(0, 1, 0);
     const wasRide = this.mode === 'coaster' || this.mode === 'rocket';
     const from = this.mode;
     this.mode = 'drive';
@@ -387,12 +391,14 @@ export class Game {
     if (this.mode === 'coaster') {
       this.zones.setVisible(false);
       this.coaster.updateCamera(this.camera, dt);
-      this.env.follow(this.camera.position.clone().setY(0));
+      this.env.follow(this.coaster.trainPosition.clone().setY(0));
     } else if (this.mode === 'rocket') {
+      this.camera.up.set(0, 1, 0);
       this.zones.setVisible(false);
       this.rocket.updateCamera(this.camera, dt);
       this.env.follow(new THREE.Vector3(LAYOUT.rocket.x, 0, LAYOUT.rocket.z));
     } else if (this.mode === 'striker') {
+      this.camera.up.set(0, 1, 0);
       this.zones.setVisible(false);
       const s = new THREE.Vector3(LAYOUT.striker.x, 0, LAYOUT.striker.z);
       this.camPos.lerp(s.clone().add(new THREE.Vector3(6, 7, 15)), 1 - Math.exp(-dt * 3));
@@ -401,6 +407,7 @@ export class Game {
       this.camera.lookAt(this.camTarget);
       this.env.follow(s);
     } else {
+      this.camera.up.set(0, 1, 0); // the coaster cam may have rolled it
       this.updateDriveCamera(dt);
       this.env.follow(this.car.position);
       this.zones.setVisible(true);
