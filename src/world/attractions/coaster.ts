@@ -410,13 +410,16 @@ export class Coaster implements Attraction {
         back.position.set(0, 1.15, z + 0.36);
         car.add(seat, back);
         for (const x of [-0.36, 0.36]) {
-          // over-the-shoulder restraint
-          const bar = new THREE.Mesh(new THREE.TorusGeometry(0.2, 0.045, 6, 12, Math.PI), chrome);
-          bar.position.set(x, 1.32, z + 0.05);
-          bar.rotation.y = Math.PI / 2;
-          car.add(bar);
           // the front-left seat of the lead car is yours (the driver camera sits there)
-          if (k === 0 && z < 0 && x < 0) continue;
+          const mine = k === 0 && z < 0 && x < 0;
+          if (!mine) {
+            // over-the-shoulder restraint
+            const bar = new THREE.Mesh(new THREE.TorusGeometry(0.2, 0.045, 6, 12, Math.PI), chrome);
+            bar.position.set(x, 1.32, z + 0.05);
+            bar.rotation.y = Math.PI / 2;
+            car.add(bar);
+          }
+          if (mine) continue;
           const person = new THREE.Group();
           const skin = std(skins[rider % skins.length]);
           const torso = new THREE.Mesh(new THREE.CapsuleGeometry(0.17, 0.3, 4, 8), std(shirts[rider % shirts.length]));
@@ -659,8 +662,8 @@ export class Coaster implements Attraction {
     const f = this.f;
     if (this.camMode === 'driver') {
       // front-left seat of the lead car; the horizon rolls with the track
-      sampleTrack(this.d, this.state.s - 0.45, this.f2);
-      const eye = this.f2.p.clone().addScaledVector(this.f2.u, 0.55).addScaledVector(this.f2.r, -0.36);
+      sampleTrack(this.d, this.state.s + 0.4, this.f2);
+      const eye = this.f2.p.clone().addScaledVector(this.f2.u, 0.62).addScaledVector(this.f2.r, -0.36);
       sampleTrack(this.d, this.state.s + 9, this.f2);
       const look = this.f2.p.clone().addScaledVector(this.f2.u, 0.4);
       this.camUp.lerp(f.u, 1 - Math.exp(-dt * 10)).normalize();

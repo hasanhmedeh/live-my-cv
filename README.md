@@ -5,7 +5,7 @@ Drive a bumper car around a low-poly funfair at dusk and explore Hasan Hmedeh's 
 | Attraction | What it shows |
 | --- | --- |
 | 🎪 Entrance + physical name letters | Knock over **HASAN HMEDEH** (Bruno Simon style) |
-| 🎢 Projects Coaster | First-person ride past a billboard per project, with live cards + a recap |
+| 🎢 The Stack (Projects Coaster) | A launched steel coaster **you drive**: throttle, brakes and turbo, real physics (roll back if you're too slow), loop, zero-g roll, airtime hill, helix and tunnel. Billboards along the track are projects |
 | 🚀 Career Rocket | Countdown, lift-off, stage separation — each ring in the sky is a career milestone (2019 → today) |
 | 🥫 Skill Smash | 22 physics crates, one per skill — ram them to light them up |
 | 🔔 High Striker | Timing mini-game; each tier unlocks an achievement |
@@ -13,6 +13,16 @@ Drive a bumper car around a low-poly funfair at dusk and explore Hasan Hmedeh's 
 | 🎟️ Ticket Booth | Email, GitHub, LinkedIn, PDF download |
 
 Stack: **Vite + TypeScript + Three.js + cannon-es + postprocessing + N8AO**. No 3D model files — everything is built procedurally, and all sound is synthesized with WebAudio.
+
+## The coaster
+
+The track is built like in real coaster-design tools (`src/world/attractions/track.ts`). It's a list of elements (straights, clothoid-eased banked turns, hills, a teardrop loop, a heartline roll, a helix) that a turtle integrates into a heartline. The rails hang below it, so inversions rotate around the riders. A Hermite connector closes the circuit.
+
+- **Physics** (`stepRide`): gravity along the track, driver motors (`W`), brakes (`S`), turbo (`Shift`), an automatic launch, station tyres, trim brakes, drag and rolling resistance. Coasting does a lap in ~35 s at up to 83 km/h, with −1 to 5.5 G and under 1.5 G sideways. Full throttle laps in ~15 s.
+- **Cameras** (`C`, or the E button on touch): Driver (the horizon rolls with the track), Chase, and Trackside.
+- **HUD**: speed, live G-meter (grey-out/red-out vignette at extreme G), lap timer and best lap (kept in the browser).
+- A ghost train runs laps when nobody is riding.
+- To change the layout, edit `LAYOUT_ELEMENTS`. Keep the end of the element list close to the station, because the closing connector fills the gap. Re-check self-intersections and ground clearance after changes.
 
 ## Graphics
 

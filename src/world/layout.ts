@@ -18,7 +18,7 @@ export type ZoneId = 'entrance' | 'coaster' | 'rocket' | 'crates' | 'striker' | 
 /** Where the car is placed when teleporting to a zone, and the zone trigger. */
 export const ZONES: Record<ZoneId, { x: number; z: number; radius: number; title: string; action: string; heading: number }> = {
   entrance: { x: 0, z: 14, radius: 0, title: 'Entrance', action: '', heading: 0 },
-  coaster: { x: -19, z: 2, radius: 3.6, title: 'Projects Coaster', action: 'Ride the coaster', heading: Math.PI / 2 },
+  coaster: { x: -19, z: 2, radius: 3.6, title: 'Projects Coaster', action: 'Drive the coaster', heading: Math.PI / 2 },
   rocket: { x: 42, z: -40, radius: 3.6, title: 'Career Rocket', action: 'Launch my timeline', heading: 0 },
   crates: { x: 34, z: -2, radius: 3.6, title: 'Skill Smash', action: 'Restack the crates', heading: 0 },
   striker: { x: -20, z: -33, radius: 3.4, title: 'High Striker', action: 'Swing the hammer', heading: 0 },

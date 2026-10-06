@@ -971,13 +971,13 @@ kbd {
   display: block;
 }
 @media (max-width: 720px) {
+  /* sits above the joystick / camera button row */
   .ride-hud {
     left: 50%;
     transform: translateX(-50%);
-    bottom: 76px;
-    width: min(250px, calc(100% - 200px));
-    min-width: 170px;
-    padding: 10px 12px;
+    bottom: max(214px, calc(env(safe-area-inset-bottom) + 204px));
+    width: min(260px, calc(100% - 32px));
+    padding: 10px 14px;
   }
   .rh-top b {
     font-size: 1.9rem;
