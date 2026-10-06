@@ -14,7 +14,7 @@ export type Element =
   | { t: 'roll'; len: number; turns?: number; zone?: Zone };
 
 /** Special track sections the ride physics and decoration care about. */
-export type Zone = 'station' | 'launch' | 'brake' | 'tunnel';
+export type Zone = 'station' | 'launch' | 'boost' | 'hyper' | 'lift' | 'brake' | 'trim' | 'tunnel';
 
 export const DS = 0.5;
 const DEG = Math.PI / 180;
@@ -247,18 +247,46 @@ export const CONNECTOR_ZONE: Zone = 'brake';
 
 // ---------------------------------------------------------------------------------------
 // Ride physics: the train is locked to the rails (up-stops), gravity acts along the track,
-// plus the driver's linear motors, magnetic brakes, the auto-launch and drag.
+// plus the driver's linear motors, magnetic brakes, launches, lifts and drag.
 // ---------------------------------------------------------------------------------------
-export const PHYS = {
+export interface Phys {
+  g: number;
+  motor: number; // m/s² from holding throttle
+  turbo: number; // m/s² with turbo
+  brake: number; // m/s² service brakes
+  maxPowered: number; // driver motors stop pushing above this speed
+  launchTarget: number; // 'launch' zones always fire you to at least this
+  launchAccel: number;
+  boostTarget: number; // 'boost' zones (high-speed LSM sections)
+  boostAccel: number;
+  hyperTarget: number; // 'hyper' zones: long LSM strips that launch and then hold this speed
+  hyperAccel: number;
+  trimSpeed: number; // 'trim' zones: hard magnetic brakes down to this speed
+  trimDecel: number;
+  liftSpeed: number; // 'lift' zones never let the train drop below this
+  stationMax: number; // tyre drive in the station
+  trimMax: number; // magnetic trim brakes on 'brake' zones
+  drag: number;
+  rolling: number;
+}
+
+export const PHYS: Phys = {
   g: 9.81,
-  motor: 4.5, // m/s² from holding throttle
-  turbo: 9, // m/s² with turbo
-  brake: 10, // m/s² service brakes
-  maxPowered: 32, // motors stop pushing above this speed
-  launchTarget: 23, // the launch track always fires you to at least this
+  motor: 4.5,
+  turbo: 9,
+  brake: 10,
+  maxPowered: 32,
+  launchTarget: 23,
   launchAccel: 12,
-  stationMax: 5, // tyre drive in the station
-  trimMax: 9, // magnetic trim brakes on the brake run
+  boostTarget: 30,
+  boostAccel: 10,
+  hyperTarget: 40,
+  hyperAccel: 12,
+  trimSpeed: 10,
+  trimDecel: 16,
+  liftSpeed: 8,
+  stationMax: 5,
+  trimMax: 9,
   drag: 0.0021,
   rolling: 0.1,
 };
@@ -274,28 +302,43 @@ export interface RideState {
   launching: boolean;
 }
 
-export function stepRide(d: TrackData, st: RideState, inp: RideInput, dt: number, tangent: THREE.Vector3) {
+export function stepRide(d: TrackData, st: RideState, inp: RideInput, dt: number, tangent: THREE.Vector3, P: Phys = PHYS) {
   const z = zoneAt(d, st.s);
-  let a = -PHYS.g * tangent.y;
+  let a = -P.g * tangent.y;
   const thr = Math.max(-1, Math.min(1, inp.throttle));
-  if (thr > 0 && st.v < PHYS.maxPowered) a += thr * (inp.turbo ? PHYS.turbo : PHYS.motor);
+  if (thr > 0 && st.v < P.maxPowered) a += thr * (inp.turbo ? P.turbo : P.motor);
   st.launching = false;
-  if (z === 'launch' && st.v > -0.5 && st.v < PHYS.launchTarget) {
-    a += PHYS.launchAccel;
+  if (z === 'launch' && st.v > -0.5 && st.v < P.launchTarget) {
+    a += P.launchAccel;
     st.launching = true;
   }
-  a -= PHYS.drag * st.v * Math.abs(st.v) + PHYS.rolling * Math.sign(st.v);
+  if (z === 'boost' && st.v > -0.5 && st.v < P.boostTarget) {
+    a += P.boostAccel;
+    st.launching = true;
+  }
+  if (z === 'hyper' && st.v > -0.5 && st.v < P.hyperTarget) {
+    // the motors push only up to the target, so the train cruises right at it
+    a += Math.min(P.hyperAccel, (P.hyperTarget - st.v) / dt + P.drag * st.v * st.v);
+    st.launching = true;
+  }
+  a -= P.drag * st.v * Math.abs(st.v) + P.rolling * Math.sign(st.v);
   let v = st.v + a * dt;
   if (thr < 0) {
-    const b = -thr * PHYS.brake * dt;
+    const b = -thr * P.brake * dt;
     v = Math.abs(v) <= b ? 0 : v - Math.sign(v) * b;
+  }
+  // LSM lift: holds a minimum speed all the way up (the driver can still go faster)
+  if (z === 'lift' && v < P.liftSpeed) {
+    v = Math.min(P.liftSpeed, v + 6 * dt);
+    st.launching = true;
   }
   // station tyres: gently roll trains through (and pull a stopped train out)
   if (z === 'station') {
-    if (Math.abs(v) > PHYS.stationMax) v = Math.sign(v) * Math.max(PHYS.stationMax, Math.abs(v) - 14 * dt);
+    if (Math.abs(v) > P.stationMax) v = Math.sign(v) * Math.max(P.stationMax, Math.abs(v) - 14 * dt);
     else if (thr >= 0 && v < 2.5) v = Math.min(2.5, v + 3 * dt);
   }
-  if (z === 'brake' && Math.abs(v) > PHYS.trimMax) v = Math.sign(v) * Math.max(PHYS.trimMax, Math.abs(v) - 16 * dt);
+  if (z === 'trim' && Math.abs(v) > P.trimSpeed) v = Math.sign(v) * Math.max(P.trimSpeed, Math.abs(v) - P.trimDecel * dt);
+  if (z === 'brake' && Math.abs(v) > P.trimMax) v = Math.sign(v) * Math.max(P.trimMax, Math.abs(v) - 16 * dt);
   st.v = v;
   st.s += v * dt;
   return z;

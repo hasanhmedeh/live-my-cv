@@ -14,6 +14,10 @@ import { Post } from './post';
 import { AdaptiveResolution, detectQuality, type Quality } from './quality';
 import { wind } from './wind';
 import { Coaster } from './attractions/coaster';
+import { Mountain } from './mountain';
+import { FALCON_TRACK, nearTrack, STACK_TRACK } from './rides';
+import { PHYS } from './attractions/track';
+import { FALCON_PHYS } from './attractions/falcon-track';
 import { Rocket } from './attractions/rocket';
 import { Crates } from './attractions/crates';
 import { Striker } from './attractions/striker';
@@ -37,7 +41,11 @@ export class Game {
   private env!: Environment;
   private car!: Car;
   private zones!: Zones;
-  private coaster!: Coaster;
+  private stack!: Coaster;
+  private falcon!: Coaster;
+  /** The coaster currently being ridden (valid while mode === 'coaster'). */
+  private ride!: Coaster;
+  private mountain!: Mountain;
   private rocket!: Rocket;
   private crates!: Crates;
   private striker!: Striker;
@@ -82,8 +90,87 @@ export class Game {
       this.updatables.push(this.ferris, this.booth);
     });
     step(3, () => {
-      this.coaster = new Coaster(this.ctx);
-      this.updatables.push(this.coaster);
+      this.stack = new Coaster(this.ctx, {
+        id: 'stack',
+        name: 'The Stack',
+        track: STACK_TRACK,
+        phys: PHYS,
+        station: { title: 'THE STACK', sub: 'Drive it yourself · launch · loop · roll', side: -1 },
+        colors: { rail: PALETTE.candy, spine: PALETTE.mustard, cars: [PALETTE.mustard, PALETTE.candy, PALETTE.teal] },
+        cars: 3,
+        signs: true,
+        trackside: [
+          new THREE.Vector3(-50, 3, 38), // loop
+          new THREE.Vector3(-66, 4, 6), // banked turn + camelback
+          new THREE.Vector3(-66, 6, -40), // high turn + roll
+          new THREE.Vector3(-14, 9, -34), // helix
+          new THREE.Vector3(-16, 4, 12), // station
+        ],
+        intro: (touch) =>
+          `<p class="eyebrow">The Stack · You're the driver</p><h2>Hold on tight!</h2><p>${
+            touch
+              ? 'Push the joystick <strong>up</strong> for power, <strong>down</strong> to brake. Tap <kbd>E</kbd> to switch camera.'
+              : 'Hold <kbd>W</kbd> for power, <kbd>S</kbd> to brake, <kbd>Shift</kbd> for turbo, <kbd>C</kbd> to switch camera.'
+          } The launch fires automatically — brake too hard before the loop and you'll roll back!</p><p>Every billboard is a project I've built; its card pops up here as you pass.</p>`,
+      });
+      this.ride = this.stack;
+      this.updatables.push(this.stack);
+    });
+    step(4, () => {
+      this.mountain = new Mountain(this.ctx);
+      const ground = (x: number, z: number) => this.mountain.sample(x, z);
+      // landmarks a support column must never land on
+      const keep: [number, number, number][] = [
+        [0, 5, 14], [0, -8, 10], [0, -30, 9], [0, -68, 8], [34, -14, 9], [42, -52, 9], [20, 12, 4], [-20, -40, 4], [-26, 3, 6],
+      ];
+      const keepOut = (x: number, z: number) => keep.some(([kx, kz, r]) => Math.hypot(x - kx, z - kz) < r) || nearTrack(x, z, 3.5, Infinity, 'stack');
+      const f = FALCON_TRACK;
+      const at = (zone: string, offset: [number, number, number]) => {
+        const p = f.pos[Math.max(0, f.zone.indexOf(zone as never))];
+        const x = p.x + offset[0];
+        const z = p.z + offset[2];
+        return new THREE.Vector3(x, Math.max(p.y * 0.4, ground(x, z)) + offset[1], z);
+      };
+      this.falcon = new Coaster(this.ctx, {
+        id: 'falcon',
+        name: 'Sky Falcon',
+        track: FALCON_TRACK,
+        phys: FALCON_PHYS,
+        station: { title: 'SKY FALCON', sub: 'Cliff drop · 250 km/h · hyper launch 500 km/h', side: 1 },
+        colors: { rail: PALETTE.teal, spine: '#e6c08a', cars: ['#e6c08a', PALETTE.teal, '#e6c08a', PALETTE.teal] },
+        cars: 4,
+        signs: false,
+        trackside: [
+          new THREE.Vector3(88, 5, 34), // station
+          at('lift', [-38, 8, -60]), // the climb
+          at('brake', [-60, 30, 40]), // the plateau rim
+          (() => {
+            // hovering over the run-out (always open air: the track sits in a cutting), looking back
+            // up the cliff as the train comes off the drop at full speed
+            const i = f.zone.lastIndexOf('boost') + 320;
+            const p = f.pos[i];
+            return new THREE.Vector3(p.x, Math.max(p.y + 14, ground(p.x, p.z) + 6), p.z);
+          })(),
+          new THREE.Vector3(30, 5, 26), // flying over the park
+          new THREE.Vector3(-150, 6, 60), // western sweep
+        ],
+        ground,
+        keepOut,
+        beats: {
+          launch: 'LAUNCH → 165 km/h 🚀',
+          lift: 'Climbing the escarpment… ⛰️',
+          brake: 'The edge. Look down. 😱',
+          boost: 'LAUNCHED DOWN THE CLIFF → 250 km/h 🦅',
+          hyper: 'HYPER LAUNCH → 500 km/h ⚡',
+          trim: 'Magnetic brakes… breathe 😮‍💨',
+          station: 'Welcome back to the fair!',
+        },
+        intro: (touch) =>
+          `<p class="eyebrow">Sky Falcon · tribute to the record-breaking cliff coaster in Qiddiya, Riyadh</p><h2>The biggest ride in the park</h2><p>Launch out of the park, climb the escarpment, crawl to the edge… then plunge ~180 m down the cliff face and launch off the drop to <strong>250 km/h</strong>, fly over the whole fair, then hit the hyper strip: <strong>0 → 500 km/h</strong> out into the desert.</p><p>${
+            touch ? 'Joystick <strong>up</strong> = power, <strong>down</strong> = brake, <kbd>E</kbd> = camera.' : '<kbd>W</kbd> power · <kbd>S</kbd> brake · <kbd>Shift</kbd> turbo · <kbd>C</kbd> camera.'
+          } Or just hold on — the launches and lift do the work.</p>`,
+      });
+      this.updatables.push(this.falcon);
     });
     step(2, () => {
       this.rocket = new Rocket(this.ctx, this.env);
@@ -189,13 +276,15 @@ export class Game {
     this.input.on('escape', () => this.onEscape());
     this.input.on('reset', () => this.mode === 'drive' && this.teleport('entrance'));
     this.input.on('honk', () => this.sfx.honk());
-    this.input.on('camera', () => this.mode === 'coaster' && this.coaster.cycleCamera());
-    this.coaster.input = this.input;
+    this.input.on('camera', () => this.mode === 'coaster' && this.ride.cycleCamera());
+    this.stack.input = this.input;
+    this.falcon.input = this.input;
     this.ui.onPromptClick = () => this.onAction();
     this.ui.onRideExit = () => this.onEscape();
     this.ui.onPanelClose = () => (this.panelZone = null);
 
-    this.coaster.onFinish = () => this.endRide();
+    this.stack.onFinish = () => this.endRide();
+    this.falcon.onFinish = () => this.endRide();
     this.rocket.onFinish = () => this.endRide();
     this.striker.onFinish = () => this.endRide();
     this.crates.onScore = (n, total, skill) => {
@@ -232,7 +321,8 @@ export class Game {
     this.ui.panel(
       'welcome',
       `<p class="eyebrow">Welcome to the fair</p><h2>Hi, I'm Hasan 👋</h2><p>I'm a Senior Full-Stack Developer. Hop in the bumper car and explore my CV:</p><ul>
-        <li>🎢 <strong>Projects Coaster</strong> — ride past what I've built</li>
+        <li>🎢 <strong>Projects Coaster</strong> — drive past what I've built</li>
+        <li>🦅 <strong>Sky Falcon</strong> — a 3.2 km cliff coaster: 250 km/h drop, 500 km/h hyper launch</li>
         <li>🚀 <strong>Career Rocket</strong> — launch my timeline, 2019 → today</li>
         <li>🥫 <strong>Skill Smash</strong> — knock down my tech stack</li>
         <li>🔔 <strong>High Striker</strong> — ring the bell for my wins</li>
@@ -246,14 +336,20 @@ export class Game {
     if (!this.running || this.ui.hud.hidden) return;
     if (this.mode === 'rocket') return this.rocket.action();
     if (this.mode === 'striker') return this.striker.action();
-    if (this.mode === 'coaster') return this.coaster.cycleCamera();
+    if (this.mode === 'coaster') return this.ride.cycleCamera();
     if (this.mode !== 'drive') return;
     const z = this.zones.active;
     if (!z) return;
     switch (z) {
       case 'coaster':
-        this.startRide('coaster', () => this.coaster.start());
+      case 'falcon': {
+        const c = z === 'falcon' ? this.falcon : this.stack;
+        this.startRide('coaster', () => {
+          this.ride = c;
+          c.start();
+        });
         break;
+      }
       case 'rocket':
         this.startRide('rocket', () => this.rocket.start());
         break;
@@ -298,7 +394,7 @@ export class Game {
 
   private onEscape() {
     if (document.querySelector('.cv.is-open')) return;
-    if (this.mode === 'coaster') this.fade(() => this.coaster.exit());
+    if (this.mode === 'coaster') this.fade(() => this.ride.exit());
     else if (this.mode === 'rocket') this.fade(() => this.rocket.exit());
     else if (this.mode === 'striker') this.striker.exit();
     else {
@@ -316,7 +412,7 @@ export class Game {
     this.ui.cinematic(false);
     this.ui.rideExit(false);
     this.ui.countdown(null);
-    this.panelZone = from === 'striker' ? 'striker' : from === 'coaster' ? 'coaster' : 'rocket';
+    this.panelZone = from === 'striker' ? 'striker' : from === 'coaster' ? (this.ride === this.falcon ? 'falcon' : 'coaster') : 'rocket';
     if (wasRide) this.updateDriveCamera(1, true);
   }
 
@@ -384,14 +480,15 @@ export class Game {
     this.car.sync();
 
     for (const u of this.updatables) u.update(dt, t);
+    this.updateCoasterAudio();
     wind.uTime.value = t;
     wind.uCar.value.copy(this.car.position);
 
     // camera + shadow focus per mode
     if (this.mode === 'coaster') {
       this.zones.setVisible(false);
-      this.coaster.updateCamera(this.camera, dt);
-      this.env.follow(this.coaster.trainPosition.clone().setY(0));
+      this.ride.updateCamera(this.camera, dt);
+      this.env.follow(this.ride.trainPosition.clone().setY(0));
     } else if (this.mode === 'rocket') {
       this.camera.up.set(0, 1, 0);
       this.zones.setVisible(false);
@@ -429,6 +526,26 @@ export class Game {
       this.resize();
     }
     this.post.render(dt);
+  }
+
+  /** One shared set of coaster sounds: the ride you're on, otherwise the nearest ghost train. */
+  private updateCoasterAudio() {
+    if (this.mode === 'coaster') {
+      const c = this.ride;
+      this.sfx.setCoaster(Math.min(1, c.speed / (c === this.falcon ? 60 : 30)), c.launching, true);
+      return;
+    }
+    let best = 0;
+    let launching = false;
+    for (const c of [this.stack, this.falcon]) {
+      const near = Math.max(0, 1 - c.trainPosition.distanceTo(this.camera.position) / 90);
+      const level = Math.min(1, c.speed / 30) * near;
+      if (level > best) {
+        best = level;
+        launching = c.launching && near > 0.4;
+      }
+    }
+    this.sfx.setCoaster(best, launching, false);
   }
 
   /** Dev-only helpers: ?cam=x,y,z,lx,ly,lz pins the camera; window.__game for scripting. */

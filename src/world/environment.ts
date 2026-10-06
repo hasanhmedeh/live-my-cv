@@ -9,6 +9,7 @@ import type { Quality } from './quality';
 import { mulberry } from './random';
 import { detailNormalTexture, glowTexture, groundTexture, hdr, PALETTE, poolTexture, stripeTexture } from './textures';
 import { addWind } from './wind';
+import { FALCON_TRACK, nearTrack } from './rides';
 
 export { mulberry };
 
@@ -187,10 +188,24 @@ export class Environment {
     const idx: number[] = [];
     const h = (a: number, k: number) =>
       (Math.sin(a * 3 + k) * 0.5 + Math.sin(a * 7.3 + k * 2.1) * 0.3 + Math.sin(a * 13.7 + k) * 0.2) * 0.5 + 0.5;
+    // flatten the hills into a plain wherever the Sky Falcon runs out into the desert
+    const reach = new Float32Array(seg);
+    for (let k = 0; k < FALCON_TRACK.pos.length; k += 4) {
+      const p = FALCON_TRACK.pos[k];
+      const r = Math.hypot(p.x, p.z);
+      if (r < 150) continue;
+      const a = Math.atan2(p.z, p.x);
+      const si = Math.round((((a / (Math.PI * 2)) % 1) + 1) % 1 * seg);
+      for (let d = -6; d <= 6; d++) {
+        const j = (((si + d) % seg) + seg) % seg;
+        reach[j] = Math.max(reach[j], r);
+      }
+    }
     radii.forEach((r, row) => {
       for (let i = 0; i <= seg; i++) {
         const a = (i / seg) * Math.PI * 2;
-        pos.push(Math.cos(a) * r, row === 0 ? -0.1 : h(a, row) * amps[row] + amps[row] * 0.15, Math.sin(a) * r);
+        const flat = row === 0 || r < reach[i % seg] + 140;
+        pos.push(Math.cos(a) * r, flat ? -0.1 : h(a, row) * amps[row] + amps[row] * 0.15, Math.sin(a) * r);
         col.push(colors[row].r, colors[row].g, colors[row].b);
       }
     });
@@ -216,7 +231,7 @@ export class Environment {
       const r = LAYOUT.boundary + 4 + rnd() * 34;
       spots.push([Math.cos(a) * r, Math.sin(a) * r, 0.85 + rnd() * 0.8]);
     }
-    const clusters: [number, number][] = [[-30, 46], [52, 22], [64, -6], [-70, -64], [20, -84], [-34, -76], [70, -70], [-8, 40], [30, 40]];
+    const clusters: [number, number][] = [[-30, 46], [48, 42], [60, -14], [-70, -64], [20, -84], [-34, -76], [70, -70], [-8, 40], [30, 40]];
     for (const [cx, cz] of clusters)
       for (let i = 0; i < 5; i++) spots.push([cx + (rnd() - 0.5) * 12, cz + (rnd() - 0.5) * 12, 0.75 + rnd() * 0.6]);
 
@@ -239,6 +254,8 @@ export class Environment {
     const color = new THREE.Color();
     let nl = 0;
     let np = 0;
+    // nothing may grow through a coaster
+    for (let i = spots.length - 1; i >= 0; i--) if (nearTrack(spots[i][0], spots[i][1], 5, 9)) spots.splice(i, 1);
     spots.forEach(([x, z, sc], i) => {
       q.setFromAxisAngle(THREE.Object3D.DEFAULT_UP, rnd() * 6);
       m.compose(new THREE.Vector3(x, 0, z), q, new THREE.Vector3(sc, sc * (0.9 + rnd() * 0.25), sc));
@@ -272,8 +289,9 @@ export class Environment {
     const r = LAYOUT.boundary + 2.5;
     for (let i = 0; i < n; i++) {
       const a = (i / n) * Math.PI * 2;
-      m.makeRotationY(-a);
-      m.setPosition(Math.cos(a) * r, 0, Math.sin(a) * r);
+      // leave a gap where a coaster runs through the fence
+      if (nearTrack(Math.cos(a) * r, Math.sin(a) * r, 3, 4)) m.makeScale(0, 0, 0);
+      else m.makeRotationY(-a).setPosition(Math.cos(a) * r, 0, Math.sin(a) * r);
       posts.setMatrixAt(i, m);
     }
     posts.castShadow = true;

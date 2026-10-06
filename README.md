@@ -24,6 +24,15 @@ The track is built like in real coaster-design tools (`src/world/attractions/tra
 - A ghost train runs laps when nobody is riding.
 - To change the layout, edit `LAYOUT_ELEMENTS`. Keep the end of the element list close to the station, because the closing connector fills the gap. Re-check self-intersections and ground clearance after changes.
 
+## Sky Falcon (the mega-coaster)
+
+A tribute to Falcon's Flight, the record-breaking cliff coaster at Six Flags Qiddiya near Riyadh. Board it from the 🦅 station at the east gate.
+
+- **~3.2 km of track** (`src/world/attractions/falcon-track.ts`). A 165 km/h launch takes you out of the park. An LSM lift climbs the escarpment to a plateau ~150 m up. The train crawls to the edge, plunges over the edge — where, like the real ride, an **LSM launch fires on the vertical drop** — and pulls out at **250 km/h**. Then a speed hill, a 78°-banked turn, and a run straight across the fair high above every attraction. A sweeping turnaround leads onto a **550 m hyper-launch strip that fires the train to 500 km/h** out into the desert. Magnetic trim brakes (~3.4 G) slow it down, then a tight turnaround and airtime camelbacks bring it back to the station.
+- **The mountain** (`src/world/mountain.ts`) is generated from the track: a sandstone table mountain with strata, a sheer wall behind the drop, and a ridge carrying the lift. Every other part of the track is guaranteed to clear the rock. The strata are painted in the shader from world height.
+- Same driving controls, cameras and HUD as The Stack. Both coasters share one physics model (`stepRide`) with per-ride tuning (`FALCON_PHYS`). Its trees, fence posts and support columns keep clear of both tracks (`src/world/rides.ts`).
+- A coasting lap takes ~110 s, peaking at 500 km/h with −1.9 to 4.9 G and under 1.3 G sideways.
+
 ## Graphics
 
 - **Physically based sunset sky** (Preetham scattering with drifting clouds). The same sky is baked into an environment map, so every glossy surface reflects it: clearcoat paint on the bumper car, rocket and letters, chrome, gilded lettering and metallic coaster rails.

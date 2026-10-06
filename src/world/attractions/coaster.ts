@@ -5,25 +5,33 @@ import { shadowed, staticBox, staticCylinder, std, type Attraction, type Ctx } f
 import type { Input } from '../input';
 import { hdr, PALETTE, signMaterial, signTexture, stripeTexture } from '../textures';
 import { escapeHtml } from '../ui';
-import {
-  buildTrack,
-  CONNECTOR_ZONE,
-  DS,
-  LAYOUT_ELEMENTS,
-  sampleTrack,
-  STATION_HEADING,
-  STATION_START,
-  stepRide,
-  zoneAt,
-  type RideState,
-  type TrackData,
-} from './track';
+import { DS, sampleTrack, stepRide, zoneAt, type Phys, type RideState, type TrackData, type Zone } from './track';
 
 /** Riders' hearts sit this far above the rails. */
 const HEART = 1.0;
-const CARS = 3;
 const CAR_GAP = 2.75;
 const START_S = 3;
+
+export interface CoasterConfig {
+  /** Short id, also used for the best-lap storage key. */
+  id: string;
+  name: string;
+  track: TrackData;
+  phys: Phys;
+  station: { title: string; sub: string; side: 1 | -1 };
+  colors: { rail: string; spine: string; cars: string[] };
+  cars: number;
+  /** Project billboards + cards along the track. */
+  signs: boolean;
+  trackside: THREE.Vector3[];
+  intro: (touch: boolean) => string;
+  /** Toasts shown when the train enters a zone (overrides the default launch toast). */
+  beats?: Partial<Record<Zone, string>>;
+  /** Terrain height under the track (supports start here). */
+  ground?: (x: number, z: number) => number;
+  /** Places where a support column may not land (attractions, other tracks). */
+  keepOut?: (x: number, z: number) => boolean;
+}
 const STRIP_BASE = new THREE.Color('#5ce1d6');
 
 type CamMode = 'driver' | 'chase' | 'trackside';
@@ -40,9 +48,9 @@ const frame = (): Frame => ({ p: new THREE.Vector3(), t: new THREE.Vector3(), u:
 const $ = (id: string) => document.getElementById(id)!;
 
 /**
- * "The Stack": a launched steel coaster you drive yourself. Hold the throttle to power the
- * linear motors, brake, hit turbo — or coast and let gravity do it. When nobody is riding,
- * a ghost train keeps running laps so the park feels alive.
+ * A launched steel coaster you drive yourself. Hold the throttle to power the linear motors,
+ * brake, hit turbo — or coast and let gravity do it. When nobody is riding, a ghost train
+ * keeps running laps so the park feels alive.
  */
 export class Coaster implements Attraction {
   private d: TrackData;
@@ -59,6 +67,7 @@ export class Coaster implements Attraction {
   private camMode: CamMode = 'driver';
   private camUp = new THREE.Vector3(0, 1, 0);
   private camLook = new THREE.Vector3();
+  private camDir = new THREE.Vector3();
   private camPos = new THREE.Vector3();
   private trackside: THREE.Vector3[] = [];
   private prevVel = new THREE.Vector3();
@@ -68,14 +77,17 @@ export class Coaster implements Attraction {
   private toastTimer = 0;
   private hudTimer = 0;
   private wasLaunching = false;
+  private lastZone: Zone | null = null;
+  private introTimer = 0;
+  private maxSpeed = 0;
   input: Input | null = null;
   active = false;
   onFinish: (() => void) | null = null;
 
-  constructor(private ctx: Ctx) {
-    this.d = buildTrack(STATION_START, STATION_HEADING, LAYOUT_ELEMENTS, CONNECTOR_ZONE);
+  constructor(private ctx: Ctx, private cfg: CoasterConfig) {
+    this.d = cfg.track;
     try {
-      this.best = Number(localStorage.getItem('coaster-best')) || 0;
+      this.best = Number(localStorage.getItem(this.bestKey)) || 0;
     } catch {
       /* storage unavailable */
     }
@@ -83,16 +95,18 @@ export class Coaster implements Attraction {
     this.buildTrackMeshes();
     this.buildStation();
     this.buildTunnel();
-    this.buildSigns();
+    if (cfg.signs) this.buildSigns();
     this.buildTrain();
-    this.trackside = [
-      new THREE.Vector3(-50, 3, 38), // loop
-      new THREE.Vector3(-66, 4, 6), // banked turn + camelback
-      new THREE.Vector3(-66, 6, -40), // high turn + roll
-      new THREE.Vector3(-14, 9, -34), // helix
-      new THREE.Vector3(-16, 4, 12), // station
-    ];
+    this.trackside = cfg.trackside;
     this.placeTrain();
+  }
+
+  private get bestKey() {
+    return this.cfg.id === 'stack' ? 'coaster-best' : `coaster-best-${this.cfg.id}`;
+  }
+
+  private ground(x: number, z: number) {
+    return this.cfg.ground?.(x, z) ?? 0;
   }
 
   // ------------------------------------------------------------------ geometry
@@ -114,8 +128,8 @@ export class Coaster implements Attraction {
       right.push(c.clone().addScaledVector(d.right[i], 0.55));
       spine.push(c.clone().addScaledVector(d.up[i], -0.48));
     }
-    const railMat = std(PALETTE.candy, { roughness: 0.28, metalness: 0.65 });
-    const spineMat = std(PALETTE.mustard, { roughness: 0.35, metalness: 0.55 });
+    const railMat = std(this.cfg.colors.rail, { roughness: 0.28, metalness: 0.65 });
+    const spineMat = std(this.cfg.colors.spine, { roughness: 0.35, metalness: 0.55 });
     for (const [pts, r, mat] of [
       [left, 0.075, railMat],
       [right, 0.075, railMat],
@@ -157,12 +171,12 @@ export class Coaster implements Attraction {
     const strips: THREE.Matrix4[] = [];
     for (let i = 0; i < n; i += 2) {
       const z = d.zone[i];
-      if (z !== 'launch' && z !== 'brake') continue;
+      if (z !== 'launch' && z !== 'boost' && z !== 'hyper' && z !== 'brake' && z !== 'trim') continue;
       this.railCenter(i, c);
       back.copy(d.tan[i]).negate();
       m.makeBasis(d.right[i], d.up[i], back).setPosition(c.clone().addScaledVector(d.up[i], 0.02));
-      (z === 'launch' ? lsm : brake).push(m.clone());
-      if (z === 'launch')
+      (z === 'brake' || z === 'trim' ? brake : lsm).push(m.clone());
+      if (z !== 'brake' && z !== 'trim')
         for (const side of [-0.85, 0.85]) {
           m.makeBasis(d.right[i], d.up[i], back).setPosition(c.clone().addScaledVector(d.right[i], side).addScaledVector(d.up[i], -0.2));
           strips.push(m.clone());
@@ -179,14 +193,16 @@ export class Coaster implements Attraction {
     add(new THREE.BoxGeometry(0.08, 0.06, 0.9), this.launchStrips, strips);
 
     // supports: only under upright track with nothing else in the way
-    const supports: { x: number; z: number; h: number; m: THREE.Matrix4 }[] = [];
+    const supports: { x: number; z: number; h: number; foot: number; m: THREE.Matrix4 }[] = [];
     const stepS = Math.round(5.5 / DS);
     const worldUp = new THREE.Vector3(0, 1, 0);
     for (let i = 0; i < n; i += stepS) {
       if (d.up[i].y < 0.75 || d.zone[i] === 'station') continue;
       this.railCenter(i, c);
       const bottom = c.y - 0.75;
-      if (bottom < 1.2) continue;
+      const foot = this.ground(c.x, c.z);
+      if (bottom - foot < 1.2) continue; // resting on the ground / the mountain
+      if (this.cfg.keepOut?.(c.x, c.z)) continue;
       let blocked = false;
       for (let j = 0; j < n && !blocked; j += 2) {
         if (Math.abs(j - i) < 20 || Math.abs(j - i) > n - 20) continue;
@@ -197,7 +213,7 @@ export class Coaster implements Attraction {
       const across = new THREE.Vector3(d.right[i].x, 0, d.right[i].z).normalize();
       const head = new THREE.Matrix4().makeBasis(across, worldUp, new THREE.Vector3().crossVectors(across, worldUp));
       head.setPosition(c.x, bottom, c.z);
-      supports.push({ x: c.x, z: c.z, h: bottom, m: head });
+      supports.push({ x: c.x, z: c.z, h: bottom, foot, m: head });
     }
     const colGeo = new THREE.CylinderGeometry(0.16, 0.22, 1, 10).translate(0, 0.5, 0);
     const steel = std(PALETTE.cream, { metalness: 0.4, roughness: 0.45 });
@@ -205,10 +221,12 @@ export class Coaster implements Attraction {
     const heads = new THREE.InstancedMesh(new THREE.BoxGeometry(1.1, 0.22, 0.3), steel, supports.length);
     const feet = new THREE.InstancedMesh(new THREE.CylinderGeometry(0.5, 0.62, 0.35, 12), std('#8d8a99', { roughness: 0.9 }), supports.length);
     supports.forEach((s, k) => {
-      cols.setMatrixAt(k, m.makeScale(1, s.h, 1).setPosition(s.x, 0, s.z));
+      // tall columns get thicker
+      const w = 1 + Math.max(0, s.h - s.foot - 12) * 0.03;
+      cols.setMatrixAt(k, m.makeScale(w, s.h - s.foot, w).setPosition(s.x, s.foot, s.z));
       heads.setMatrixAt(k, s.m);
-      feet.setMatrixAt(k, m.makeTranslation(s.x, 0.17, s.z));
-      staticCylinder(this.ctx, s.x, s.z, 0.35, 3);
+      feet.setMatrixAt(k, m.makeScale(w, 1, w).setPosition(s.x, s.foot + 0.17, s.z));
+      if (Math.hypot(s.x, s.z) < 96) staticCylinder(this.ctx, s.x, s.z, 0.35 * w, 3);
     });
     cols.castShadow = heads.castShadow = true;
     feet.receiveShadow = true;
@@ -217,40 +235,54 @@ export class Coaster implements Attraction {
     // low track is solid for the bumper car
     for (let i = 0; i < n; i += 4) {
       this.railCenter(i, c);
-      if (c.y < 4.6 && d.up[i].y > 0.5 && d.zone[i] !== 'station') staticBox(this.ctx, c.x, c.y / 2, c.z, 0.9, c.y / 2, 0.9);
+      if (c.y < 4.6 && d.up[i].y > 0.5 && d.zone[i] !== 'station' && Math.hypot(c.x, c.z) < 96)
+        staticBox(this.ctx, c.x, c.y / 2, c.z, 0.9, c.y / 2, 0.9);
     }
   }
 
+  /** Platform, striped roof and marquee sign, laid out along the station zone. */
   private buildStation() {
+    const d = this.d;
+    let count = 0;
+    while (d.zone[count] === 'station') count++;
+    const L = count * DS;
+    const P0 = this.railCenter(0, new THREE.Vector3());
+    const T = d.tan[0].clone().setY(0).normalize();
+    const R = d.right[0].clone().setY(0).normalize();
+    const side = this.cfg.station.side;
+    const out = R.clone().multiplyScalar(side); // toward the platform
+    const rotY = Math.atan2(T.x, T.z);
+    const along = (t: number, o: number, y: number) => P0.clone().addScaledVector(T, t).addScaledVector(out, o).setY(y);
+
     const g = new THREE.Group();
-    const platform = new THREE.Mesh(new THREE.BoxGeometry(2.2, 1.1, 18), std('#b98a5a'));
-    platform.position.set(-23.6, 0.55, 3);
-    platform.receiveShadow = true;
-    g.add(platform);
-    staticBox(this.ctx, -23.6, 0.55, 3, 1.1, 0.55, 9);
-    staticBox(this.ctx, -26, 1, 3, 1.1, 1, 9.5);
+    const add = (mesh: THREE.Mesh, at: THREE.Vector3) => {
+      mesh.position.copy(at);
+      mesh.rotation.y = rotY;
+      g.add(mesh);
+      return mesh;
+    };
+    const pc = along(L / 2, 2.4, 0.55);
+    add(new THREE.Mesh(new THREE.BoxGeometry(2.2, 1.1, L), std('#b98a5a')), pc).receiveShadow = true;
+    staticBox(this.ctx, pc.x, 0.55, pc.z, 1.1, 0.55, L / 2, rotY);
+    const tc = along(L / 2, 0, 1);
+    staticBox(this.ctx, tc.x, 1, tc.z, 1.1, 1, L / 2 + 0.5, rotY);
 
     const roofTex = stripeTexture(PALETTE.candy, PALETTE.cream, 10);
     roofTex.repeat.set(4, 1);
-    const roof = new THREE.Mesh(new THREE.BoxGeometry(6.4, 0.3, 19), std('#ffffff', { map: roofTex }));
-    roof.position.set(-24.8, 5.6, 3);
-    g.add(roof);
-    for (const z of [-5.5, 3, 11.5])
-      for (const x of [-27.8, -22.6]) {
-        const post = new THREE.Mesh(new THREE.CylinderGeometry(0.15, 0.15, 5.5), std(PALETTE.cream));
-        post.position.set(x, 2.75, z);
-        g.add(post);
-        if (x > -23) staticCylinder(this.ctx, x, z, 0.25, 5);
+    add(new THREE.Mesh(new THREE.BoxGeometry(6.4, 0.3, L + 1), std('#ffffff', { map: roofTex })), along(L / 2, 1.2, 5.6));
+    for (const t of [0.5, L / 2, L - 0.5])
+      for (const o of [-1.8, 3.4]) {
+        const at = along(t, o, 2.75);
+        add(new THREE.Mesh(new THREE.CylinderGeometry(0.15, 0.15, 5.5), std(PALETTE.cream)), at);
+        if (o > 0) staticCylinder(this.ctx, at.x, at.z, 0.25, 5);
       }
-    const sign = new THREE.Mesh(new THREE.PlaneGeometry(9, 2.6), signMaterial(signTexture('THE STACK', { sub: 'Drive it yourself · launch · loop · roll' })));
-    sign.position.set(-22.4, 7.2, 3);
-    sign.rotation.y = Math.PI / 2;
-    g.add(sign);
-    const signBack = new THREE.Mesh(new THREE.BoxGeometry(0.2, 2.8, 9.2), std(PALETTE.candyDark));
-    signBack.position.set(-22.55, 7.2, 3);
-    g.add(signBack);
-    const roofBulbs = new THREE.InstancedMesh(new THREE.SphereGeometry(0.09, 8, 6), new THREE.MeshBasicMaterial({ color: hdr('#ffe2a0', 6) }), 38);
-    for (let i = 0; i < 38; i++) roofBulbs.setMatrixAt(i, new THREE.Matrix4().makeTranslation(-21.55, 5.4, -6.2 + i * 0.5));
+    const sign = add(new THREE.Mesh(new THREE.PlaneGeometry(9, 2.6), signMaterial(signTexture(this.cfg.station.title, { sub: this.cfg.station.sub }))), along(L / 2, 3.6, 7.2));
+    sign.rotation.y = Math.atan2(out.x, out.z); // face away from the track
+    const back = add(new THREE.Mesh(new THREE.BoxGeometry(9.2, 2.8, 0.2), std(PALETTE.candyDark)), along(L / 2, 3.45, 7.2));
+    back.rotation.y = sign.rotation.y;
+    const bulbsN = Math.floor(L / 0.5);
+    const roofBulbs = new THREE.InstancedMesh(new THREE.SphereGeometry(0.09, 8, 6), new THREE.MeshBasicMaterial({ color: hdr('#ffe2a0', 6) }), bulbsN);
+    for (let i = 0; i < bulbsN; i++) roofBulbs.setMatrixAt(i, new THREE.Matrix4().setPosition(along(i * 0.5, 4.45, 5.4)));
     g.add(roofBulbs);
     shadowed(g, true);
     roofBulbs.castShadow = false;
@@ -377,7 +409,7 @@ export class Coaster implements Attraction {
   }
 
   private buildTrain() {
-    const paint = [PALETTE.mustard, PALETTE.candy, PALETTE.teal];
+    const paint = this.cfg.colors.cars;
     const seatMat = std(PALETTE.ink, { roughness: 0.7 });
     const chrome = std('#e6e2f0', { roughness: 0.12, metalness: 1 });
     const wheelMat = std('#2a2238', { roughness: 0.6 });
@@ -385,7 +417,7 @@ export class Coaster implements Attraction {
     const skins = ['#e8b48a', '#c98e62', '#8d5a3b', '#f1c9a5'];
     const wheelGeo = new THREE.CylinderGeometry(0.14, 0.14, 0.12, 12).rotateZ(Math.PI / 2);
     let rider = 0;
-    for (let k = 0; k < CARS; k++) {
+    for (let k = 0; k < this.cfg.cars; k++) {
       const car = new THREE.Group();
       const body = new THREE.MeshPhysicalMaterial({ color: paint[k % paint.length], roughness: 0.35, metalness: 0.1, clearcoat: 1, clearcoatRoughness: 0.06 });
       const shell = new THREE.Mesh(new THREE.BoxGeometry(1.5, 0.55, 2.3), body);
@@ -477,25 +509,21 @@ export class Coaster implements Attraction {
     this.camMode = 'driver';
     this.prevVel.set(0, 0, 0);
     this.gSmooth = 1;
+    this.maxSpeed = 0;
     sampleTrack(this.d, this.state.s, this.f);
     this.camUp.copy(this.f.u);
     this.camLook.copy(this.f.p).addScaledVector(this.f.t, 10);
+    this.camDir.set(0, 0, 0);
     this.camPos.copy(this.f.p);
     this.placeTrain();
     $('ride-hud').hidden = false;
     $('rh-toast').hidden = true;
     document.body.classList.add('is-riding-coaster');
     this.updateHudStatic();
-    const touch = this.ctx.mobile;
-    this.ctx.ui.panel(
-      'coaster-intro',
-      `<p class="eyebrow">The Stack · You're the driver</p><h2>Hold on tight!</h2><p>${
-        touch
-          ? 'Push the joystick <strong>up</strong> for power, <strong>down</strong> to brake. Tap <kbd>E</kbd> to switch camera.'
-          : 'Hold <kbd>W</kbd> for power, <kbd>S</kbd> to brake, <kbd>Shift</kbd> for turbo, <kbd>C</kbd> to switch camera.'
-      } The launch fires automatically — brake too hard before the loop and you'll roll back!</p><p>Every billboard is a project I've built; its card pops up here as you pass.</p>`,
-      { accent: PALETTE.mustard, closable: false },
-    );
+    this.ctx.ui.panel(`${this.cfg.id}-intro`, this.cfg.intro(this.ctx.mobile), { accent: PALETTE.mustard, closable: false });
+    // without project cards to replace it, the intro steps aside after a few seconds
+    this.introTimer = this.cfg.signs ? 0 : 9;
+    this.lastZone = null;
     this.ctx.sfx.chime();
   }
 
@@ -517,7 +545,12 @@ export class Coaster implements Attraction {
   }
 
   private summaryHtml() {
-    return `<p class="eyebrow">The Stack · Ride recap${this.best ? ` · best lap ${fmt(this.best)}` : ''}</p><h2>What I've built</h2>${projects
+    const top = `top speed ${Math.round(this.maxSpeed * 3.6)} km/h${this.best ? ` · best lap ${fmt(this.best)}` : ''}`;
+    if (!this.cfg.signs)
+      return `<p class="eyebrow">${escapeHtml(this.cfg.name)} · Ride recap</p><h2>${Math.round(this.maxSpeed * 3.6)} km/h!</h2><p>You flew ${escapeHtml(
+        this.cfg.name,
+      )} with a ${top}. Want the story behind the builder? Ride the Projects Coaster or launch the Career Rocket.</p>`;
+    return `<p class="eyebrow">${escapeHtml(this.cfg.name)} · Ride recap · ${top}</p><h2>What I've built</h2>${projects
       .map(
         (p) =>
           `<h3>${escapeHtml(p.name)}</h3><p class="sub">${escapeHtml(p.where)}</p><p>${escapeHtml(p.text)}</p><ul class="tags">${p.tags
@@ -535,7 +568,7 @@ export class Coaster implements Attraction {
     const h = dt / 2;
     for (let i = 0; i < 2; i++) {
       sampleTrack(this.d, this.state.s, this.f);
-      stepRide(this.d, this.state, inp, h, this.f.t);
+      stepRide(this.d, this.state, inp, h, this.f.t, this.cfg.phys);
     }
     if (this.state.s >= L) {
       this.state.s -= L;
@@ -566,12 +599,18 @@ export class Coaster implements Attraction {
     this.stripLevel += ((this.state.launching ? 14 : 1.5) - this.stripLevel) * Math.min(1, dt * 8);
     this.launchStrips.color.copy(STRIP_BASE).multiplyScalar(this.stripLevel);
 
-    this.ctx.sfx.setCoaster(Math.min(1, Math.abs(this.state.v) / 30), this.state.launching, this.active);
-
     if (!this.active) return;
+    this.maxSpeed = Math.max(this.maxSpeed, Math.abs(this.state.v));
 
-    if (this.state.launching && !this.wasLaunching) this.toast('LAUNCH! 🚀');
+    const zone = zoneAt(this.d, this.state.s);
+    if (zone !== this.lastZone && zone && this.cfg.beats?.[zone] && this.state.v > 0) this.toast(this.cfg.beats[zone]!);
+    else if (!this.cfg.beats && this.state.launching && !this.wasLaunching) this.toast('LAUNCH! 🚀');
+    this.lastZone = zone;
     this.wasLaunching = this.state.launching;
+    if (this.introTimer > 0) {
+      this.introTimer -= dt;
+      if (this.introTimer <= 0 && this.ctx.ui.panelOpenKey === `${this.cfg.id}-intro`) this.ctx.ui.hidePanel();
+    }
     if (zoneAt(this.d, this.state.s) === 'launch' && this.state.v < -0.5) this.toast('Rolled back! Hold W for power');
 
     // project cards
@@ -603,7 +642,7 @@ export class Coaster implements Attraction {
     if (record) {
       this.best = t;
       try {
-        localStorage.setItem('coaster-best', String(t));
+        localStorage.setItem(this.bestKey, String(t));
       } catch {
         /* storage unavailable */
       }
@@ -622,7 +661,7 @@ export class Coaster implements Attraction {
     el.style.animation = 'none';
     void el.offsetWidth;
     el.style.animation = '';
-    this.toastTimer = 2.2;
+    this.toastTimer = 2.8;
   }
 
   private updateHudStatic() {
@@ -667,7 +706,11 @@ export class Coaster implements Attraction {
       sampleTrack(this.d, this.state.s + 9, this.f2);
       const look = this.f2.p.clone().addScaledVector(this.f2.u, 0.4);
       this.camUp.lerp(f.u, 1 - Math.exp(-dt * 10)).normalize();
-      this.camLook.lerp(look, Math.min(1, dt * 12));
+      // smooth the look *direction* (a lagging world point ends up behind you at 500 km/h)
+      const wantDir = look.sub(eye).normalize();
+      if (this.camDir.lengthSq() < 0.5) this.camDir.copy(wantDir);
+      this.camDir.lerp(wantDir, 1 - Math.exp(-dt * 12)).normalize();
+      this.camLook.copy(eye).add(this.camDir);
       camera.position.copy(eye);
       camera.up.copy(this.camUp);
       camera.lookAt(this.camLook);
@@ -692,6 +735,14 @@ export class Coaster implements Attraction {
       camera.lookAt(this.camLook);
       this.camPos.copy(best);
     }
+  }
+
+  get speed() {
+    return Math.abs(this.state.v);
+  }
+
+  get launching() {
+    return this.state.launching;
   }
 
   /** Where the lead car is (for shadows / grass LOD while riding). */
