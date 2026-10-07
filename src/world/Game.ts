@@ -15,6 +15,7 @@ import { PALETTE } from './textures';
 import { UI } from './ui';
 import { Zones } from './zones';
 import { Minimap } from './minimap';
+import { WorldMap } from './world-map';
 import { Trackside } from './trackside';
 import { TimeControl } from './time-control';
 import { Post } from './post';
@@ -34,13 +35,14 @@ import { GiantWheel } from './attractions/giant-wheel';
 import { Drone } from './attractions/drone';
 import { SkyFlip } from './attractions/sky-flip';
 import { Ship } from './attractions/ship';
+import { Speedway } from './attractions/speedway';
 
 /** The clock slider / pause / local-time panel. Off for now: the park stays at 16:00. */
 const TIME_CONTROLS = false;
 /** How many guests walk the park, by graphics tier. */
 const CROWD_SIZE = { high: 64, medium: 44, low: 26, lowest: 12 } as const;
 
-type Mode = 'drive' | 'coaster' | 'rocket' | 'striker' | 'wheel' | 'drone' | 'flip' | 'ship';
+type Mode = 'drive' | 'coaster' | 'rocket' | 'striker' | 'wheel' | 'drone' | 'flip' | 'ship' | 'race';
 
 const nextFrame = () => new Promise<void>((r) => requestAnimationFrame(() => r()));
 
@@ -60,6 +62,7 @@ export class Game {
   private crowd: Crowd | null = null;
   private zones!: Zones;
   private minimap!: Minimap;
+  private worldMap!: WorldMap;
   private stack!: Coaster;
   private falcon!: Coaster;
   /** The coaster currently being ridden (valid while mode === 'coaster'). */
@@ -73,6 +76,7 @@ export class Game {
   private drone!: Drone;
   private flip!: SkyFlip;
   private ship!: Ship;
+  private speedway!: Speedway;
   private updatables: { update(dt: number, t: number): void }[] = [];
   private mode: Mode = 'drive';
   private camTarget = new THREE.Vector3();
@@ -235,6 +239,10 @@ export class Game {
       this.updatables.push(this.ship);
     });
     step(2, () => {
+      this.speedway = new Speedway(this.ctx);
+      this.updatables.push(this.speedway);
+    });
+    step(2, () => {
       this.rocket = new Rocket(this.ctx, this.env);
       this.updatables.push(this.rocket);
     });
@@ -376,15 +384,18 @@ export class Game {
     });
     this.input.on('action', () => this.onAction());
     this.input.on('escape', () => this.onEscape());
-    this.input.on('reset', () => this.mode === 'drive' && this.teleport('entrance'));
+    this.input.on('reset', () => {
+      if (this.mode === 'drive') this.teleport('entrance');
+      else if (this.mode === 'race') this.speedway.rescue();
+    });
     this.input.on('honk', () => {
       if (this.mode === 'drive') this.player.wave();
       else if (this.mode === 'drone') this.drone.flyHome();
     });
-    // Space rolls on foot and climbs in the drone; on rides and the striker it keeps working as the action key
+    // Space rolls on foot, climbs in the drone and drifts a kart; on rides and the striker it keeps working as the action key
     this.input.on('roll', () => {
       if (this.mode === 'drive') this.player.roll();
-      else if (this.mode !== 'drone') this.onAction();
+      else if (this.mode !== 'drone' && this.mode !== 'race') this.onAction();
     });
     this.input.on('kick', () => this.mode === 'drive' && this.player.kick());
     this.input.on('camera', () => {
@@ -393,10 +404,12 @@ export class Game {
       else if (this.mode === 'drone') this.drone.cycleCamera();
       else if (this.mode === 'flip') this.flip.cycleCamera();
       else if (this.mode === 'ship') this.ship.cycleCamera();
+      else if (this.mode === 'race') this.speedway.cycleCamera();
     });
     this.wheel.input = this.input;
     this.flip.input = this.input;
     this.ship.input = this.input;
+    this.speedway.input = this.input;
     this.stack.input = this.input;
     this.falcon.input = this.input;
     this.drone.input = this.input;
@@ -409,7 +422,14 @@ export class Game {
     this.minimap = new Minimap(document.getElementById('minimap')!);
     if (TIME_CONTROLS) this.timeControl = new TimeControl(this.env);
     else document.getElementById('clock')?.remove();
-    this.minimap.onGoto = (id) => this.teleport(id);
+    this.worldMap = new WorldMap(document.getElementById('world-map')!);
+    this.worldMap.canOpen = () => this.mode === 'drive';
+    this.worldMap.onToggle = (open) => {
+      this.input.paused = open;
+      if (this.mode === 'drive') this.player.enabled = !open;
+    };
+    this.worldMap.onTravel = (id) => this.teleport(id);
+    this.minimap.onOpen = () => this.worldMap.open();
     new GraphicsMenu(this.quality);
 
     this.stack.onFinish = () => this.endRide();
@@ -420,6 +440,8 @@ export class Game {
     this.drone.onFinish = () => this.endRide();
     this.flip.onFinish = () => this.endRide();
     this.ship.onFinish = () => this.endRide();
+    this.speedway.onFinish = () => this.endRide();
+    this.speedway.onComplete = () => this.onEscape();
     this.drone.onLanded = () => this.onEscape();
     this.crates.onScore = (n, total, points, score) => {
       this.ui.score(`🥫 +${points}! · ${score} points · ${n} / ${total} crates`);
@@ -428,12 +450,6 @@ export class Game {
       else this.sfx.pop();
     };
 
-    document.querySelectorAll<HTMLButtonElement>('[data-goto]').forEach((b) =>
-      b.addEventListener('click', () => {
-        b.blur();
-        this.teleport(b.dataset.goto as ZoneId);
-      }),
-    );
     const sound = document.getElementById('sound-toggle')!;
     const syncSound = () => {
       sound.textContent = this.sfx.muted ? '🔇' : '🔊';
@@ -464,6 +480,7 @@ export class Game {
         <li>🚁 <strong>Drone Flights</strong> — rent a camera drone and fly over the whole park</li>
         <li>🌀 <strong>Sky Flip</strong> — swing 125 m up, right over the top, flipping head over heels</li>
         <li>🛸 <strong>Nebula 360</strong> — a pendulum ship that loops right round and hangs you upside down</li>
+        <li>🏎️ <strong>Turbo Speedway</strong> — race three rivals round a kart circuit full of obstacles</li>
       </ul><p>${this.mobile ? 'Use the joystick to walk (push it all the way to run) and the <kbd>E</kbd> button to play.' : 'Walk with <kbd>WASD</kbd> or arrows, hold <kbd>Shift</kbd> to run, <kbd>Space</kbd> to roll, <kbd>F</kbd> to kick, <kbd>H</kbd> to wave and <kbd>E</kbd> to play. Try kicking the big letters over!'}</p>`,
       { accent: PALETTE.candy },
     );
@@ -478,6 +495,7 @@ export class Game {
     if (this.mode === 'drone') return this.drone.cycleCamera();
     if (this.mode === 'flip') return this.flip.cycleCamera();
     if (this.mode === 'ship') return this.ship.cycleCamera();
+    if (this.mode === 'race') return this.speedway.cycleCamera();
     if (this.mode !== 'drive') return;
     const z = this.zones.active;
     if (!z) return;
@@ -517,6 +535,9 @@ export class Game {
         break;
       case 'ship':
         this.startRide('ship', () => this.ship.start());
+        break;
+      case 'speedway':
+        this.startRide('race', () => this.speedway.start());
         break;
       case 'booth':
         this.player.interact();
@@ -574,6 +595,7 @@ export class Game {
     else if (this.mode === 'drone') this.fade(() => this.drone.exit());
     else if (this.mode === 'flip') this.fade(() => this.flip.exit());
     else if (this.mode === 'ship') this.fade(() => this.ship.exit());
+    else if (this.mode === 'race') this.fade(() => this.speedway.exit());
     else if (this.mode === 'striker') this.striker.exit();
     else {
       if (this.zones.active === 'crates') this.cratesDismissed = true;
@@ -584,7 +606,7 @@ export class Game {
 
   private endRide() {
     this.camera.up.set(0, 1, 0);
-    const wasRide = this.mode === 'coaster' || this.mode === 'rocket' || this.mode === 'wheel' || this.mode === 'drone' || this.mode === 'flip' || this.mode === 'ship';
+    const wasRide = this.mode === 'coaster' || this.mode === 'rocket' || this.mode === 'wheel' || this.mode === 'drone' || this.mode === 'flip' || this.mode === 'ship' || this.mode === 'race';
     if (this.mode === 'wheel' || this.mode === 'drone' || this.mode === 'flip') this.env.setHaze(1);
     const from = this.mode;
     this.mode = 'drive';
@@ -593,7 +615,7 @@ export class Game {
     this.ui.rideExit(false);
     this.ui.countdown(null);
     this.panelZone =
-      from === 'striker' ? 'striker' : from === 'drone' ? 'drone' : from === 'flip' ? 'flip' : from === 'ship' ? 'ship' : from === 'coaster' ? (this.ride === this.falcon ? 'falcon' : 'coaster') : from === 'wheel' ? 'ferris' : 'rocket';
+      from === 'striker' ? 'striker' : from === 'drone' ? 'drone' : from === 'flip' ? 'flip' : from === 'ship' ? 'ship' : from === 'race' ? 'speedway' : from === 'coaster' ? (this.ride === this.falcon ? 'falcon' : 'coaster') : from === 'wheel' ? 'ferris' : 'rocket';
     if (wasRide) this.updateDriveCamera(1, true);
   }
 
@@ -668,7 +690,7 @@ export class Game {
 
     for (const u of this.updatables) u.update(dt, t);
     this.updateCoasterAudio();
-    if (this.mode === 'drive' || this.mode === 'drone') this.updateMinimap(dt);
+    if (this.mode === 'drive' || this.mode === 'drone' || this.mode === 'race') this.updateMinimap(dt);
     wind.uTime.value = t;
     wind.uCar.value.copy(this.player.position);
 
@@ -701,6 +723,10 @@ export class Game {
       this.zones.setVisible(false);
       this.ship.updateCamera(this.camera, dt);
       this.env.follow(this.ship.focus);
+    } else if (this.mode === 'race') {
+      this.zones.setVisible(false);
+      this.speedway.updateCamera(this.camera, dt);
+      this.env.follow(this.speedway.focus);
     } else if (this.mode === 'striker') {
       this.camera.up.set(0, 1, 0);
       this.zones.setVisible(false);
@@ -740,14 +766,22 @@ export class Game {
 
   private updateMinimap(dt: number) {
     const q = this.player.group.quaternion;
-    // yaw from the quaternion (the visitor only ever turns about y); in the air, the map follows the drone
+    // yaw from the quaternion (the visitor only ever turns about y); in the air the map follows the
+    // drone, on the circuit your kart
     const flying = this.mode === 'drone';
-    const heading = flying ? this.drone.yaw : Math.atan2(2 * (q.w * q.y + q.x * q.z), 1 - 2 * (q.y * q.y + q.z * q.z));
-    const p = flying ? this.drone.position : this.player.position;
-    this.minimap.update(dt, { x: p.x, z: p.z, heading }, [
+    const racing = this.mode === 'race';
+    const heading = flying ? this.drone.yaw : racing ? this.speedway.yaw : Math.atan2(2 * (q.w * q.y + q.x * q.z), 1 - 2 * (q.y * q.y + q.z * q.z));
+    const p = flying ? this.drone.position : racing ? this.speedway.position : this.player.position;
+    const visitor = { x: p.x, z: p.z, heading };
+    const karts = this.speedway.markers;
+    const trains = [
       { x: this.stack.trainPosition.x, z: this.stack.trainPosition.z, color: PALETTE.mustard },
       { x: this.falcon.trainPosition.x, z: this.falcon.trainPosition.z, color: PALETTE.teal },
-    ]);
+      // the rivals (and, unless it's yours, the candy-red kart)
+      ...(racing ? karts.slice(1) : karts),
+    ];
+    this.minimap.update(visitor, trains);
+    this.worldMap.update(dt, visitor, trains);
   }
 
   /** One shared set of coaster sounds: the ride you're on, otherwise the nearest ghost train. */
@@ -800,7 +834,7 @@ export class Game {
 
   private updateZones(t: number) {
     const zone = this.zones.update(this.player.position, t);
-    this.ui.highlightNav(zone);
+    this.worldMap.setNear(zone);
     if (zone) {
       const z = ZONES[zone];
       this.ui.prompt(zone, z.title, z.action);

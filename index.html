@@ -47,8 +47,8 @@
           <p class="intro-role">Rides · Games · Thrills</p>
           <p class="intro-lead">
             Walk in and explore the park: drive the <strong>Thunder Loop</strong> coaster yourself, plunge off the cliff on the
-            <strong>Sky Falcon</strong>, launch the <strong>rocket</strong> into orbit, smash the <strong>crates</strong>, or rent a
-            <strong>drone</strong> and see it all from the sky.
+            <strong>Sky Falcon</strong>, launch the <strong>rocket</strong> into orbit, smash the <strong>crates</strong>, race the <strong>karts</strong>, or rent
+            a <strong>drone</strong> and see it all from the sky.
           </p>
           <div class="intro-actions">
             <button id="enter" class="btn btn-primary" type="button" disabled>
@@ -56,26 +56,16 @@
             </button>
           </div>
           <div class="intro-progress" aria-hidden="true"><span id="progress-bar"></span></div>
-          <p class="intro-hint">Best with a keyboard: <kbd>W</kbd><kbd>A</kbd><kbd>S</kbd><kbd>D</kbd> or arrows to walk, <kbd>Shift</kbd> to run, <kbd>E</kbd> to play. Touch works too.</p>
+          <p class="intro-hint">
+            <span class="hint-keys">Best with a keyboard: <kbd>W</kbd><kbd>A</kbd><kbd>S</kbd><kbd>D</kbd> or arrows to walk, <kbd>Shift</kbd> to run, <kbd>E</kbd> to play. Touch works too.</span>
+            <span class="hint-touch">Walk with the joystick, drag to look around, tap <kbd>E</kbd> to play.</span>
+          </p>
         </div>
       </section>
     </main>
 
     <!-- In-world HUD (enhanced experience only) -->
     <div id="hud" class="hud" hidden>
-      <nav class="hud-nav" aria-label="Attractions">
-        <button type="button" data-goto="entrance" title="Entrance">🎪<span>Entrance</span></button>
-        <button type="button" data-goto="coaster" title="Thunder Loop rollercoaster">🎢<span>Coaster</span></button>
-        <button type="button" data-goto="falcon" title="Sky Falcon — 250 km/h cliff coaster">🦅<span>Falcon</span></button>
-        <button type="button" data-goto="rocket" title="Rocket ride">🚀<span>Rocket</span></button>
-        <button type="button" data-goto="crates" title="Crate smash">🥫<span>Crates</span></button>
-        <button type="button" data-goto="striker" title="High striker">🔔<span>Striker</span></button>
-        <button type="button" data-goto="ferris" title="Giant wheel — 250 m">🎡<span>Wheel</span></button>
-        <button type="button" data-goto="flip" title="Sky Flip — swing 125 m up and flip">🌀<span>Flip</span></button>
-        <button type="button" data-goto="ship" title="Nebula 360 — looping pendulum ship">🛸<span>Ship</span></button>
-        <button type="button" data-goto="drone" title="Drone flights — see the park from the sky">🚁<span>Drone</span></button>
-        <button type="button" data-goto="booth" title="Ticket booth">🎟️<span>Tickets</span></button>
-      </nav>
       <div class="hud-tools">
         <button type="button" id="clock" class="hud-pill hud-clock" aria-haspopup="true" aria-expanded="false" aria-controls="time-panel" title="Park time">🌅 17:00</button>
         <button type="button" id="gfx-toggle" class="hud-icon" aria-haspopup="true" aria-expanded="false" aria-controls="gfx-panel" aria-label="Graphics quality" title="Graphics quality">⚙️</button>
@@ -129,13 +119,55 @@
         <p class="rh-keys" id="dh-keys"></p>
         <p class="rh-toast" id="dh-toast" hidden></p>
       </div>
+      <div id="race-hud" class="ride-hud race-hud" hidden>
+        <div class="rc-top">
+          <p class="rc-pos"><b id="rc-pos">4</b><sup id="rc-pos-suf">th</sup><span>/ 4</span></p>
+          <p class="rc-lap"><span>Lap</span><b id="rc-lap">1/3</b></p>
+        </div>
+        <div class="rc-nitro">
+          <span>Nitro</span>
+          <div class="dh-bar" id="rc-nitro" aria-hidden="true"><i></i></div>
+        </div>
+        <dl class="rh-stats">
+          <div><dt>Time</dt><dd id="rc-time">0:00.0</dd></div>
+          <div><dt>Best lap</dt><dd id="rc-best">—</dd></div>
+          <div><dt>Speed</dt><dd id="rc-speed">0 km/h</dd></div>
+        </dl>
+        <ol class="rc-board" id="rc-board" aria-label="Standings"></ol>
+        <p class="rh-keys"><span id="rc-keys"></span> · Cam: <span id="rc-cam">Chase</span></p>
+        <p class="rh-toast" id="rc-toast" hidden></p>
+      </div>
       <div id="gloc" class="gloc" aria-hidden="true"></div>
       <div id="ride-exit" class="ride-exit" hidden><button type="button" class="btn btn-small btn-cream">Exit ride <kbd>Esc</kbd></button></div>
       <aside id="panel" class="panel" aria-live="polite" hidden></aside>
 
-      <div id="minimap" class="minimap" title="Map · click an icon to go there, M to zoom">
-        <canvas aria-label="Map of the fair"></canvas>
-        <button type="button" class="minimap-zoom" data-map-zoom aria-label="Zoom the map">⤢</button>
+      <div id="minimap" class="minimap" title="Open the park map (M)">
+        <canvas aria-hidden="true"></canvas>
+        <button type="button" class="minimap-open" aria-label="Open the park map" aria-haspopup="dialog" aria-controls="world-map">⤢</button>
+        <span class="minimap-key" aria-hidden="true">M</span>
+      </div>
+
+      <div id="world-map" class="world-map" role="dialog" aria-modal="true" aria-labelledby="wm-title" hidden>
+        <canvas aria-hidden="true"></canvas>
+        <div class="wm-pins"></div>
+        <div class="wm-you" aria-hidden="true"><canvas width="64" height="64"></canvas></div>
+        <header class="wm-head">
+          <p class="wm-kicker">Park map</p>
+          <h2 id="wm-title">The Funfair</h2>
+        </header>
+        <nav class="wm-legend" aria-label="Places to go"><ul></ul></nav>
+        <div class="wm-side">
+          <span class="wm-compass" aria-hidden="true">N</span>
+          <div class="wm-controls">
+            <button type="button" data-wm-zoom="1" aria-label="Zoom in" title="Zoom in (+)">+</button>
+            <button type="button" data-wm-zoom="-1" aria-label="Zoom out" title="Zoom out (−)">−</button>
+            <button type="button" data-wm-locate aria-label="Centre on me" title="Centre on me (C)">◎</button>
+          </div>
+        </div>
+        <div class="wm-scale" aria-hidden="true"><i></i><span>100 m</span></div>
+        <div class="wm-card" aria-live="polite" hidden></div>
+        <p class="wm-keys"><kbd>Drag</kbd> pan · <kbd>Scroll</kbd> zoom · Pick a place, pick again or <kbd>Enter</kbd> to fast travel · <kbd>M</kbd> close</p>
+        <button type="button" class="wm-close" aria-label="Close map" title="Close (M / Esc)">✕</button>
       </div>
 
       <p class="hud-help" id="hud-help"><kbd>WASD</kbd>/<kbd>↑↓←→</kbd> walk · <kbd>Shift</kbd> run · <kbd>Space</kbd> roll · <kbd>F</kbd> kick · <kbd>E</kbd> play · <kbd>H</kbd> wave · <kbd>R</kbd> reset · <kbd>M</kbd> map · <kbd>Esc</kbd> close</p>

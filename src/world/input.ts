@@ -8,6 +8,7 @@ export class Input {
   private keys = new Set<string>();
   private stick = { x: 0, y: 0, active: false };
   private handlers: Record<string, (() => void)[]> = {};
+  private _paused = false;
 
   constructor(private touchEls: { stick: HTMLElement; knob: HTMLElement; action: HTMLElement; lift: HTMLElement }) {
     window.addEventListener('keydown', this.onKeyDown);
@@ -32,6 +33,15 @@ export class Input {
     });
   }
 
+  /** While paused (e.g. the park map is open) the game ignores the keyboard. */
+  get paused() {
+    return this._paused;
+  }
+  set paused(v: boolean) {
+    this._paused = v;
+    if (v) this.keys.clear();
+  }
+
   on(evt: 'action' | 'roll' | 'kick' | 'reset' | 'honk' | 'escape' | 'camera' | 'any', fn: () => void) {
     (this.handlers[evt] ??= []).push(fn);
   }
@@ -41,6 +51,7 @@ export class Input {
   }
 
   private onKeyDown = (e: KeyboardEvent) => {
+    if (this._paused) return;
     const target = e.target as HTMLElement;
     // typing into a form field or using the time panel isn't playing the game
     if (target && (target.tagName === 'INPUT' || target.tagName === 'TEXTAREA' || target.closest?.('.time-panel, #clock'))) return;

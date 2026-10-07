@@ -11,6 +11,7 @@ import { detailNormalTexture, glowTexture, groundTexture, hdr, PALETTE, lawnPatc
 import { addWind } from './wind';
 import { FALCON_TRACK, nearTrack } from './rides';
 import { fogSun, installSunFog } from './fog';
+import { CIRCUIT, nearCircuit, WALL } from './attractions/speedway-track';
 
 export { mulberry };
 
@@ -286,6 +287,18 @@ export class Environment {
         reach[j] = Math.max(reach[j], r);
       }
     }
+    // …and behind the kart circuit, so no hillside rises through its far tyre wall
+    for (let k = 0; k < CIRCUIT.n; k += 4) {
+      const x = CIRCUIT.px[k];
+      const z = CIRCUIT.pz[k];
+      const r = Math.hypot(x, z) + WALL;
+      if (r < 150) continue;
+      const si = Math.round((((Math.atan2(z, x) / (Math.PI * 2)) % 1) + 1) % 1 * seg);
+      for (let d = -4; d <= 4; d++) {
+        const j = (((si + d) % seg) + seg) % seg;
+        reach[j] = Math.max(reach[j], r);
+      }
+    }
     radii.forEach((r, row) => {
       for (let i = 0; i <= seg; i++) {
         const a = (i / seg) * Math.PI * 2;
@@ -339,13 +352,14 @@ export class Environment {
     const color = new THREE.Color();
     let nl = 0;
     let np = 0;
-    // nothing may grow through a coaster, on the road out to the giant wheel, or where the Sky Flip swings low
+    // nothing may grow through a coaster, on the road out to the giant wheel, where the Sky Flip swings
+    // low, or on the kart circuit and its grandstand
     const underFlip = (x: number, z: number) => {
       const [lx, lz] = flipLocal(x, z);
       return Math.abs(lx) < 34 && lz > -3 && lz < 21;
     };
     for (let i = spots.length - 1; i >= 0; i--)
-      if (nearTrack(spots[i][0], spots[i][1], 5, 9) || (spots[i][1] < 0 && Math.abs(spots[i][0]) < WHEEL_ROAD.half + 5) || underFlip(spots[i][0], spots[i][1]))
+      if (nearTrack(spots[i][0], spots[i][1], 5, 9) || (spots[i][1] < 0 && Math.abs(spots[i][0]) < WHEEL_ROAD.half + 5) || underFlip(spots[i][0], spots[i][1]) || nearCircuit(spots[i][0], spots[i][1], WALL + 9))
         spots.splice(i, 1);
     spots.forEach(([x, z, sc], i) => {
       q.setFromAxisAngle(THREE.Object3D.DEFAULT_UP, rnd() * 6);

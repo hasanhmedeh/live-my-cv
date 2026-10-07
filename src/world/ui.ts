@@ -97,10 +97,6 @@ export class UI {
     this.rideExitEl.hidden = !show;
   }
 
-  highlightNav(zone: string | null) {
-    document.querySelectorAll<HTMLButtonElement>('[data-goto]').forEach((b) => b.classList.toggle('is-near', b.dataset.goto === zone));
-  }
-
   /** Hide driving-only chrome during rides. */
   cinematic(on: boolean) {
     document.body.classList.toggle('is-cinematic', on);

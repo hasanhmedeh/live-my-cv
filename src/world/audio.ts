@@ -6,6 +6,7 @@ export class Sfx {
   private noiseBuffer: AudioBuffer | null = null;
   private ride: { rumble: GainNode; rumbleF: BiquadFilterNode; wind: GainNode; windF: BiquadFilterNode; whine: OscillatorNode; whineG: GainNode } | null = null;
   private drone: { props: OscillatorNode[]; propsF: BiquadFilterNode; propsG: GainNode; wash: GainNode } | null = null;
+  private kart: { osc: OscillatorNode[]; filter: BiquadFilterNode; gain: GainNode; squeal: GainNode; squealF: BiquadFilterNode; rough: GainNode } | null = null;
   private lastThunk = 0;
   muted = false;
 
@@ -184,6 +185,62 @@ export class Sfx {
     d.propsF.frequency.setTargetAtTime(500 + spin * 700 + effort * 600, t, 0.1);
     d.propsG.gain.setTargetAtTime(spin * (0.035 + effort * 0.03), t, 0.1);
     d.wash.gain.setTargetAtTime(spin * (0.05 + effort * 0.12), t, 0.1);
+  }
+
+  /**
+   * A racing kart's two-stroke buzz. `rpm` 0..1 sets the pitch, `load` 0..1 how hard the engine
+   * works, `skid` 0..1 the tyre squeal and `rough` 0..1 the rumble of grass under the wheels.
+   * `vol` scales it all (karts heard from the side of the track are quieter).
+   */
+  setKart(rpm: number, load: number, skid: number, rough: number, vol = 1) {
+    if (!this.ctx || !this.master || !this.noiseBuffer) return;
+    const c = this.ctx;
+    if (!this.kart) {
+      if (vol <= 0) return;
+      const filter = c.createBiquadFilter();
+      filter.type = 'lowpass';
+      filter.frequency.value = 600;
+      filter.Q.value = 2;
+      const gain = c.createGain();
+      gain.gain.value = 0;
+      filter.connect(gain).connect(this.master);
+      // a sawtooth and a square an octave down: the raspy note of a small single-cylinder engine
+      const osc = (['sawtooth', 'square'] as const).map((type) => {
+        const o = c.createOscillator();
+        o.type = type;
+        o.frequency.value = 60;
+        o.connect(filter);
+        o.start();
+        return o;
+      });
+      const noise = (type: BiquadFilterType, f: number, q: number) => {
+        const src = c.createBufferSource();
+        src.buffer = this.noiseBuffer;
+        src.loop = true;
+        const filt = c.createBiquadFilter();
+        filt.type = type;
+        filt.frequency.value = f;
+        filt.Q.value = q;
+        const g = c.createGain();
+        g.gain.value = 0;
+        src.connect(filt).connect(g).connect(this.master!);
+        src.start();
+        return { g, filt };
+      };
+      const squeal = noise('bandpass', 2200, 8);
+      const rough = noise('lowpass', 160, 0.7);
+      this.kart = { osc, filter, gain, squeal: squeal.g, squealF: squeal.filt, rough: rough.g };
+    }
+    const t = c.currentTime;
+    const k = this.kart;
+    const f = 55 + rpm * 190;
+    k.osc[0].frequency.setTargetAtTime(f, t, 0.05);
+    k.osc[1].frequency.setTargetAtTime(f * 0.505, t, 0.05);
+    k.filter.frequency.setTargetAtTime(380 + rpm * 1300 + load * 600, t, 0.08);
+    k.gain.gain.setTargetAtTime(vol * (0.03 + load * 0.035 + rpm * 0.02), t, 0.08);
+    k.squeal.gain.setTargetAtTime(vol * skid * 0.08, t, 0.05);
+    k.squealF.frequency.setTargetAtTime(1900 + skid * 700, t, 0.1);
+    k.rough.gain.setTargetAtTime(vol * rough * 0.4, t, 0.08);
   }
 
   /** A soft footstep on the gravel paths (heavier when running). */

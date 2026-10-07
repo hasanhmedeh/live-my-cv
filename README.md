@@ -11,6 +11,7 @@ Walk around a low-poly funfair at dusk as a fully animated visitor:
 | 🥫 Crate Smash | 22 physics crates worth 10, 25 or 50 points; ram them for a high score |
 | 🔔 High Striker | Timing mini-game: swing the hammer and ring the bell |
 | 🎡 Giant Wheel | A full-size tribute to Ain Dubai, the tallest observation wheel on Earth: 250 m tall, 48 capsules, 192 cable spokes, four 126 m legs. Ride it from inside a capsule (time-lapse of the real 38-minute turn) |
+| 🏎️ Turbo Speedway | Kart racing: three laps against three rivals on a circuit outside the south-west fence, with cones, hay bales, tyre stacks, oil slicks and boost pads laid out fresh every race |
 | 🎟️ Ticket Booth | Park guide |
 
 Stack: **Vite + TypeScript + Three.js + cannon-es + postprocessing + N8AO**. The world is built procedurally and all sound is synthesized with WebAudio; the one model file is the visitor, "Casual Character" by [Quaternius](https://quaternius.com) (CC0, from [Poly Pizza](https://poly.pizza/m/kZ3DmIoGip)).
@@ -34,6 +35,16 @@ A tribute to Falcon's Flight, the record-breaking cliff coaster at Six Flags Qid
 - **The mountain** (`src/world/mountain.ts`) is generated from the track: a sandstone table mountain with strata, a sheer wall behind the drop, a ridge carrying the launch up the cliff, a narrow channel the drop falls down, the keyhole portal and the rock that buries the tunnel, and an earth embankment that brings the track down to the desert. Every other part of the track is guaranteed to clear the rock. The strata are painted in the shader from world height.
 - Same driving controls, cameras and HUD as Thunder Loop. Both coasters share one physics model (`stepRide`) with per-ride tuning (`FALCON_PHYS`). Its trees, fence posts and support columns keep clear of both tracks (`src/world/rides.ts`).
 - A coasting lap takes ~170 s, peaking at 250 km/h with −1.6 to 4.7 G and up to 2.1 G sideways. Trains have four cars and a single-row lead car, for 14 riders.
+
+## Turbo Speedway (kart racing)
+
+Walk down the path south-west of the entrance to the kart garage and press `E`. You start at the back of a four-kart grid; three red lights, then green.
+
+- **The circuit** (`src/world/attractions/speedway-track.ts`): a 472 m clockwise loop on the lawn outside the fence: a long main straight past the grandstand, a sweeping right-hander, a dip into the infield, an S and a long right-hander home. It's a Catmull-Rom spline through control points laid out in a frame facing the park, sampled every metre with its curvature. Red-and-white kerbs mark every corner, gravel traps sit on their outsides, and tyre walls line both sides 10 m from the centre line. Trees and the horizon hills keep clear of it.
+- **Obstacles** (laid out again for every race, never on the grid or the run to turn one): 🟧 cones (lane closures, slaloms and gates) that go flying when you hit them; hay bales and tyre stacks that stop you dead; oil slicks that spin you round; and ⚡ boost pads. Bales, tyre stacks and oil only go on the gentler stretches, never on a corner's apex.
+- **Driving** (`Speedway.step`): arcade physics. Engine and brakes act along the nose, steering yaw falls off with speed, and grip bleeds off sideways speed: less of it on grass, under the handbrake (`Space`, for drifting) or on oil. `W`/`S` drive and brake (and reverse), `A`/`D` steer, `Shift` fires the nitro (it refills slowly, and boost pads top it up), `R` puts you back on track, `C` cycles Chase / Driver / High cameras.
+- **The rivals** drive the same karts. They follow a speed profile worked out from the curvature (with braking zones), steer by pure pursuit, and pick a lane round the next block of obstacles (the wider gap, and one that also clears whatever comes next). They skip boost pads that would fire them into a bend, and they're rubber-banded a little toward you. While nobody's racing, all four karts lap the circuit as a ghost race you can watch from the park.
+- **HUD**: position, lap, nitro, race time, best lap, speed and live standings. Your best race, best lap and wins are kept in the browser.
 
 ## Graphics
 
@@ -59,7 +70,9 @@ npm run build      # type-check + production build into dist/
 npm run preview    # serve the production build
 ```
 
-Controls: `WASD`/arrows walk · `Shift` run · `Space` dodge-roll · `F` kick · `E`/`Enter` interact · `H` wave · `R` back to entrance · `Esc` exit a ride. Touch devices get a joystick + action button. Mouse wheel zooms.
+Controls: `WASD`/arrows walk · `Shift` run · `Space` dodge-roll · `F` kick · `E`/`Enter` interact · `H` wave · `R` back to entrance · `M` park map · `Esc` exit a ride. Touch devices get a joystick + action button. Mouse wheel zooms.
+
+Park map: click the minimap (or press `M`) to open a full-screen map. Drag to pan, scroll or pinch to zoom, pick a place on the map or in the legend, then pick it again (or press `Enter`) to fast travel there.
 
 ## Deploy to Vercel
 
@@ -85,6 +98,8 @@ vite.config.ts          site URL, sitemap and robots.txt
 src/main.ts             intro card, lazy-loads the 3D world
 src/data/fair.ts        rocket stages and striker tiers
 src/world/Game.ts       renderer, physics, loop, camera modes, interactions
+src/world/minimap.ts    corner minimap + the shared top-down painter of the fair
+src/world/world-map.ts  full-screen park map: pan, zoom, legend and fast travel
 src/world/player.ts     the visitor: walk/run/roll/kick/wave controls and physics on a crowd rig
 src/world/crowd/        the park's guests: people.ts (rig, outfits, animation), pets.ts (dogs, leashes),
                         crowd.ts (parties, queues, coaster boarding, benches, kids' play), nav.ts + obstacles.ts (walking)
@@ -93,7 +108,7 @@ public/models/guest-anims.glb  "Universal Animation Library" by Quaternius (CC0)
 public/models/dog-*.glb        Shiba Inu and Husky by Quaternius (CC0, via Poly Pizza)
 src/world/subdivide.ts  rounds off faceted models at load: welds, one Loop subdivision, smooth normals, blended skin weights
 src/world/environment.ts sky, lights, ground, trees, lamps, tents, balloons
-src/world/attractions/  coaster, rocket, crates, striker, ferris/carousel/booth/arch
+src/world/attractions/  coaster, rocket, crates, striker, ferris/carousel/booth/arch, speedway (+ speedway-track)
 ```
 
 In development, `?cam=x,y,z,lookX,lookY,lookZ` pins the camera (handy for screenshots) and `window.__game` is exposed for debugging; both are stripped from production builds.
