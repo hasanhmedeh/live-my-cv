@@ -21,7 +21,7 @@ export interface Quality {
 const PRESETS: Record<Tier, Omit<Quality, 'tier' | 'dpr'>> = {
   high: { ao: true, aoMode: 'Medium', smaa: 'HIGH', shadowSize: 2048, grass: 4, grassDistance: 90, extraLights: true, clouds: true },
   medium: { ao: true, aoMode: 'Performance', smaa: 'MEDIUM', shadowSize: 2048, grass: 2.2, grassDistance: 70, extraLights: true, clouds: true },
-  low: { ao: false, aoMode: 'Performance', smaa: 'LOW', shadowSize: 1024, grass: 0.9, grassDistance: 50, extraLights: false, clouds: false },
+  low: { ao: false, aoMode: 'Performance', smaa: 'LOW', shadowSize: 1024, grass: 0.9, grassDistance: 50, extraLights: false, clouds: true },
 };
 
 /** Pick a tier from the GPU, the device class and an optional `?quality=` override. */

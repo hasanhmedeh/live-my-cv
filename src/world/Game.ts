@@ -12,6 +12,8 @@ import { PALETTE } from './textures';
 import { UI } from './ui';
 import { Zones } from './zones';
 import { Minimap } from './minimap';
+import { Trackside } from './trackside';
+import { TimeControl } from './time-control';
 import { Post } from './post';
 import { AdaptiveResolution, detectQuality, type Quality } from './quality';
 import { wind } from './wind';
@@ -25,6 +27,9 @@ import { Crates } from './attractions/crates';
 import { Striker } from './attractions/striker';
 import { Arch, Booth, Carousel } from './attractions/landmarks';
 import { GiantWheel } from './attractions/giant-wheel';
+
+/** The clock slider / pause / local-time panel. Off for now: the park stays at 16:00. */
+const TIME_CONTROLS = false;
 
 type Mode = 'drive' | 'coaster' | 'rocket' | 'striker' | 'wheel';
 
@@ -71,8 +76,7 @@ export class Game {
   private post!: Post;
   private adaptive = new AdaptiveResolution();
   private focus = new THREE.Vector3();
-  private clockEl = document.getElementById('clock')!;
-  private clockText = '';
+  private timeControl: TimeControl | null = null;
 
   constructor(private container: HTMLElement) {}
 
@@ -131,6 +135,9 @@ export class Game {
       const keep: [number, number, number][] = [
         [0, 5, 14], [0, -8, 10], [0, -30, 9], [34, -14, 9], [42, -52, 9], [20, 12, 4], [-20, -40, 4], [-26, 3, 6],
       ];
+      // the giant hill's crest stands on its own lattice tower
+      const crest = FALCON_TRACK.pos[Trackside.hillCrest()];
+      keep.push([crest.x, crest.z, 14]);
       const keepOut = (x: number, z: number) => keep.some(([kx, kz, r]) => Math.hypot(x - kx, z - kz) < r) || nearTrack(x, z, 3.5, Infinity, 'stack');
       const f = FALCON_TRACK;
       const at = (zone: string, offset: [number, number, number]) => {
@@ -155,6 +162,7 @@ export class Game {
         colors: { rail: PALETTE.teal, spine: '#e6c08a', cars: ['#e6c08a', PALETTE.teal, '#e6c08a', PALETTE.teal] },
         cars: 4,
         leadRows: 1, // 2 + 4 + 4 + 4 = 14 riders, like the real Exa trains
+        tunnel: 'rock',
         trackside: [
           new THREE.Vector3(54, 6, 34), // station
           atS(110, [0, 8, 45]), // the LSM lift hill
@@ -168,9 +176,9 @@ export class Game {
             const p = f.pos[i];
             return new THREE.Vector3(p.x, Math.max(p.y + 14, ground(p.x, p.z) + 6), p.z);
           })(),
-          atS(2160, [0, 0, 95], 70), // beside the 163 m arch
-          atS(3200, [40, 6, -30]), // speed turns around the park boundary
-          atS(3650, [0, 6, 45]), // the hill over the main entrance
+          atS(2120, [95, 0, 0], 75), // beside the 163 m hill and its lattice tower
+          atS(2560, [-45, 22, 35]), // the overbanked turn above the park's corner
+          atS(3900, [0, 6, -32]), // speed turns along the park's edge
         ],
         ground,
         keepOut,
@@ -180,15 +188,16 @@ export class Game {
           brake: ['The edge. Look down. 😱', 'Final brake run'],
           tunnel: 'Into the tunnel… 🕳️',
           boost: 'LSM LAUNCH → 250 km/h 🦅',
-          trim: ['The 163 m arch — trims bite 😮‍💨', 'Speed turns around the park 🏁'],
+          trim: ['The 163 m hill — trims bite 😮‍💨', 'Down into the park! 🎢'],
           station: 'Welcome back to the fair!',
         },
         intro: (touch) =>
-          `<p class="eyebrow">Sky Falcon · tribute to Falcons Flight, Six Flags Qiddiya City</p><h2>The world's tallest, fastest, longest</h2><p>An LSM lift and a twisted drop, airtime hills and an overbanked turn, then a <strong>160 km/h launch</strong> up the cliff. Crawl to the edge… drop <strong>158 m at 90°</strong> into a tunnel, launch out of it to <strong>250 km/h</strong>, crest the <strong>163 m arch</strong> and race around the park back home: 4.25 km, no inversions.</p><p>${
+          `<p class="eyebrow">Sky Falcon · tribute to Falcons Flight, Six Flags Qiddiya City</p><h2>The world's tallest, fastest, longest</h2><p>An LSM lift and a twisted drop, airtime hills and an overbanked turn, then a <strong>160 km/h launch</strong> up the cliff. Crawl to the edge… drop <strong>158 m at 90°</strong> into a tunnel, launch out of it to <strong>250 km/h</strong>, crest the <strong>163 m hill</strong> beside the park and weave back to the station: 4.25 km, no inversions.</p><p>${
             touch ? 'Joystick <strong>up</strong> = power, <strong>down</strong> = brake, <kbd>E</kbd> = camera.' : '<kbd>W</kbd> power · <kbd>S</kbd> brake · <kbd>Shift</kbd> turbo · <kbd>C</kbd> camera.'
           } Or just hold on — the lift and launches do the work.</p>`,
       });
       this.updatables.push(this.falcon);
+      new Trackside(this.ctx, ground);
     });
     step(2, () => {
       this.wheel = new GiantWheel(this.ctx, (x, z) => this.mountain.sample(x, z));
@@ -315,6 +324,8 @@ export class Game {
       this.panelZone = null;
     };
     this.minimap = new Minimap(document.getElementById('minimap')!);
+    if (TIME_CONTROLS) this.timeControl = new TimeControl(this.env);
+    else document.getElementById('clock')?.remove();
     this.minimap.onGoto = (id) => this.teleport(id);
 
     this.stack.onFinish = () => this.endRide();
@@ -572,7 +583,7 @@ export class Game {
     else this.focus.copy(this.camera.position);
     this.env.update(t, this.focus);
     this.player.setNightGlow(this.env.night);
-    this.updateClock();
+    this.timeControl?.update();
 
     if (this.adaptive.update(dt)) {
       this.renderer.setPixelRatio(this.quality.dpr * this.adaptive.scale);
@@ -590,13 +601,6 @@ export class Game {
       { x: this.stack.trainPosition.x, z: this.stack.trainPosition.z, color: PALETTE.mustard },
       { x: this.falcon.trainPosition.x, z: this.falcon.trainPosition.z, color: PALETTE.teal },
     ]);
-  }
-
-  private updateClock() {
-    const h = this.env.hours;
-    const icon = h >= 5.5 && h < 7.5 ? '🌅' : h >= 7.5 && h < 17.5 ? '☀️' : h >= 17.5 && h < 19.5 ? '🌇' : '🌙';
-    const text = `${icon} ${this.env.clock}`;
-    if (text !== this.clockText) this.clockEl.textContent = this.clockText = text;
   }
 
   /** One shared set of coaster sounds: the ride you're on, otherwise the nearest ghost train. */
@@ -624,7 +628,10 @@ export class Game {
     if (!import.meta.env.DEV) return;
     (window as unknown as { __game: Game }).__game = this;
     const hour = new URLSearchParams(location.search).get('hour');
-    if (hour) this.env.setHour(Number(hour), this.time.t);
+    if (hour) {
+      this.env.timeMode = 'paused';
+      this.env.setHour(Number(hour));
+    }
     const cam = new URLSearchParams(location.search).get('cam');
     if (cam) {
       const n = cam.split(',').map(Number);

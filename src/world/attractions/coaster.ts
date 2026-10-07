@@ -29,6 +29,8 @@ export interface CoasterConfig {
   beats?: Partial<Record<Zone, string | string[]>>;
   /** Terrain height under the track (supports start here). */
   ground?: (x: number, z: number) => number;
+  /** Tunnel look: neon tube (default) or a dark rock bore with warm lamps. */
+  tunnel?: 'neon' | 'rock';
   /** Places where a support column may not land (attractions, other tracks). */
   keepOut?: (x: number, z: number) => boolean;
 }
@@ -324,16 +326,19 @@ export class Coaster implements Attraction {
     geo.setAttribute('uv', new THREE.Float32BufferAttribute(uv, 2));
     geo.setIndex(ind);
     geo.computeVertexNormals();
-    const tex = stripeTexture(PALETTE.violet, '#2a1f45', 8, true);
-    const shell = new THREE.Mesh(geo, std('#ffffff', { map: tex, side: THREE.DoubleSide, roughness: 0.8 }));
+    const rock = this.cfg.tunnel === 'rock';
+    const shellMat = rock
+      ? std('#5a4636', { side: THREE.DoubleSide, roughness: 0.95 })
+      : std('#ffffff', { map: stripeTexture(PALETTE.violet, '#2a1f45', 8, true), side: THREE.DoubleSide, roughness: 0.8 });
+    const shell = new THREE.Mesh(geo, shellMat);
     shell.castShadow = shell.receiveShadow = true;
     this.ctx.scene.add(shell);
 
     // glowing rings every few metres
     const ringGeo = new THREE.TorusGeometry(R - 0.12, 0.05, 6, 32, Math.PI + 0.4);
-    const ringMat = new THREE.MeshBasicMaterial({ color: hdr('#ff7ad9', 5) });
+    const ringMat = new THREE.MeshBasicMaterial({ color: rock ? hdr('#ffb46b', 2.2) : hdr('#ff7ad9', 5) });
     const back = new THREE.Vector3();
-    for (let k = 0; k < idx.length; k += 8) {
+    for (let k = 0; k < idx.length; k += rock ? 24 : 8) {
       const i = idx[k];
       this.railCenter(i, c);
       const ring = new THREE.Mesh(ringGeo, ringMat);

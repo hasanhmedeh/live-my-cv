@@ -41,6 +41,8 @@ function makeNoise(seed: number) {
  */
 export class Mountain {
   private heights: Float32Array;
+  /** Where the track enters the tunnel, and the direction of the drop (for the portal facade). */
+  portal!: { index: number; along: THREE.Vector2 };
 
   constructor(ctx: Ctx) {
     const d = FALCON_TRACK;
@@ -64,10 +66,32 @@ export class Mountain {
       climb.push({ x: d.pos[i].x, z: d.pos[i].z, h: r - 1.3 });
     }
     const mesaC = plateau.reduce((a, b) => a.add(b), new THREE.Vector2()).divideScalar(plateau.length);
+    // the drop pulls out ~35 m up, inside a tunnel: bury the tunnel in a rocky buttress at the
+    // foot of the cliff, then carry the track down to the desert floor on an earth embankment
+    const tunnelStart = d.zone.indexOf('tunnel');
+    const tunnelEnd = d.zone.lastIndexOf('tunnel');
+    let fillEnd = tunnelEnd;
+    // …down to the bottom of the run-out (the track climbs away on its own supports after that)
+    while (fillEnd < n - 1 && rail(fillEnd + 1) > 1.2 && rail(fillEnd + 1) <= rail(fillEnd) + 0.02) fillEnd++;
+    const mound: { x: number; z: number; h: number }[] = [];
+    for (let i = tunnelStart; i <= tunnelEnd; i += 4) mound.push({ x: d.pos[i].x, z: d.pos[i].z, h: rail(i) + 6.5 });
+    const fill: { x: number; z: number; h: number }[] = [];
+    for (let i = tunnelEnd + 1; i <= fillEnd; i += 4) fill.push({ x: d.pos[i].x, z: d.pos[i].z, h: rail(i) - 1.3 });
+    const ridges = climb.concat(fill);
+    // the drop: the cliff juts forward to the tunnel portal, and the track falls down a narrow
+    // channel cut into that rock, straight into the portal at the foot of the channel
+    const along = (x: number, z: number) => (x - edgeP.x) * dropDir.x + (z - edgeP.z) * dropDir.y;
+    const across = (x: number, z: number) => (x - edgeP.x) * -dropDir.y + (z - edgeP.z) * dropDir.x;
+    const portal = d.pos[tunnelStart];
+    const portalA = along(portal.x, portal.z);
+    const channel: { x: number; z: number; h: number }[] = [];
+    for (let i = edgeIdx + 1; i <= tunnelStart; i += 2) channel.push({ x: d.pos[i].x, z: d.pos[i].z, h: rail(i) - 2.2 });
+    this.portal = { index: tunnelStart, along: dropDir.clone() };
     // everything after the edge (and before the climb) must clear the rock
     const clear: { x: number; z: number; h: number }[] = [];
     for (let i = 0; i < n; i += 3) {
       if (i >= firstLift && i <= edgeIdx) continue;
+      if (i >= edgeIdx && i <= fillEnd) continue; // the drop, tunnel and embankment shape their own rock
       const p = d.pos[i];
       if (p.x < X0 - 10 || p.x > X1 + 10 || p.z < Z0 - 10 || p.z > Z1 + 10) continue;
       clear.push({ x: p.x, z: p.z, h: rail(i) - (i < lastMountain && i > edgeIdx ? 2.5 : 3) });
@@ -84,14 +108,16 @@ export class Mountain {
         // ---- mesa: flat top, steep flanks, a sheer wall along the edge plane ----
         const wob = (noise(x * 0.012, z * 0.012) - 0.5) * 70;
         const dc = Math.hypot(x - mesaC.x, z - mesaC.y) + wob;
-        const planeDist = (x - edgeP.x) * dropDir.x + (z - edgeP.z) * dropDir.y + (noise2(x * 0.03, z * 0.03) - 0.5) * 10;
-        let mesa = top - 1.3 - 2.4 * Math.max(0, dc - 150);
+        // around the drop the cliff face stands forward, level with the tunnel portal
+        const jut = portalA * (1 - THREE.MathUtils.smoothstep(Math.abs(across(x, z)), 45, 80));
+        const planeDist = along(x, z) - jut + (noise2(x * 0.03, z * 0.03) - 0.5) * (jut > 1 ? 3 : 10);
+        let mesa = top - 1.3 - 2.4 * Math.max(0, dc - jut - 150);
         mesa = Math.min(mesa, top - 1.3 - 4.5 * Math.max(0, planeDist));
         // talus apron at the foot of the walls
         const apron = top * 0.22 * (1 - THREE.MathUtils.smoothstep(Math.max(dc - 150, planeDist), 0, 90));
         let h = Math.max(base, mesa, apron);
-        // ---- the spur under the launch climb ----
-        for (const c of climb) {
+        // ---- the spur under the launch climb, and the embankment after the tunnel ----
+        for (const c of ridges) {
           const dd = Math.hypot(x - c.x, z - c.z);
           // a knife-edge ridge whose flanks wobble, so it reads as rock rather than a ramp
           const flank = 1.7 + (noise(c.x * 0.05 + x * 0.02, c.z * 0.05 + z * 0.02) - 0.5) * 1.2;
@@ -103,8 +129,26 @@ export class Mountain {
           h -= ridge * Math.min(14, h * 0.1);
           h += (noise(x * 0.15, z * 0.15) - 0.5) * 1.6;
         }
+        // ---- the buttress around the tunnel (after erosion, so its roof stays whole) ----
+        const a = along(x, z);
+        if (a > portalA - 0.5)
+          for (const c of mound) {
+            const dd = Math.hypot(x - c.x, z - c.z);
+            if (dd < 60) h = Math.max(h, c.h - Math.max(0, dd - 7) * 1.3);
+          }
+        // ---- the drop channel: a narrow, steep-walled slot from the rim down to the portal ----
+        if (a < portalA + 0.5)
+          for (const c of channel) {
+            const dd = Math.hypot(x - c.x, z - c.z);
+            if (dd < 40) h = Math.min(h, c.h + Math.max(0, dd - 3.4) * 5);
+          }
+        // ---- a solid track bed along the embankment ----
+        for (const c of fill) {
+          const dd = Math.hypot(x - c.x, z - c.z);
+          if (dd < 8) h = Math.max(h, c.h - Math.max(0, dd - 3) * 1.1);
+        }
         // ---- the ride always wins: climb/plateau sit in a shallow cutting, the rest clears ----
-        for (const c of climb) {
+        for (const c of ridges) {
           const dd = Math.hypot(x - c.x, z - c.z);
           if (dd < 30) h = Math.min(h, c.h + Math.max(0, dd - 2.6) * 1.6);
         }
@@ -179,6 +223,7 @@ export class Mountain {
     const mesh = new THREE.Mesh(geo, mat);
     mesh.receiveShadow = true;
     ctx.scene.add(mesh);
+    this.buildPortal(ctx);
 
     // giant sign on the plateau, beside the edge, facing the park
     // on the plateau, set back from the rim, somewhere no track passes within 55 m
@@ -218,6 +263,89 @@ export class Mountain {
     const mast = new THREE.Mesh(new THREE.CylinderGeometry(0.3, 0.5, 16), new THREE.MeshStandardMaterial({ color: '#3a2f4a' }));
     mast.position.set(edgeP.x + 18, top + 8, edgeP.z - 12);
     ctx.scene.add(beacon, mast);
+  }
+
+  /**
+   * The tunnel portal at the foot of the drop channel, after the real ride's: a sandstone
+   * facade with a keyhole-shaped opening, framed by a bronze arch and a sunburst of rods.
+   * The opening is sized to the tunnel bore where the steeply diving track crosses the
+   * (vertical) facade: everything is in metres relative to the riders' heartline.
+   */
+  private buildPortal(ctx: Ctx) {
+    const d = FALCON_TRACK;
+    const P = d.pos[this.portal.index];
+    const f = new THREE.Vector3(this.portal.along.x, 0, this.portal.along.y).normalize();
+    const zAxis = f.clone().negate(); // the facade faces back up the drop
+    const yAxis = new THREE.Vector3(0, 1, 0);
+    const xAxis = new THREE.Vector3().crossVectors(yAxis, zAxis);
+    const g = new THREE.Group();
+    g.matrixAutoUpdate = false;
+    g.matrix.makeBasis(xAxis, yAxis, zAxis).setPosition(P);
+
+    // keyhole: an arch of radius R over a narrower slot reaching below the rails
+    const R = 3.1;
+    const cy = 2.2;
+    const slot = 1.9;
+    const bottom = -3.6;
+    const joinY = cy - Math.sqrt(R * R - slot * slot);
+    const a0 = Math.atan2(joinY - cy, slot);
+    const hole = new THREE.Path();
+    hole.moveTo(-slot, bottom);
+    hole.lineTo(slot, bottom);
+    hole.lineTo(slot, joinY);
+    hole.absarc(0, cy, R, a0, Math.PI - a0, false);
+    hole.lineTo(-slot, bottom);
+    const face = new THREE.Shape();
+    face.moveTo(-13, -18);
+    face.lineTo(13, -18);
+    face.lineTo(13, 15);
+    face.lineTo(-13, 15);
+    face.closePath();
+    face.holes.push(hole);
+    const depth = 2.4;
+    const facadeGeo = new THREE.ExtrudeGeometry(face, { depth, bevelEnabled: true, bevelThickness: 0.25, bevelSize: 0.25, bevelSegments: 2, curveSegments: 40 });
+    facadeGeo.translate(0, 0, -depth);
+    const facade = new THREE.Mesh(facadeGeo, new THREE.MeshStandardMaterial({ color: '#c9a37a', roughness: 0.92 }));
+    g.add(facade);
+
+    // bronze frame: the arch and the slot's edges
+    const bronze = new THREE.MeshStandardMaterial({ color: '#7a5f42', metalness: 0.65, roughness: 0.45 });
+    const arch = new THREE.Mesh(new THREE.TorusGeometry(R + 0.2, 0.2, 8, 48, Math.PI - 2 * a0), bronze);
+    arch.rotation.z = a0;
+    arch.position.set(0, cy, 0.3);
+    g.add(arch);
+    for (const sx of [-1, 1]) {
+      const edge = new THREE.Mesh(new THREE.BoxGeometry(0.4, joinY - bottom, 0.4), bronze);
+      edge.position.set(sx * (slot + 0.2), (joinY + bottom) / 2, 0.3);
+      g.add(edge);
+    }
+    // sunburst: rods radiating from the arch, alternating long and short, with an outer ring
+    const rodGeo = new THREE.CylinderGeometry(0.07, 0.07, 1, 6);
+    const rods = new THREE.InstancedMesh(rodGeo, bronze, 32);
+    const m = new THREE.Matrix4();
+    const q = new THREE.Quaternion();
+    let k = 0;
+    for (let ang = a0 - 0.05; ang <= Math.PI - a0 + 0.06 && k < 32; ang += (Math.PI - 2 * a0 + 0.1) / 21) {
+      const len = k % 2 ? 1.8 : 2.9;
+      const r0 = R + 0.5;
+      const mid = r0 + len / 2;
+      q.setFromAxisAngle(new THREE.Vector3(0, 0, 1), ang - Math.PI / 2);
+      m.compose(new THREE.Vector3(Math.cos(ang) * mid, cy + Math.sin(ang) * mid, 0.35), q, new THREE.Vector3(1, len, 1));
+      rods.setMatrixAt(k++, m);
+    }
+    rods.count = k;
+    g.add(rods);
+    const outer = new THREE.Mesh(new THREE.TorusGeometry(R + 3.5, 0.09, 6, 64, Math.PI - 2 * a0 + 0.1), bronze);
+    outer.rotation.z = a0 - 0.05;
+    outer.position.set(0, cy, 0.35);
+    g.add(outer);
+
+    g.traverse((o) => {
+      o.castShadow = true;
+      o.receiveShadow = true;
+    });
+    g.updateMatrixWorld(true);
+    ctx.scene.add(g);
   }
 
   /** Terrain height at (x, z); 0 outside the mountain window. */

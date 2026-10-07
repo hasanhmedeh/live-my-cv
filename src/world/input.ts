@@ -28,7 +28,8 @@ export class Input {
 
   private onKeyDown = (e: KeyboardEvent) => {
     const target = e.target as HTMLElement;
-    if (target && (target.tagName === 'INPUT' || target.tagName === 'TEXTAREA')) return;
+    // typing into a form field or using the time panel isn't playing the game
+    if (target && (target.tagName === 'INPUT' || target.tagName === 'TEXTAREA' || target.closest?.('.time-panel, #clock'))) return;
     const driving = ['KeyW', 'KeyA', 'KeyS', 'KeyD', 'KeyZ', 'KeyQ', 'ArrowUp', 'ArrowDown', 'ArrowLeft', 'ArrowRight', 'Space'];
     if (driving.includes(e.code)) e.preventDefault();
     if (e.repeat) {

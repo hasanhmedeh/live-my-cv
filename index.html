@@ -73,8 +73,19 @@
         <button type="button" data-goto="booth" title="Ticket booth">🎟️<span>Tickets</span></button>
       </nav>
       <div class="hud-tools">
-        <span id="clock" class="hud-pill hud-clock" title="Park time · a full day every 10 minutes">🌅 17:00</span>
+        <button type="button" id="clock" class="hud-pill hud-clock" aria-haspopup="true" aria-expanded="false" aria-controls="time-panel" title="Park time">🌅 17:00</button>
         <button type="button" id="sound-toggle" class="hud-icon" aria-pressed="true" title="Sound">🔊</button>
+      </div>
+
+      <div id="time-panel" class="time-panel" role="dialog" aria-label="Park time" hidden>
+        <p class="time-title">Park time</p>
+        <p class="time-readout" id="time-readout">17:00</p>
+        <input id="time-slider" class="time-slider" type="range" min="0" max="1439" step="1" value="1020" aria-label="Time of day" />
+        <div class="time-scale" aria-hidden="true"><span>00:00</span><span>06:00</span><span>12:00</span><span>18:00</span><span>24:00</span></div>
+        <div class="time-actions">
+          <button type="button" id="time-play" class="time-btn" aria-pressed="true">⏸ Pause</button>
+          <button type="button" id="time-local" class="time-btn" aria-pressed="false">🕒 My local time</button>
+        </div>
       </div>
 
       <div id="prompt" class="prompt" role="status" aria-live="polite" hidden></div>

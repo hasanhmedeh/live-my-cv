@@ -18,15 +18,18 @@ const WORLD = 260;
 const FOG_DENSITY = 0.0026;
 /** A full 24-hour day lasts this many real seconds (10 minutes). */
 export const DAY_SECONDS = 600;
-/** The park opens in the late afternoon, so the first thing you see is golden hour → sunset. */
-const START_HOUR = 17;
+/** For now the park is held at a sunny 4 pm (see TIME_CONTROLS in Game.ts). */
+export const START_HOUR = 16;
+
+/** How the park clock moves: the 10-minute day cycle, frozen at a chosen hour, or the visitor's own local time. */
+export type TimeMode = 'cycle' | 'paused' | 'local';
 
 const col = (c: string) => new THREE.Color(c);
 // palette keyframes: [night, sunrise/sunset glow, full day]
 const HEMI_SKY = [col('#2c3866'), col('#9a8ee0'), col('#c9cfd6')];
 const HEMI_GROUND = [col('#18131f'), col('#4a3b30'), col('#5e5240')];
-const FOG = [col('#0d1426'), col('#584a70'), col('#a7bcd6')];
-const FOG_SUN = [col('#1c2850'), col('#f0a06a'), col('#fff2d6')];
+const FOG = [col('#0d1426'), col('#584a70'), col('#7f9fc2')];
+const FOG_SUN = [col('#1c2850'), col('#f0a06a'), col('#c9c3b4')];
 const SUN_WARM = col('#ffbe86');
 const SUN_NOON = col('#fff3e2');
 const MOON = col('#9eb6ff');
@@ -51,10 +54,12 @@ export class Environment {
   private bulbs: THREE.InstancedMesh[] = [];
   /** In-game clock, 0–24. */
   hours = START_HOUR;
+  timeMode: TimeMode = 'paused';
+  private lastT: number | null = null;
+  private bakedHours = -99;
   /** 0 in daylight, 1 in full night. */
   night = 0;
   private space = 0;
-  private hourOffset = 0;
   private haze = 1;
   private sunDir = new THREE.Vector3();
   private moonDir = new THREE.Vector3();
@@ -68,7 +73,6 @@ export class Environment {
   private cubeRT = new THREE.WebGLCubeRenderTarget(128, { type: THREE.HalfFloatType });
   private cubeCam: THREE.CubeCamera;
   private envRT: THREE.WebGLRenderTarget | null = null;
-  private lastBake = -1e9;
   private tmp = new THREE.Color();
 
   constructor(private ctx: Ctx, q: Quality) {
@@ -81,11 +85,13 @@ export class Environment {
     // high turbidity + strong Rayleigh + a sun just above the horizon = deep orange/pink sunset
     u.turbidity.value = 9;
     u.rayleigh.value = 3.2;
-    u.mieCoefficient.value = 0.004;
-    u.mieDirectionalG.value = 0.82;
-    u.cloudCoverage.value = q.clouds ? 0.32 : 0;
-    u.cloudDensity.value = 0.55;
+    u.mieCoefficient.value = 0.0016;
+    u.mieDirectionalG.value = 0.72;
+    u.cloudCoverage.value = q.clouds ? 0.3 : 0;
+    u.cloudDensity.value = 0.5;
     u.cloudElevation.value = 0.55;
+    u.cloudScale.value = 0.00016;
+    u.cloudSpeed.value = 0.00007; // a gentle breeze: clouds visibly drift across the sky
     this.sky.material.onBeforeCompile = (shader) => {
       Object.assign(shader.uniforms, this.skyUniforms);
       shader.fragmentShader = shader.fragmentShader
@@ -96,7 +102,8 @@ export class Environment {
           vec3 skyCol = texColor * uSkyExposure;
           // the sun disc is brighter than half-float buffers can hold: clamp it (and scrub NaNs)
           // so the bloom blur can never smear Inf/NaN across the screen
-          skyCol = any( isnan( skyCol ) ) ? vec3( 0.0 ) : clamp( skyCol, 0.0, 5.0 );
+          // only the sun disc itself may go past the bloom threshold: a small glow, no glare
+          skyCol = any( isnan( skyCol ) ) ? vec3( 0.0 ) : clamp( skyCol, 0.0, mix( 0.9, 3.0, sundisc ) );
           // night: a deep blue dome, a touch lighter toward the zenith
           vec3 nightCol = mix( vec3( 0.006, 0.008, 0.02 ), vec3( 0.016, 0.026, 0.065 ), smoothstep( -0.1, 0.6, direction.y ) );
           skyCol = mix( skyCol, nightCol, uNight );
@@ -520,10 +527,9 @@ export class Environment {
     this.sun.target.position.copy(target);
   }
 
-  /** Jump the clock to a given hour (debug / future time controls). */
-  setHour(hour: number, t: number) {
-    this.hourOffset = hour - START_HOUR - (t / DAY_SECONDS) * 24;
-    this.lastBake = -1e9;
+  /** Jump the clock to a given hour (0–24). */
+  setHour(hour: number) {
+    this.hours = ((hour % 24) + 24) % 24;
   }
 
   /** Clock as "HH:MM". */
@@ -540,7 +546,13 @@ export class Environment {
   private applyTime(t: number) {
     const smooth = THREE.MathUtils.smoothstep;
     const lerp = THREE.MathUtils.lerp;
-    this.hours = (((START_HOUR + this.hourOffset + (t / DAY_SECONDS) * 24) % 24) + 24) % 24;
+    const dt = this.lastT === null ? 0 : Math.max(0, t - this.lastT);
+    this.lastT = t;
+    if (this.timeMode === 'cycle') this.setHour(this.hours + (dt / DAY_SECONDS) * 24);
+    else if (this.timeMode === 'local') {
+      const now = new Date();
+      this.hours = now.getHours() + now.getMinutes() / 60 + now.getSeconds() / 3600;
+    }
     const a = ((this.hours - 6) / 24) * Math.PI * 2;
     const sun = this.sunDir.set(Math.cos(a), Math.sin(a) * 0.9, -0.22).normalize();
     const moon = this.moonDir.copy(sun).negate();
@@ -552,9 +564,10 @@ export class Environment {
     // sky
     const u = this.sky.material.uniforms;
     u.sunPosition.value.copy(sun);
-    u.turbidity.value = lerp(2.4, 9, glow);
-    u.rayleigh.value = lerp(1.1, 3.2, glow);
-    this.skyUniforms.uSkyExposure.value = lerp(0.34, 0.8, glow);
+    // clear, deep-blue daytime sky; hazy and red only around sunrise / sunset
+    u.turbidity.value = lerp(1.8, 9, glow);
+    u.rayleigh.value = lerp(1.7, 3.2, glow);
+    this.skyUniforms.uSkyExposure.value = lerp(0.28, 0.8, glow);
     this.skyUniforms.uNight.value = this.night;
     this.skyUniforms.uSpace.value = space;
     (this.stars.material as THREE.PointsMaterial).opacity = Math.max(this.night * 0.85, smooth(space, 0.15, 0.8));
@@ -589,7 +602,7 @@ export class Environment {
     tri(fog.color, FOG, day, glow);
     tri(fogSun.uFogSunColor.value, FOG_SUN, day, glow);
     fogSun.uFogSunDir.value.copy(sun.y > -0.05 ? sun : moon);
-    fog.density = FOG_DENSITY * lerp(1, 0.5, day) * this.haze * (1 - space);
+    fog.density = FOG_DENSITY * lerp(1, 0.3, day) * this.haze * (1 - space);
 
     // the park's own lights: dimmer by day, full glow at night
     const lights = 1 - 0.6 * day;
@@ -599,10 +612,11 @@ export class Environment {
     this.fireflies.visible = this.night > 0.02;
   }
 
-  /** Re-renders the sky into the reflection map (every 1.5 s of game time). */
-  private bakeEnvironment(t: number) {
-    if (Math.abs(t - this.lastBake) < 1.5) return;
-    this.lastBake = t;
+  /** Re-renders the sky into the reflection map whenever the clock has moved ~6 game minutes. */
+  private bakeEnvironment() {
+    const d = Math.abs(this.hours - this.bakedHours) % 24; // circular: 23:59 is next to 00:00
+    if (Math.min(d, 24 - d) < 0.1) return;
+    this.bakedHours = this.hours;
     this.cubeCam.update(this.ctx.renderer, this.envScene);
     this.envRT = this.pmrem.fromCubemap(this.cubeRT.texture, this.envRT);
     this.ctx.scene.environment = this.envRT.texture;
@@ -611,7 +625,7 @@ export class Environment {
   update(t: number, focus: THREE.Vector3) {
     this.sky.material.uniforms.time.value = t;
     this.applyTime(t);
-    this.bakeEnvironment(t);
+    this.bakeEnvironment();
     this.grass.update(focus);    this.grass.update(focus);
 
     for (let i = 0; i < this.balloons.length; i++) {
@@ -639,7 +653,7 @@ export class Environment {
 }
 
 /** A lumpy, softly shaded broadleaf crown made of a few merged blobs. */
-function broadleafGeometry() {
+export function broadleafGeometry() {
   const rnd = mulberry(21);
   const center = new THREE.Vector3(0, 3.7, 0);
   const blobs: [number, number, number, number][] = [
@@ -694,7 +708,7 @@ function broadleafGeometry() {
   return g;
 }
 
-function pineGeometry() {
+export function pineGeometry() {
   const layers: [number, number, number][] = [
     [1.9, 2.4, 2.5],
     [1.45, 2.1, 3.8],

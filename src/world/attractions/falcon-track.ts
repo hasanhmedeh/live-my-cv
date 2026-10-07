@@ -2,13 +2,17 @@
 // opened 31 Dec 2025), laid out from the published ride sequence and statistics:
 //   4,250 m long · 250 km/h · 158 m drop at 90° · 163 m arch hill · ~195 m elevation change
 //   0 inversions · LSM lift hill + two LSM launches · 6 trains × 4 cars, 14 riders
-// Sequence: station → right turn → 39 km/h LSM lift → 55 m twisted drop → airtime hills, a
-// wave turn and an extreme overbanked turn → 160 km/h LSM launch up the cliff → slow clifftop
-// section with an overbanked turn → brakes at the edge → 90° drop into a tunnel → LSM launch
-// downhill to 250 km/h → 163 m arch with heavy trims → speed turns around the park boundary,
-// over the main entrance → final brake run → right turn into the station.
-// Our version: 4,247 m, 251 km/h, 157.9 m drop at 90°, arch crest ~163 m, 0 inversions.
-// The exact plan is not public, so turn radii, hill shapes and the route are fitted to the park.
+// Sequence (checked against a front-row POV of the real ride): station → right turn → 39 km/h
+// LSM lift right outside the station → 55 m twisted drop → airtime hills, a wave turn and an
+// extreme overbanked turn around the base of the giant hill → out across the desert → 160 km/h
+// LSM launch up the cliff face → slow, twisting clifftop section → brakes at the edge → 90°
+// drop down a channel in the cliff into a keyhole portal → tunnel → LSM launch to 250 km/h
+// straight back at the park → the 163 m hill (on a lattice tower, trims up and over) right
+// beside the park → back up into a high overbanked turn → dive, wave turn, airtime → banked
+// turnaround that dives under the overbanked turn → speed turns along the park's edge →
+// final brake run → right turn into the station.
+// Our version: 4,247 m, 253 km/h, 157.9 m drop at 90°, hill crest ~163 m, 0 inversions, ~3:10.
+// The exact plan is not public, so turn radii and hill shapes are fitted to the park.
 import * as THREE from 'three';
 import { PHYS, type Element, type Phys, type Zone } from './track.ts';
 
@@ -64,39 +68,52 @@ export const FALCON_ELEMENTS: Element[] = [
   { t: 'straight', len: 15, zone: 'lift' },
   // brakes at the very edge: the train creeps over the lip…
   { t: 'straight', len: 25, zone: 'brake' },
-  // …and falls 158 m at 90°, pulling out inside a tunnel at the foot of the cliff
+  // …and falls 158 m at 90° down a channel cut into the cliff face, plunging into the
+  // keyhole portal partway through the pull-out (like the real one)
   { t: 'pitch', angle: -90, radius: 20 },
   { t: 'straight', len: 58 },
-  { t: 'pitch', angle: 90, radius: 80, zone: 'tunnel' },
+  { t: 'pitch', angle: 35, radius: 80 },
+  { t: 'pitch', angle: 55, radius: 80, zone: 'tunnel' },
   { t: 'straight', len: 40, zone: 'tunnel' },
-  // out of the tunnel, the third LSM fires downhill: 250 km/h
+  // out of the tunnel, the LSM fires downhill to 250 km/h, aimed straight at the giant hill
   { t: 'pitch', angle: -8, radius: 100, zone: 'boost' },
-  { t: 'straight', len: 110, zone: 'boost' },
-  { t: 'pitch', angle: 4.34, radius: 100 },
-  { t: 'turn', angle: -90, radius: 140, bank: 74 },
-  { t: 'pitch', angle: 3.66, radius: 100 },
-  { t: 'straight', len: 20 },
-  // the 163 m arch, with heavy trim brakes on the way up
+  { t: 'straight', len: 17, zone: 'boost' },
+  // a gentle, banked jog east (still diving) keeps the run clear of the giant wheel
+  { t: 'turn', angle: 22, radius: 250, bank: 40, zone: 'boost' },
+  { t: 'turn', angle: -22, radius: 250, bank: 40, zone: 'boost' },
+  { t: 'pitch', angle: 8, radius: 100 },
+  // the 163 m hill, right beside the park, with heavy trims on the way up and down
   { t: 'pitch', angle: 70, radius: 140 },
   { t: 'straight', len: 24, zone: 'trim' },
   { t: 'pitch', angle: -140, radius: 70 },
   { t: 'straight', len: 24 },
-  { t: 'pitch', angle: 70, radius: 140 },
-  { t: 'straight', len: 60, zone: 'trim' },
-  // speed turns around the park boundary, a hill over the main (south) entrance
-  { t: 'turn', angle: 135, radius: 130, bank: 45 },
-  { t: 'straight', len: 504 },
-  { t: 'turn', angle: 45, radius: 130, bank: 40 },
-  { t: 'straight', len: 76 },
-  { t: 'pitch', angle: 18, radius: 120 },
-  { t: 'pitch', angle: -36, radius: 100 },
-  { t: 'pitch', angle: 18, radius: 120 },
-  { t: 'straight', len: 140 },
-  { t: 'turn', angle: 90, radius: 80, bank: 58 },
-  { t: 'straight', len: 25 },
-  { t: 'turn', angle: 90, radius: 60, bank: 62 },
+  { t: 'pitch', angle: 70, radius: 140, zone: 'trim' },
+  // straight back up into a high, overbanked turn above the park's corner…
+  { t: 'pitch', angle: 40, radius: 60 },
+  { t: 'straight', len: 12 },
+  { t: 'pitch', angle: -40, radius: 60 },
+  { t: 'turn', angle: 150, radius: 70, bank: 80 },
+  // …a long dive east, a wave turn, airtime hills…
+  { t: 'pitch', angle: -16, radius: 90 },
+  { t: 'straight', len: 105 },
+  { t: 'pitch', angle: 16, radius: 90 },
+  { t: 'straight', len: 30 },
+  { t: 'turn', angle: -60, radius: 90, bank: -25 },
+  { t: 'straight', len: 40 },
+  { t: 'pitch', angle: 14, radius: 90 },
+  { t: 'pitch', angle: -28, radius: 70 },
+  { t: 'pitch', angle: 14, radius: 90 },
+  { t: 'straight', len: 211.5 },
+  // …and a banked turnaround that dives back under the overbanked turn, home
+  { t: 'turn', angle: -180, radius: 89, bank: 70 },
+  { t: 'straight', len: 120 },
+  // speed turns along the park's edge
+  { t: 'turn', angle: 15, radius: 200, bank: 30 },
+  { t: 'turn', angle: -15, radius: 200, bank: 30 },
+  { t: 'turn', angle: -15, radius: 200, bank: 30 },
+  { t: 'turn', angle: 15, radius: 200, bank: 30 },
+  { t: 'straight', len: 268.5 },
   // final brake run, then a right turn into the station
-  { t: 'straight', len: 55 },
   { t: 'straight', len: 60, zone: 'brake' },
   { t: 'turn', angle: -90, radius: 20, bank: 10, zone: 'brake' },
 ];
