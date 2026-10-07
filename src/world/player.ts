@@ -49,6 +49,7 @@ export class Player {
   private lastImpact = 0;
   private vel = new THREE.Vector2();
   private lean = new THREE.Group();
+  private mats: THREE.MeshStandardMaterial[] = [];
 
   constructor(private ctx: Ctx, gltf: GLTF) {
     const model = gltf.scene;
@@ -70,6 +71,7 @@ export class Player {
         mat.roughness = 0.72;
         // the jeans ship almost black; give them a denim blue
         if (mat.name === 'LightBlue') mat.color.setRGB(0.05, 0.09, 0.2);
+        if (!this.mats.includes(mat)) this.mats.push(mat);
       }
     });
 
@@ -133,6 +135,11 @@ export class Player {
       }
     });
     this.reset(LAYOUT.spawn.x, LAYOUT.spawn.z, LAYOUT.spawn.heading);
+  }
+
+  /** After dark the visitor carries a faint glow of their own colours, so they stay readable. */
+  setNightGlow(k: number) {
+    for (const m of this.mats) m.emissive.copy(m.color).multiplyScalar(0.55 * k);
   }
 
   reset(x: number, z: number, heading: number) {

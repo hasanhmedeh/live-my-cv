@@ -571,6 +571,7 @@ export class Game {
     if (this.mode === 'drive' && !this.debugCam) this.focus.copy(this.camTarget);
     else this.focus.copy(this.camera.position);
     this.env.update(t, this.focus);
+    this.player.setNightGlow(this.env.night);
     this.updateClock();
 
     if (this.adaptive.update(dt)) {

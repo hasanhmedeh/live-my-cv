@@ -569,19 +569,19 @@ export class Environment {
       this.lightDir.copy(sun).setY(Math.max(sun.y, 0.08)).normalize();
       this.sun.color.copy(SUN_WARM).lerp(SUN_NOON, smooth(sun.y, 0.1, 0.5));
       // a low sun grazes the ground; a high one hits it square on, so it needs far less intensity
-      this.sun.intensity = sunW * lerp(4.2, 1.6, smooth(sun.y, 0.08, 0.5));
+      this.sun.intensity = sunW * lerp(4.2, 1.45, smooth(sun.y, 0.08, 0.5));
     } else {
       this.lightDir.copy(moon).setY(Math.max(moon.y, 0.3)).normalize();
       this.sun.color.copy(MOON);
       // moonlight, already partly up during twilight so dusk never goes pitch black
-      this.sun.intensity = 0.85 * Math.max(this.night, 0.55);
+      this.sun.intensity = 1.05 * Math.max(this.night, 0.55);
     }
 
     // ambient + reflections
     tri(this.hemi.color, HEMI_SKY, day, glow);
     tri(this.hemi.groundColor, HEMI_GROUND, day, glow);
-    this.hemi.intensity = lerp(0.64, 0.5, day) * (1 - space * 0.7);
-    this.ctx.scene.environmentIntensity = (lerp(0.38, 0.45, day) + 0.35 * glow) * (1 - space * 0.8);
+    this.hemi.intensity = lerp(0.85, 0.45, day) * (1 - space * 0.7);
+    this.ctx.scene.environmentIntensity = (lerp(0.42, 0.4, day) + 0.35 * glow) * (1 - space * 0.8);
     tri(this.envGround.color, ENV_GROUND, day, glow);
 
     // fog: colour, sun-side tint and density

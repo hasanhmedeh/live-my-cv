@@ -38,6 +38,7 @@ A tribute to Falcon's Flight, the record-breaking cliff coaster at Six Flags Qid
 
 - **Physically based sunset sky** (Preetham scattering with drifting clouds). The same sky is baked into an environment map, so every glossy surface reflects it: clearcoat paint on the rocket and letters, chrome, gilded lettering and metallic coaster rails.
 - **HDR pipeline**: scene → N8AO ambient occlusion (half-res) → bloom + ACES filmic tone mapping + vignette (one merged pass) → SMAA. Marquee bulbs, lamps, string lights and engine flames render above 1.0, so they glow through the bloom.
+- **Day/night cycle**: a full 24-hour day every 10 minutes (`DAY_SECONDS` in `src/world/environment.ts`), starting at 17:00. The sun rises in the east and sets in the west, the moon and stars take over at night, and the sky, sunlight, ambient light, fog, reflections (re-baked as the light changes), lamps, string lights and fireflies all follow the clock shown in the HUD. In development, `?hour=13` jumps to a time.
 - **Atmosphere**: fog that blends to orange toward the sun and violet away from it, layered horizon hills, stars that fade in as the rocket reaches space, and fireflies.
 - **Living ground**: tens of thousands of instanced grass blades that sway in the wind and part around the visitor. A tiling detail normal map makes the sand and soil catch the low sun. Trees sway too, with soft volumetric foliage shading.
 - **Real lights where they matter**: an engine light under the rocket, plus soft light pools under every lamp.
