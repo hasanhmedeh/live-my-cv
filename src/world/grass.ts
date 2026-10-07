@@ -1,6 +1,5 @@
 import * as THREE from 'three';
 import { mergeGeometries } from 'three/addons/utils/BufferGeometryUtils.js';
-import { LAYOUT } from './layout';
 import { mulberry } from './random';
 import { addWind } from './wind';
 
@@ -59,7 +58,18 @@ export class Grass {
   private chunks: Chunk[] = [];
   private material: THREE.Material;
 
-  constructor(scene: THREE.Scene, isSand: (x: number, z: number) => boolean, density: number, private maxDistance: number, pbr: boolean) {
+  /**
+   * `growth` gives how densely grass grows at (x, z), from 0 (bare: paths, outside the grounds) to 1,
+   * over the area `bounds`.
+   */
+  constructor(
+    scene: THREE.Scene,
+    growth: (x: number, z: number) => number,
+    bounds: { x0: number; x1: number; z0: number; z1: number },
+    density: number,
+    private maxDistance: number,
+    pbr: boolean,
+  ) {
     const geo = clumpGeometry();
     // PBR picks up the sky lighting like the ground does; Lambert is the cheap fallback
     this.material = pbr
@@ -74,16 +84,16 @@ export class Grass {
     const s = new THREE.Vector3();
     const p = new THREE.Vector3();
     const tint = new THREE.Color();
-    const R = LAYOUT.boundary + 1;
-    for (let cx = -R; cx < R; cx += CHUNK)
-      for (let cz = -R; cz < R; cz += CHUNK) {
+    for (let cx = bounds.x0; cx < bounds.x1; cx += CHUNK)
+      for (let cz = bounds.z0; cz < bounds.z1; cz += CHUNK) {
         const target = Math.round(CHUNK * CHUNK * density);
         const mats: THREE.Matrix4[] = [];
         const tints: THREE.Color[] = [];
         for (let i = 0; i < target; i++) {
           const x = cx + rnd() * CHUNK;
           const z = cz + rnd() * CHUNK;
-          if (Math.hypot(x, z) > R || isSand(x, z)) continue;
+          const g = growth(x, z);
+          if (g <= 0 || (g < 1 && rnd() > g)) continue;
           // patchy meadow: denser in some areas, a few clearings
           const patch = Math.sin(x * 0.13) * Math.cos(z * 0.11) + Math.sin(x * 0.05 + z * 0.07);
           if (patch < -0.9 && rnd() > 0.3) continue;

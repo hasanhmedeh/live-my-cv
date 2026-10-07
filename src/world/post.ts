@@ -52,16 +52,16 @@ export class Post {
       luminanceSmoothing: 0.3,
       intensity: 0.9,
       radius: 0.72,
-      levels: q.tier === 'low' ? 5 : 7,
+      levels: q.tier === 'high' || q.tier === 'medium' ? 7 : 5,
     });
     // ACES keeps the carnival colours punchy while rolling off the bright sunset sky
     const tone = new ToneMappingEffect({ mode: ToneMappingMode.ACES_FILMIC });
     const vignette = new VignetteEffect({ offset: 0.32, darkness: 0.42 });
     const dbg = import.meta.env.DEV ? (new URLSearchParams(location.search).get('post') ?? '') : '';
     if (dbg.includes('noao') && this.ao) this.ao.enabled = false;
-    if (dbg.includes('nobloom')) this.composer.addPass(new EffectPass(camera, tone, vignette));
+    if (dbg.includes('nobloom') || !q.bloom) this.composer.addPass(new EffectPass(camera, tone, vignette));
     else this.composer.addPass(new EffectPass(camera, this.bloom, tone, vignette));
-    this.composer.addPass(new EffectPass(camera, new SMAAEffect({ preset: SMAAPreset[q.smaa] })));
+    if (q.smaa) this.composer.addPass(new EffectPass(camera, new SMAAEffect({ preset: SMAAPreset[q.smaa] })));
   }
 
   setSize(w: number, h: number) {

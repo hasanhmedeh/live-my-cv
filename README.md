@@ -85,9 +85,13 @@ vite.config.ts          site URL, sitemap and robots.txt
 src/main.ts             intro card, lazy-loads the 3D world
 src/data/fair.ts        rocket stages and striker tiers
 src/world/Game.ts       renderer, physics, loop, camera modes, interactions
-src/world/player.ts     the visitor: rigged glTF, idle/walk/run blending, roll, kick, wave, physics
-public/models/visitor.glb  "Casual Character" by Quaternius (CC0, via Poly Pizza)
-src/world/subdivide.ts  rounds off the faceted model at load: welds, one Loop subdivision, smooth normals, blended skin weights
+src/world/player.ts     the visitor: walk/run/roll/kick/wave controls and physics on a crowd rig
+src/world/crowd/        the park's guests: people.ts (rig, outfits, animation), pets.ts (dogs, leashes),
+                        crowd.ts (parties, queues, coaster boarding, benches, kids' play), nav.ts + obstacles.ts (walking)
+public/models/guests.glb       "Universal Base Characters" by Quaternius (CC0): bodies + hairstyles
+public/models/guest-anims.glb  "Universal Animation Library" by Quaternius (CC0): a curated set of clips
+public/models/dog-*.glb        Shiba Inu and Husky by Quaternius (CC0, via Poly Pizza)
+src/world/subdivide.ts  rounds off faceted models at load: welds, one Loop subdivision, smooth normals, blended skin weights
 src/world/environment.ts sky, lights, ground, trees, lamps, tents, balloons
 src/world/attractions/  coaster, rocket, crates, striker, ferris/carousel/booth/arch
 ```

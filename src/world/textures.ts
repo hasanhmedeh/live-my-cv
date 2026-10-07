@@ -233,28 +233,16 @@ export interface PathSpec {
   width: number;
 }
 
-/** Paints grass, dirt paths and plazas into one big ground texture. */
-export function groundTexture(size: number, worldSize: number, paths: PathSpec[], plazas: [number, number, number][]): { texture: THREE.CanvasTexture; isSand: (x: number, z: number) => boolean } {
-  const c = document.createElement('canvas');
-  c.width = c.height = size;
-  const ctx = c.getContext('2d')!;
-  const k = size / worldSize;
-  const toPx = (x: number) => (x + worldSize / 2) * k;
-
-  const grad = ctx.createRadialGradient(size / 2, size / 2, size * 0.05, size / 2, size / 2, size * 0.7);
-  grad.addColorStop(0, '#4f9a5e');
-  grad.addColorStop(1, '#2f6b48');
-  ctx.fillStyle = grad;
-  ctx.fillRect(0, 0, size, size);
-
-  // grass speckles
-  let seed = 7;
-  const rnd = () => ((seed = (seed * 16807) % 2147483647) / 2147483647);
-  for (let i = 0; i < 26000; i++) {
-    ctx.fillStyle = rnd() > 0.5 ? 'rgba(120,190,110,0.18)' : 'rgba(20,60,40,0.18)';
-    ctx.fillRect(rnd() * size, rnd() * size, 2 + rnd() * 3, 2 + rnd() * 3);
-  }
-
+/** Paints sandy paths (with a darker edge) and decorated plazas, then grains the sand. */
+function paintSand(
+  ctx: CanvasRenderingContext2D,
+  toX: (x: number) => number,
+  toZ: (z: number) => number,
+  k: number,
+  paths: PathSpec[],
+  plazas: [number, number, number][],
+  rnd: () => number,
+) {
   const drawPaths = (color: string, extra: number) => {
     ctx.strokeStyle = color;
     ctx.fillStyle = color;
@@ -263,12 +251,12 @@ export function groundTexture(size: number, worldSize: number, paths: PathSpec[]
     for (const p of paths) {
       ctx.lineWidth = (p.width + extra) * k;
       ctx.beginPath();
-      p.points.forEach(([x, z], i) => (i ? ctx.lineTo(toPx(x), toPx(z)) : ctx.moveTo(toPx(x), toPx(z))));
+      p.points.forEach(([x, z], i) => (i ? ctx.lineTo(toX(x), toZ(z)) : ctx.moveTo(toX(x), toZ(z))));
       ctx.stroke();
     }
     for (const [x, z, r] of plazas) {
       ctx.beginPath();
-      ctx.arc(toPx(x), toPx(z), (r + extra / 2) * k, 0, Math.PI * 2);
+      ctx.arc(toX(x), toZ(z), (r + extra / 2) * k, 0, Math.PI * 2);
       ctx.fill();
     }
   };
@@ -277,8 +265,8 @@ export function groundTexture(size: number, worldSize: number, paths: PathSpec[]
 
   // plaza decoration: concentric rings + a faint sunburst
   for (const [x, z, r] of plazas) {
-    const cx = toPx(x);
-    const cy = toPx(z);
+    const cx = toX(x);
+    const cy = toZ(z);
     ctx.save();
     ctx.globalAlpha = 0.5;
     ctx.strokeStyle = '#c99868';
@@ -304,7 +292,7 @@ export function groundTexture(size: number, worldSize: number, paths: PathSpec[]
   }
 
   // sand grain (single read-back, then per-pixel noise on sandy pixels only)
-  const img = ctx.getImageData(0, 0, size, size);
+  const img = ctx.getImageData(0, 0, ctx.canvas.width, ctx.canvas.height);
   const px = img.data;
   for (let i = 0; i < px.length; i += 4) {
     if (px[i] > 200 && px[i + 1] > 160) {
@@ -315,6 +303,31 @@ export function groundTexture(size: number, worldSize: number, paths: PathSpec[]
     }
   }
   ctx.putImageData(img, 0, 0);
+}
+
+/** Paints grass, dirt paths and plazas into one big ground texture. */
+export function groundTexture(size: number, worldSize: number, paths: PathSpec[], plazas: [number, number, number][]): { texture: THREE.CanvasTexture; isSand: (x: number, z: number) => boolean } {
+  const c = document.createElement('canvas');
+  c.width = c.height = size;
+  const ctx = c.getContext('2d')!;
+  const k = size / worldSize;
+  const toPx = (x: number) => (x + worldSize / 2) * k;
+
+  const grad = ctx.createRadialGradient(size / 2, size / 2, size * 0.05, size / 2, size / 2, size * 0.7);
+  grad.addColorStop(0, '#4f9a5e');
+  grad.addColorStop(1, '#2f6b48');
+  ctx.fillStyle = grad;
+  ctx.fillRect(0, 0, size, size);
+
+  // grass speckles
+  let seed = 7;
+  const rnd = () => ((seed = (seed * 16807) % 2147483647) / 2147483647);
+  for (let i = 0; i < 26000; i++) {
+    ctx.fillStyle = rnd() > 0.5 ? 'rgba(120,190,110,0.18)' : 'rgba(20,60,40,0.18)';
+    ctx.fillRect(rnd() * size, rnd() * size, 2 + rnd() * 3, 2 + rnd() * 3);
+  }
+
+  paintSand(ctx, toPx, toPx, k, paths, plazas, rnd);
 
   const t = finish(c);
   t.anisotropy = 8;
@@ -347,6 +360,71 @@ export function groundTexture(size: number, worldSize: number, paths: PathSpec[]
     return md[(pz * M + px) * 4] > 100;
   };
   return { texture: t, isSand };
+}
+
+/**
+ * A patch of the park's lawn (same gradient and speckle as the ground texture of size worldSize, so
+ * the two meet seamlessly) with its paths and plazas, over the rectangle x0..x1, z0..z1: for
+ * ground beyond the main ground texture. Its edges fade to transparent: `fade` metres at the
+ * sides and the far (z0) end, `fadeNear` metres at the z1 end where it overlaps the park ground.
+ */
+export function lawnPatchTexture(
+  rect: { x0: number; z0: number; x1: number; z1: number },
+  pxPerMetre: number,
+  worldSize: number,
+  fade: { side: number; near: number },
+  paths: PathSpec[],
+  plazas: [number, number, number][],
+) {
+  const { x0, z0, x1, z1 } = rect;
+  const k = pxPerMetre;
+  const c = document.createElement('canvas');
+  const w = (c.width = Math.ceil((x1 - x0) * k));
+  const h = (c.height = Math.ceil((z1 - z0) * k));
+  const ctx = c.getContext('2d')!;
+  const toX = (x: number) => (x - x0) * k;
+  const toZ = (z: number) => (z - z0) * k;
+
+  // the park ground's radial gradient, centred on the park
+  const grad = ctx.createRadialGradient(toX(0), toZ(0), worldSize * 0.05 * k, toX(0), toZ(0), worldSize * 0.7 * k);
+  grad.addColorStop(0, '#4f9a5e');
+  grad.addColorStop(1, '#2f6b48');
+  ctx.fillStyle = grad;
+  ctx.fillRect(0, 0, w, h);
+  // grass speckles at the same density and size as on the park ground
+  let seed = 11;
+  const rnd = () => ((seed = (seed * 16807) % 2147483647) / 2147483647);
+  const speckles = Math.round((26000 * (x1 - x0) * (z1 - z0)) / (worldSize * worldSize));
+  for (let i = 0; i < speckles; i++) {
+    ctx.fillStyle = rnd() > 0.5 ? 'rgba(120,190,110,0.18)' : 'rgba(20,60,40,0.18)';
+    const s = (0.13 + rnd() * 0.19) * k;
+    ctx.fillRect(rnd() * w, rnd() * h, s, s);
+  }
+
+  paintSand(ctx, toX, toZ, k, paths, plazas, rnd);
+
+  // fade the edges out into the surrounding country
+  ctx.globalCompositeOperation = 'destination-in';
+  const across = ctx.createLinearGradient(0, 0, w, 0);
+  const sx = fade.side / (x1 - x0);
+  across.addColorStop(0, 'rgba(0,0,0,0)');
+  across.addColorStop(sx, 'rgba(0,0,0,1)');
+  across.addColorStop(1 - sx, 'rgba(0,0,0,1)');
+  across.addColorStop(1, 'rgba(0,0,0,0)');
+  ctx.fillStyle = across;
+  ctx.fillRect(0, 0, w, h);
+  const along = ctx.createLinearGradient(0, 0, 0, h);
+  along.addColorStop(0, 'rgba(0,0,0,0)');
+  along.addColorStop(fade.side / (z1 - z0), 'rgba(0,0,0,1)');
+  along.addColorStop(1 - fade.near / (z1 - z0), 'rgba(0,0,0,1)');
+  along.addColorStop(1, 'rgba(0,0,0,0)');
+  ctx.fillStyle = along;
+  ctx.fillRect(0, 0, w, h);
+  ctx.globalCompositeOperation = 'source-over';
+
+  const t = finish(c);
+  t.anisotropy = 8;
+  return t;
 }
 
 /** Tileable fine-grain normal map (soil/grass bumps) — shines under the low sunset sun. */

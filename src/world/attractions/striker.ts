@@ -25,6 +25,10 @@ export class Striker implements Attraction {
   private confettiData: { p: THREE.Vector3; v: THREE.Vector3; r: THREE.Euler }[] = [];
   private confettiLife = 0;
   active = false;
+  /** A guest (not the visitor) is swinging: no panels, and the bell only rings for those nearby. */
+  private guest = false;
+  /** Where a guest stands to swing, facing the board (north). */
+  readonly swingSpot = new THREE.Vector3(LAYOUT.striker.x + 0.35, 0, LAYOUT.striker.z + 2.4);
   onFinish: (() => void) | null = null;
 
   constructor(private ctx: Ctx) {
@@ -113,7 +117,25 @@ export class Striker implements Attraction {
     return tex;
   }
 
+  /** True while nobody (visitor or guest) is using the striker. */
+  get free() {
+    return !this.active && this.phase === 'idle';
+  }
+
+  /** A guest's swing, with power 0…1. Returns false when the striker is busy. */
+  guestSwing(power: number) {
+    if (!this.free) return false;
+    this.guest = true;
+    this.power = power;
+    this.phase = 'fly';
+    this.flyT = 0;
+    this.puck.position.y = 0.9;
+    return true;
+  }
+
   start() {
+    this.guest = false;
+    this.phase = 'idle';
     this.active = true;
     this.phase = 'aim';
     this.meterT = 0;
@@ -170,7 +192,7 @@ export class Striker implements Attraction {
       this.bell.rotation.z = Math.sin(this.bellShake * 60) * this.bellShake * 0.4;
     }
     this.updateConfetti(dt);
-    if (!this.active) return;
+    if (!this.active && !this.guest) return;
 
     if (this.phase === 'aim') {
       this.meterT += dt;
@@ -187,11 +209,26 @@ export class Striker implements Attraction {
       if (this.flyT >= up && this.flyT - dt < up) this.onPeak();
       if (this.flyT > up && this.puck.position.y <= 0.9) {
         this.phase = 'result';
+        if (this.guest) {
+          // the guest's turn is over: hammer back, ready for the next in line
+          this.guest = false;
+          this.phase = 'idle';
+          this.hammer.rotation.x = -0.4;
+        }
       }
     }
   }
 
   private onPeak() {
+    if (this.guest) {
+      const near = this.ctx.camera.position.distanceTo(this.origin) < 30;
+      if (this.power >= 0.97) {
+        this.bellShake = 1.2;
+        this.burstConfetti();
+        if (near) this.ctx.sfx.ding();
+      }
+      return;
+    }
     const tier = Math.ceil(this.power * strikerTiers.length - 0.001);
     const rang = this.power >= 0.97;
     this.best = Math.max(this.best, this.power);

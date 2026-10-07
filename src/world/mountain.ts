@@ -2,6 +2,7 @@ import * as THREE from 'three';
 import type { Ctx } from './context';
 import { FALCON_TRACK, nearTrack } from './rides';
 import { withFogSun } from './fog';
+import { WHEEL_LAWN } from './layout';
 import { mulberry } from './random';
 import { hdr, PALETTE, signMaterial, signTexture } from './textures';
 
@@ -13,6 +14,9 @@ const Z1 = -96;
 const STEP = 2.5;
 const NX = Math.round((X1 - X0) / STEP);
 const NZ = Math.round((Z1 - Z0) / STEP);
+
+/** The lawn around the road to the giant wheel (with a margin): kept exactly level with the park. */
+const lawnZone = (x: number, z: number) => Math.abs(x) < WHEEL_LAWN.half + 3 && z > WHEEL_LAWN.z0 - 3;
 
 /** Smooth value noise (deterministic). */
 function makeNoise(seed: number) {
@@ -104,7 +108,8 @@ export class Mountain {
       for (let i = 0; i <= NX; i++) {
         const x = X0 + i * STEP;
         const z = Z0 + j * STEP;
-        const base = Math.abs(x) < 131 && z > -131 ? -2 : 0.08; // under the park's ground / desert floor
+        // under the park's ground / under the lawn by the road to the giant wheel / desert floor
+        const base = Math.abs(x) < 131 && z > -131 ? -2 : lawnZone(x, z) ? 0 : 0.08;
         // ---- mesa: flat top, steep flanks, a sheer wall along the edge plane ----
         const wob = (noise(x * 0.012, z * 0.012) - 0.5) * 70;
         const dc = Math.hypot(x - mesaC.x, z - mesaC.y) + wob;

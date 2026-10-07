@@ -128,6 +128,9 @@ export class Booth implements Attraction {
       <li>🥫 <strong>Crate Smash</strong> — ram the crates and rack up points</li>
       <li>🔔 <strong>High Striker</strong> — swing the hammer and ring the bell</li>
       <li>🎡 <strong>Giant Wheel</strong> — 250 m, the tallest observation wheel on Earth</li>
+      <li>🚁 <strong>Drone Flights</strong> — rent a camera drone and fly over the whole park</li>
+      <li>🌀 <strong>Sky Flip</strong> — swing 125 m up, right over the top, flipping head over heels</li>
+      <li>🛸 <strong>Nebula 360</strong> — pendulum ship: loops forward, hangs upside down, loops back</li>
     </ul>`;
   }
 

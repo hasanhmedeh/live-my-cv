@@ -77,9 +77,10 @@ export class Trackside {
     const rnd = mulberry(91);
     const rail = (i: number) => d.pos[i].y - d.up[i].y;
     const wheel = LAYOUT.ferris;
-    // places nothing may stand: the park, the giant wheel's legs, any track
+    // places nothing may stand: the park, the road out to the wheel, the giant wheel's legs, any track
     const blocked = (x: number, z: number, clearance: number) =>
       Math.hypot(x, z) < LAYOUT.boundary + 8 ||
+      (Math.abs(x - wheel.x) < 14 && z < 0 && z > wheel.z) ||
       (Math.abs(x - wheel.x) < 72 && Math.abs(z - wheel.z) < 56) ||
       nearTrack(x, z, clearance);
 

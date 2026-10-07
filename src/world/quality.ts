@@ -1,14 +1,27 @@
 import type * as THREE from 'three';
 
-export type Tier = 'low' | 'medium' | 'high';
+export type Tier = 'lowest' | 'low' | 'medium' | 'high';
+/** What the visitor picked in the graphics menu: a fixed tier, or let us detect one. */
+export type QualityChoice = Tier | 'auto';
+
+export const TIERS: Tier[] = ['high', 'medium', 'low', 'lowest'];
+export const TIER_LABELS: Record<Tier, string> = { high: 'High', medium: 'Medium', low: 'Low', lowest: 'Very low' };
 
 export interface Quality {
   tier: Tier;
+  /** The tier auto-detection would pick on this device (shown next to "Auto" in the menu). */
+  detected: Tier;
+  choice: QualityChoice;
   /** Max device-pixel-ratio we render at (adaptive scaling goes below this). */
   dpr: number;
+  /** Lowest render scale adaptive resolution may drop to. */
+  minScale: number;
   ao: boolean;
   aoMode: 'Performance' | 'Low' | 'Medium';
-  smaa: 'LOW' | 'MEDIUM' | 'HIGH';
+  /** null skips the anti-aliasing pass entirely. */
+  smaa: 'LOW' | 'MEDIUM' | 'HIGH' | null;
+  bloom: boolean;
+  shadows: boolean;
   shadowSize: number;
   /** Grass clumps per m² (0 disables grass). */
   grass: number;
@@ -18,35 +31,61 @@ export interface Quality {
   clouds: boolean;
 }
 
-const PRESETS: Record<Tier, Omit<Quality, 'tier' | 'dpr'>> = {
-  high: { ao: true, aoMode: 'Medium', smaa: 'HIGH', shadowSize: 2048, grass: 4, grassDistance: 90, extraLights: true, clouds: true },
-  medium: { ao: true, aoMode: 'Performance', smaa: 'MEDIUM', shadowSize: 2048, grass: 2.2, grassDistance: 70, extraLights: true, clouds: true },
-  low: { ao: false, aoMode: 'Performance', smaa: 'LOW', shadowSize: 1024, grass: 0.9, grassDistance: 50, extraLights: false, clouds: true },
+type Preset = Omit<Quality, 'tier' | 'detected' | 'choice' | 'dpr'> & { dprCap: number };
+
+const PRESETS: Record<Tier, Preset> = {
+  high: { dprCap: 1.75, minScale: 0.55, ao: true, aoMode: 'Medium', smaa: 'HIGH', bloom: true, shadows: true, shadowSize: 2048, grass: 4, grassDistance: 90, extraLights: true, clouds: true },
+  medium: { dprCap: 1.5, minScale: 0.55, ao: true, aoMode: 'Performance', smaa: 'MEDIUM', bloom: true, shadows: true, shadowSize: 2048, grass: 2.2, grassDistance: 70, extraLights: true, clouds: true },
+  low: { dprCap: 1.25, minScale: 0.55, ao: false, aoMode: 'Performance', smaa: 'LOW', bloom: true, shadows: true, shadowSize: 1024, grass: 0.9, grassDistance: 50, extraLights: false, clouds: true },
+  // for very old laptops and budget phones: no shadows, grass, bloom or AA, rendered below native resolution
+  lowest: { dprCap: 0.85, minScale: 0.45, ao: false, aoMode: 'Performance', smaa: null, bloom: false, shadows: false, shadowSize: 512, grass: 0, grassDistance: 0, extraLights: false, clouds: false },
 };
 
-/** Pick a tier from the GPU, the device class and an optional `?quality=` override. */
-export function detectQuality(renderer: THREE.WebGLRenderer, mobile: boolean): Quality {
-  const forced = new URLSearchParams(location.search).get('quality') as Tier | null;
-  let tier: Tier;
-  if (forced && forced in PRESETS) tier = forced;
-  else {
-    let gpu = '';
-    try {
-      const gl = renderer.getContext();
-      const ext = gl.getExtension('WEBGL_debug_renderer_info');
-      gpu = String(ext ? gl.getParameter(ext.UNMASKED_RENDERER_WEBGL) : gl.getParameter(gl.RENDERER)).toLowerCase();
-    } catch {
-      /* ignore */
-    }
-    const software = /swiftshader|llvmpipe|software|basic render/.test(gpu);
-    const integrated = /intel|uhd|iris|mali|adreno [1-5]|powervr|videocore/.test(gpu);
-    const cores = navigator.hardwareConcurrency ?? 4;
-    if (software) tier = 'low';
-    else if (mobile) tier = cores >= 8 && !/mali|powervr/.test(gpu) ? 'medium' : 'low';
-    else tier = integrated ? 'medium' : 'high';
+const STORAGE_KEY = 'funfair-quality';
+
+export function loadQualityChoice(): QualityChoice {
+  try {
+    const v = localStorage.getItem(STORAGE_KEY);
+    if (v === 'auto' || (v && v in PRESETS)) return v as QualityChoice;
+  } catch {
+    /* storage unavailable */
   }
-  const dprCap = tier === 'high' ? 1.75 : tier === 'medium' ? 1.5 : 1.25;
-  return { tier, dpr: Math.min(devicePixelRatio || 1, dprCap), ...PRESETS[tier] };
+  return 'auto';
+}
+
+export function saveQualityChoice(choice: QualityChoice) {
+  try {
+    localStorage.setItem(STORAGE_KEY, choice);
+  } catch {
+    /* storage unavailable */
+  }
+}
+
+function detectTier(renderer: THREE.WebGLRenderer, mobile: boolean): Tier {
+  let gpu = '';
+  try {
+    const gl = renderer.getContext();
+    const ext = gl.getExtension('WEBGL_debug_renderer_info');
+    gpu = String(ext ? gl.getParameter(ext.UNMASKED_RENDERER_WEBGL) : gl.getParameter(gl.RENDERER)).toLowerCase();
+  } catch {
+    /* ignore */
+  }
+  const software = /swiftshader|llvmpipe|software|basic render/.test(gpu);
+  const integrated = /intel|uhd|iris|mali|adreno [1-5]|powervr|videocore/.test(gpu);
+  const cores = navigator.hardwareConcurrency ?? 4;
+  if (software) return 'lowest';
+  if (mobile) return cores >= 8 && !/mali|powervr/.test(gpu) ? 'medium' : 'low';
+  return integrated ? 'medium' : 'high';
+}
+
+/** Pick a tier: `?quality=` override, then the visitor's saved choice, then GPU/device detection. */
+export function detectQuality(renderer: THREE.WebGLRenderer, mobile: boolean): Quality {
+  const forced = new URLSearchParams(location.search).get('quality');
+  const detected = detectTier(renderer, mobile);
+  const choice: QualityChoice = forced && forced in PRESETS ? (forced as Tier) : loadQualityChoice();
+  const tier = choice === 'auto' ? detected : choice;
+  const { dprCap, ...preset } = PRESETS[tier];
+  return { tier, detected, choice, dpr: Math.min(devicePixelRatio || 1, dprCap), ...preset };
 }
 
 /**

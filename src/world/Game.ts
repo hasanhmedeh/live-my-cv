@@ -1,7 +1,10 @@
 import * as THREE from 'three';
 import * as CANNON from 'cannon-es';
 import { Sfx } from './audio';
-import { Player, VISITOR_URL } from './player';
+import { Player } from './player';
+import { Crowd } from './crowd/crowd';
+import { GUEST_ANIMS_URL, GUESTS_URL, PeopleFactory, VISITOR_LOOK } from './crowd/people';
+import { DOG_URLS, DogFactory } from './crowd/pets';
 import { GLTFLoader } from 'three/addons/loaders/GLTFLoader.js';
 import type { Ctx } from './context';
 import { Environment } from './environment';
@@ -16,6 +19,7 @@ import { Trackside } from './trackside';
 import { TimeControl } from './time-control';
 import { Post } from './post';
 import { AdaptiveResolution, detectQuality, type Quality } from './quality';
+import { GraphicsMenu } from './graphics-menu';
 import { wind } from './wind';
 import { Coaster } from './attractions/coaster';
 import { Mountain } from './mountain';
@@ -27,11 +31,16 @@ import { Crates } from './attractions/crates';
 import { Striker } from './attractions/striker';
 import { Arch, Booth, Carousel } from './attractions/landmarks';
 import { GiantWheel } from './attractions/giant-wheel';
+import { Drone } from './attractions/drone';
+import { SkyFlip } from './attractions/sky-flip';
+import { Ship } from './attractions/ship';
 
 /** The clock slider / pause / local-time panel. Off for now: the park stays at 16:00. */
 const TIME_CONTROLS = false;
+/** How many guests walk the park, by graphics tier. */
+const CROWD_SIZE = { high: 64, medium: 44, low: 26, lowest: 12 } as const;
 
-type Mode = 'drive' | 'coaster' | 'rocket' | 'striker' | 'wheel';
+type Mode = 'drive' | 'coaster' | 'rocket' | 'striker' | 'wheel' | 'drone' | 'flip' | 'ship';
 
 const nextFrame = () => new Promise<void>((r) => requestAnimationFrame(() => r()));
 
@@ -48,6 +57,7 @@ export class Game {
   private sfx = new Sfx();
   private env!: Environment;
   private player!: Player;
+  private crowd: Crowd | null = null;
   private zones!: Zones;
   private minimap!: Minimap;
   private stack!: Coaster;
@@ -60,11 +70,17 @@ export class Game {
   private striker!: Striker;
   private wheel!: GiantWheel;
   private booth!: Booth;
+  private drone!: Drone;
+  private flip!: SkyFlip;
+  private ship!: Ship;
   private updatables: { update(dt: number, t: number): void }[] = [];
   private mode: Mode = 'drive';
   private camTarget = new THREE.Vector3();
   private camPos = new THREE.Vector3();
   private zoom = 1;
+  /** Drive-camera orbit, set by dragging the view: yaw 0 looks north, pitch is the angle above the visitor. */
+  private camYaw = 0;
+  private camPitch = 0.2;
   private panelZone: ZoneId | null = null;
   /** The crates card auto-opens in its ring; once closed it stays closed until you leave. */
   private cratesDismissed = false;
@@ -74,7 +90,7 @@ export class Game {
   private time = { t: 0 };
   private quality!: Quality;
   private post!: Post;
-  private adaptive = new AdaptiveResolution();
+  private adaptive!: AdaptiveResolution;
   private focus = new THREE.Vector3();
   private timeControl: TimeControl | null = null;
 
@@ -82,8 +98,10 @@ export class Game {
 
   /** Builds the whole fair in small steps so the progress bar can update. */
   async build(onProgress: (p: number) => void) {
-    // the visitor model downloads while the world is being built
-    const visitor = new GLTFLoader().loadAsync(VISITOR_URL);
+    // the people (visitor and guests) and the dogs download while the world is being built
+    const loader = new GLTFLoader();
+    const peopleModels = Promise.all([loader.loadAsync(GUESTS_URL), loader.loadAsync(GUEST_ANIMS_URL)]);
+    const dogModels = Promise.all([loader.loadAsync(DOG_URLS.shiba), loader.loadAsync(DOG_URLS.husky)]).catch(() => null);
     const steps: [number, () => void | Promise<void>][] = [];
     const step = (w: number, fn: () => void | Promise<void>) => steps.push([w, fn]);
 
@@ -133,7 +151,7 @@ export class Game {
       const ground = (x: number, z: number) => this.mountain.sample(x, z);
       // landmarks a support column must never land on
       const keep: [number, number, number][] = [
-        [0, 5, 14], [0, -8, 10], [0, -30, 9], [34, -14, 9], [42, -52, 9], [20, 12, 4], [-20, -40, 4], [-26, 3, 6],
+        [0, 5, 14], [0, -8, 10], [0, -30, 9], [34, -14, 9], [42, -52, 9], [20, 12, 4], [-20, -40, 4], [-26, 3, 6], [12, -53, 10],
       ];
       // the giant hill's crest stands on its own lattice tower
       const crest = FALCON_TRACK.pos[Trackside.hillCrest()];
@@ -158,7 +176,8 @@ export class Game {
         name: 'Sky Falcon',
         track: FALCON_TRACK,
         phys: FALCON_PHYS,
-        station: { title: 'SKY FALCON', sub: '4.25 km · 158 m drop at 90° · 250 km/h', side: 1 },
+        // platform on the park side, so the queue reaches it without crossing the track
+        station: { title: 'SKY FALCON', sub: '4.25 km · 158 m drop at 90° · 250 km/h', side: -1 },
         colors: { rail: PALETTE.teal, spine: '#e6c08a', cars: ['#e6c08a', PALETTE.teal, '#e6c08a', PALETTE.teal] },
         cars: 4,
         leadRows: 1, // 2 + 4 + 4 + 4 = 14 riders, like the real Exa trains
@@ -203,6 +222,18 @@ export class Game {
       this.wheel = new GiantWheel(this.ctx, (x, z) => this.mountain.sample(x, z));
       this.updatables.push(this.wheel);
     });
+    step(1, () => {
+      this.drone = new Drone(this.ctx, (x, z) => this.mountain.sample(x, z));
+      this.updatables.push(this.drone);
+    });
+    step(1, () => {
+      this.flip = new SkyFlip(this.ctx);
+      this.updatables.push(this.flip);
+    });
+    step(1, () => {
+      this.ship = new Ship(this.ctx);
+      this.updatables.push(this.ship);
+    });
     step(2, () => {
       this.rocket = new Rocket(this.ctx, this.env);
       this.updatables.push(this.rocket);
@@ -214,8 +245,21 @@ export class Game {
     });
     step(1, async () => {
       this.zones = new Zones(this.ctx);
-      this.player = new Player(this.ctx, await visitor);
+      const [guests, anims] = await peopleModels;
+      const people = new PeopleFactory(guests, anims);
+      this.player = new Player(this.ctx, people.create(VISITOR_LOOK));
       this.wire();
+      // the crowd: queues, riders, families, kids and dogs (fewer on modest hardware)
+      const dogs = await dogModels;
+      const crowd = new Crowd(this.ctx, people, dogs && new DogFactory({ shiba: dogs[0], husky: dogs[1] }), [this.stack, this.falcon], this.striker, {
+        count: CROWD_SIZE[this.quality.tier],
+        shadows: this.quality.shadows && this.quality.tier !== 'low',
+      });
+      crowd.setPlayer(this.player);
+      this.player.onWave = () => crowd.waveBack(this.player.position);
+      this.player.onKick = () => crowd.shove(this.player.position, this.player.forward);
+      this.updatables.push(crowd); // after the coasters, so riders sit where their seats are now
+      this.crowd = crowd;
     });
     step(2, () => {
       // warm up: upload textures/compile shaders before the user enters
@@ -245,8 +289,9 @@ export class Game {
     // AA, tone mapping and colour output all happen in the post pipeline (see post.ts).
     this.renderer = new THREE.WebGLRenderer({ antialias: false, stencil: false, powerPreference: 'high-performance' });
     this.quality = detectQuality(this.renderer, this.mobile);
+    this.adaptive = new AdaptiveResolution(this.quality.minScale);
     this.renderer.setPixelRatio(this.quality.dpr);
-    this.renderer.shadowMap.enabled = true;
+    this.renderer.shadowMap.enabled = this.quality.shadows;
     this.renderer.shadowMap.type = THREE.PCFShadowMap;
     this.renderer.toneMapping = THREE.NoToneMapping;
     this.renderer.toneMappingExposure = 1.15;
@@ -255,11 +300,36 @@ export class Game {
     this.container.addEventListener(
       'wheel',
       (e) => {
+        if (this.mode === 'drone') return this.drone.zoomBy(e.deltaY);
         if (this.mode !== 'drive') return;
         this.zoom = THREE.MathUtils.clamp(this.zoom + e.deltaY * 0.001, 0.55, 1.7);
       },
       { passive: true },
     );
+    // drag the view (mouse or finger) to look around the visitor
+    const canvas = this.renderer.domElement;
+    let drag: { id: number; x: number; y: number } | null = null;
+    canvas.addEventListener('pointerdown', (e) => {
+      if ((this.mode !== 'drive' && this.mode !== 'drone') || drag) return;
+      drag = { id: e.pointerId, x: e.clientX, y: e.clientY };
+      canvas.setPointerCapture(e.pointerId);
+    });
+    canvas.addEventListener('pointermove', (e) => {
+      if (!drag || e.pointerId !== drag.id) return;
+      const k = 4 / Math.max(1, canvas.clientHeight);
+      if (this.mode === 'drone') this.drone.look((e.clientX - drag.x) * k, (e.clientY - drag.y) * k);
+      else {
+        this.camYaw -= (e.clientX - drag.x) * k;
+        this.camPitch = THREE.MathUtils.clamp(this.camPitch + (e.clientY - drag.y) * k, 0.04, 1.1);
+      }
+      drag.x = e.clientX;
+      drag.y = e.clientY;
+    });
+    const endDrag = (e: PointerEvent) => {
+      if (drag && e.pointerId === drag.id) drag = null;
+    };
+    canvas.addEventListener('pointerup', endDrag);
+    canvas.addEventListener('pointercancel', endDrag);
     this.resize();
   }
 
@@ -302,21 +372,34 @@ export class Game {
       stick: document.getElementById('stick')!,
       knob: document.getElementById('stick-knob')!,
       action: document.getElementById('touch-action')!,
+      lift: document.getElementById('touch-lift')!,
     });
     this.input.on('action', () => this.onAction());
     this.input.on('escape', () => this.onEscape());
     this.input.on('reset', () => this.mode === 'drive' && this.teleport('entrance'));
-    this.input.on('honk', () => this.mode === 'drive' && this.player.wave());
-    // Space rolls on foot; on rides and the striker it keeps working as the action key
-    this.input.on('roll', () => (this.mode === 'drive' ? this.player.roll() : this.onAction()));
+    this.input.on('honk', () => {
+      if (this.mode === 'drive') this.player.wave();
+      else if (this.mode === 'drone') this.drone.flyHome();
+    });
+    // Space rolls on foot and climbs in the drone; on rides and the striker it keeps working as the action key
+    this.input.on('roll', () => {
+      if (this.mode === 'drive') this.player.roll();
+      else if (this.mode !== 'drone') this.onAction();
+    });
     this.input.on('kick', () => this.mode === 'drive' && this.player.kick());
     this.input.on('camera', () => {
       if (this.mode === 'coaster') this.ride.cycleCamera();
       else if (this.mode === 'wheel') this.wheel.cycleCamera();
+      else if (this.mode === 'drone') this.drone.cycleCamera();
+      else if (this.mode === 'flip') this.flip.cycleCamera();
+      else if (this.mode === 'ship') this.ship.cycleCamera();
     });
     this.wheel.input = this.input;
+    this.flip.input = this.input;
+    this.ship.input = this.input;
     this.stack.input = this.input;
     this.falcon.input = this.input;
+    this.drone.input = this.input;
     this.ui.onPromptClick = () => this.onAction();
     this.ui.onRideExit = () => this.onEscape();
     this.ui.onPanelClose = () => {
@@ -327,12 +410,17 @@ export class Game {
     if (TIME_CONTROLS) this.timeControl = new TimeControl(this.env);
     else document.getElementById('clock')?.remove();
     this.minimap.onGoto = (id) => this.teleport(id);
+    new GraphicsMenu(this.quality);
 
     this.stack.onFinish = () => this.endRide();
     this.falcon.onFinish = () => this.endRide();
     this.rocket.onFinish = () => this.endRide();
     this.wheel.onFinish = () => this.endRide();
     this.striker.onFinish = () => this.endRide();
+    this.drone.onFinish = () => this.endRide();
+    this.flip.onFinish = () => this.endRide();
+    this.ship.onFinish = () => this.endRide();
+    this.drone.onLanded = () => this.onEscape();
     this.crates.onScore = (n, total, points, score) => {
       this.ui.score(`🥫 +${points}! · ${score} points · ${n} / ${total} crates`);
       if (this.panelZone === 'crates') this.ui.panel(`crates-${n}`, this.crates.panelHtml(), { accent: PALETTE.teal });
@@ -373,6 +461,9 @@ export class Game {
         <li>🥫 <strong>Crate Smash</strong> — ram the crates and rack up points</li>
         <li>🔔 <strong>High Striker</strong> — swing the hammer and ring the bell</li>
         <li>🎡 <strong>Giant Wheel</strong> — ride the tallest wheel on Earth, 250 m up · 🎟️ <strong>Tickets</strong> — park guide</li>
+        <li>🚁 <strong>Drone Flights</strong> — rent a camera drone and fly over the whole park</li>
+        <li>🌀 <strong>Sky Flip</strong> — swing 125 m up, right over the top, flipping head over heels</li>
+        <li>🛸 <strong>Nebula 360</strong> — a pendulum ship that loops right round and hangs you upside down</li>
       </ul><p>${this.mobile ? 'Use the joystick to walk (push it all the way to run) and the <kbd>E</kbd> button to play.' : 'Walk with <kbd>WASD</kbd> or arrows, hold <kbd>Shift</kbd> to run, <kbd>Space</kbd> to roll, <kbd>F</kbd> to kick, <kbd>H</kbd> to wave and <kbd>E</kbd> to play. Try kicking the big letters over!'}</p>`,
       { accent: PALETTE.candy },
     );
@@ -384,6 +475,9 @@ export class Game {
     if (this.mode === 'striker') return this.striker.action();
     if (this.mode === 'coaster') return this.ride.cycleCamera();
     if (this.mode === 'wheel') return this.wheel.cycleCamera();
+    if (this.mode === 'drone') return this.drone.cycleCamera();
+    if (this.mode === 'flip') return this.flip.cycleCamera();
+    if (this.mode === 'ship') return this.ship.cycleCamera();
     if (this.mode !== 'drive') return;
     const z = this.zones.active;
     if (!z) return;
@@ -418,16 +512,45 @@ export class Game {
       case 'ferris':
         this.startRide('wheel', () => this.wheel.start());
         break;
+      case 'flip':
+        this.startRide('flip', () => this.flip.start());
+        break;
+      case 'ship':
+        this.startRide('ship', () => this.ship.start());
+        break;
       case 'booth':
         this.player.interact();
         this.showZonePanel(z);
         this.sfx.chime();
         break;
+      case 'drone':
+        // E at the counter shows the offer; E again (or its button) takes off
+        if (this.panelZone === 'drone' && this.ui.panelOpenKey.startsWith('drone-offer')) this.launchDrone();
+        else {
+          this.player.interact();
+          this.showZonePanel(z);
+          this.sfx.chime();
+        }
+        break;
     }
+  }
+
+  /** Rents the drone and takes off. Once the park has coins, charge DRONE_RENTAL.price here. */
+  private launchDrone() {
+    if (this.mode !== 'drive') return;
+    this.player.interact();
+    this.ui.hidePanel();
+    this.panelZone = null;
+    this.startRide('drone', () => this.drone.start());
   }
 
   private showZonePanel(z: ZoneId) {
     this.panelZone = z;
+    if (z === 'drone') {
+      this.ui.panel(`drone-offer-${Date.now()}`, this.drone.offerHtml(), { accent: PALETTE.teal });
+      this.ui.panelElement.querySelector('[data-drone-launch]')?.addEventListener('click', () => this.launchDrone());
+      return;
+    }
     const html = z === 'crates' ? this.crates.panelHtml() : this.booth.panelHtml();
     const accent = z === 'crates' ? PALETTE.teal : PALETTE.candy;
     this.ui.panel(`${z}-${Date.now()}`, html, { accent });
@@ -448,6 +571,9 @@ export class Game {
     if (this.mode === 'coaster') this.fade(() => this.ride.exit());
     else if (this.mode === 'rocket') this.fade(() => this.rocket.exit());
     else if (this.mode === 'wheel') this.fade(() => this.wheel.exit());
+    else if (this.mode === 'drone') this.fade(() => this.drone.exit());
+    else if (this.mode === 'flip') this.fade(() => this.flip.exit());
+    else if (this.mode === 'ship') this.fade(() => this.ship.exit());
     else if (this.mode === 'striker') this.striker.exit();
     else {
       if (this.zones.active === 'crates') this.cratesDismissed = true;
@@ -458,8 +584,8 @@ export class Game {
 
   private endRide() {
     this.camera.up.set(0, 1, 0);
-    const wasRide = this.mode === 'coaster' || this.mode === 'rocket' || this.mode === 'wheel';
-    if (this.mode === 'wheel') this.env.setHaze(1);
+    const wasRide = this.mode === 'coaster' || this.mode === 'rocket' || this.mode === 'wheel' || this.mode === 'drone' || this.mode === 'flip' || this.mode === 'ship';
+    if (this.mode === 'wheel' || this.mode === 'drone' || this.mode === 'flip') this.env.setHaze(1);
     const from = this.mode;
     this.mode = 'drive';
     this.player.enabled = true;
@@ -467,7 +593,7 @@ export class Game {
     this.ui.rideExit(false);
     this.ui.countdown(null);
     this.panelZone =
-      from === 'striker' ? 'striker' : from === 'coaster' ? (this.ride === this.falcon ? 'falcon' : 'coaster') : from === 'wheel' ? 'ferris' : 'rocket';
+      from === 'striker' ? 'striker' : from === 'drone' ? 'drone' : from === 'flip' ? 'flip' : from === 'ship' ? 'ship' : from === 'coaster' ? (this.ride === this.falcon ? 'falcon' : 'coaster') : from === 'wheel' ? 'ferris' : 'rocket';
     if (wasRide) this.updateDriveCamera(1, true);
   }
 
@@ -486,6 +612,8 @@ export class Game {
     this.fade(() => {
       // park just in front of the trigger ring so the prompt shows up immediately
       this.player.reset(z.x, z.z, z.heading);
+      this.camYaw = z.heading; // behind the visitor, facing the attraction
+      this.camPitch = 0.2;
       this.updateDriveCamera(1, true);
     });
   }
@@ -505,9 +633,12 @@ export class Game {
     const p = this.player.position;
     const vel = this.player.body.velocity;
     const portrait = this.camera.aspect < 0.8;
-    // a third-person view over the visitor's shoulder height, looking a little ahead of them
-    const offset = new THREE.Vector3(0, 4.6, 7.6).multiplyScalar(this.zoom * (portrait ? 1.25 : 1));
-    const target = new THREE.Vector3(p.x + vel.x * 0.3, 1.3, p.z + vel.z * 0.3);
+    // a third-person orbit view: low enough that the horizon (and the rides on it) stay in frame
+    const dist = 8.5 * this.zoom * (portrait ? 1.25 : 1);
+    const cp = Math.cos(this.camPitch);
+    const offset = new THREE.Vector3(Math.sin(this.camYaw) * cp, Math.sin(this.camPitch), Math.cos(this.camYaw) * cp).multiplyScalar(dist);
+    const target = new THREE.Vector3(p.x + vel.x * 0.3, 1.7, p.z + vel.z * 0.3);
+    this.player.camYaw = this.camYaw;
     const k = snap ? 1 : 1 - Math.exp(-dt * 4);
     this.camTarget.lerp(target, k);
     this.camPos.lerp(target.clone().add(offset), k);
@@ -537,7 +668,7 @@ export class Game {
 
     for (const u of this.updatables) u.update(dt, t);
     this.updateCoasterAudio();
-    if (this.mode === 'drive') this.updateMinimap(dt);
+    if (this.mode === 'drive' || this.mode === 'drone') this.updateMinimap(dt);
     wind.uTime.value = t;
     wind.uCar.value.copy(this.player.position);
 
@@ -556,6 +687,20 @@ export class Game {
       this.wheel.updateCamera(this.camera, dt);
       this.env.follow(this.wheel.focus);
       this.env.setHaze(1 - 0.3 * THREE.MathUtils.clamp(this.wheel.altitude / 250, 0, 1));
+    } else if (this.mode === 'drone') {
+      this.zones.setVisible(false);
+      this.drone.updateCamera(this.camera, dt);
+      this.env.follow(this.drone.focus);
+      this.env.setHaze(1 - 0.3 * THREE.MathUtils.clamp(this.drone.altitude / 250, 0, 1));
+    } else if (this.mode === 'flip') {
+      this.zones.setVisible(false);
+      this.flip.updateCamera(this.camera, dt);
+      this.env.follow(this.flip.focus);
+      this.env.setHaze(1 - 0.3 * THREE.MathUtils.clamp(this.flip.altitude / 250, 0, 1));
+    } else if (this.mode === 'ship') {
+      this.zones.setVisible(false);
+      this.ship.updateCamera(this.camera, dt);
+      this.env.follow(this.ship.focus);
     } else if (this.mode === 'striker') {
       this.camera.up.set(0, 1, 0);
       this.zones.setVisible(false);
@@ -583,6 +728,7 @@ export class Game {
     else this.focus.copy(this.camera.position);
     this.env.update(t, this.focus);
     this.player.setNightGlow(this.env.night);
+    this.crowd?.setNight(this.env.night);
     this.timeControl?.update();
 
     if (this.adaptive.update(dt)) {
@@ -594,9 +740,10 @@ export class Game {
 
   private updateMinimap(dt: number) {
     const q = this.player.group.quaternion;
-    // yaw from the quaternion (the visitor only ever turns about y)
-    const heading = Math.atan2(2 * (q.w * q.y + q.x * q.z), 1 - 2 * (q.y * q.y + q.z * q.z));
-    const p = this.player.position;
+    // yaw from the quaternion (the visitor only ever turns about y); in the air, the map follows the drone
+    const flying = this.mode === 'drone';
+    const heading = flying ? this.drone.yaw : Math.atan2(2 * (q.w * q.y + q.x * q.z), 1 - 2 * (q.y * q.y + q.z * q.z));
+    const p = flying ? this.drone.position : this.player.position;
     this.minimap.update(dt, { x: p.x, z: p.z, heading }, [
       { x: this.stack.trainPosition.x, z: this.stack.trainPosition.z, color: PALETTE.mustard },
       { x: this.falcon.trainPosition.x, z: this.falcon.trainPosition.z, color: PALETTE.teal },
@@ -608,6 +755,10 @@ export class Game {
     if (this.mode === 'coaster') {
       const c = this.ride;
       this.sfx.setCoaster(Math.min(1, c.speed / (c === this.falcon ? 60 : 30)), c.launching, true);
+      return;
+    }
+    if (this.mode === 'ship') {
+      this.sfx.setCoaster(this.ship.speed01, false, true);
       return;
     }
     let best = 0;

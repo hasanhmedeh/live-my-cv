@@ -5,6 +5,7 @@ export class Sfx {
   private engine: { osc: OscillatorNode; gain: GainNode; filter: BiquadFilterNode } | null = null;
   private noiseBuffer: AudioBuffer | null = null;
   private ride: { rumble: GainNode; rumbleF: BiquadFilterNode; wind: GainNode; windF: BiquadFilterNode; whine: OscillatorNode; whineG: GainNode } | null = null;
+  private drone: { props: OscillatorNode[]; propsF: BiquadFilterNode; propsG: GainNode; wash: GainNode } | null = null;
   private lastThunk = 0;
   muted = false;
 
@@ -142,6 +143,47 @@ export class Sfx {
     this.ride.windF.frequency.setTargetAtTime(500 + speed01 * 1800, t, 0.1);
     this.ride.whine.frequency.setTargetAtTime(220 + speed01 * 900, t, 0.05);
     this.ride.whineG.gain.setTargetAtTime(launching ? 0.09 * k : 0, t, 0.06);
+  }
+
+  /** The rental drone's rotor buzz: `spin` 0..1 is the motors' speed, `effort` 0..1 how hard they work. */
+  setDrone(spin: number, effort = 0) {
+    if (!this.ctx || !this.master || !this.noiseBuffer) return;
+    const c = this.ctx;
+    if (!this.drone) {
+      if (spin <= 0) return;
+      // two slightly detuned props beat against each other, like a real quad
+      const propsF = c.createBiquadFilter();
+      propsF.type = 'lowpass';
+      propsF.frequency.value = 900;
+      const propsG = c.createGain();
+      propsG.gain.value = 0;
+      propsF.connect(propsG).connect(this.master);
+      const props = [0, 7].map((detune) => {
+        const o = c.createOscillator();
+        o.type = 'sawtooth';
+        o.frequency.value = 140 + detune;
+        o.connect(propsF);
+        o.start();
+        return o;
+      });
+      const src = c.createBufferSource();
+      src.buffer = this.noiseBuffer;
+      src.loop = true;
+      const washF = c.createBiquadFilter();
+      washF.type = 'bandpass';
+      washF.frequency.value = 700;
+      const wash = c.createGain();
+      wash.gain.value = 0;
+      src.connect(washF).connect(wash).connect(this.master);
+      src.start();
+      this.drone = { props, propsF, propsG, wash };
+    }
+    const t = c.currentTime;
+    const d = this.drone;
+    d.props.forEach((o, i) => o.frequency.setTargetAtTime((120 + spin * 70 + effort * 60) * (i ? 1.04 : 1), t, 0.1));
+    d.propsF.frequency.setTargetAtTime(500 + spin * 700 + effort * 600, t, 0.1);
+    d.propsG.gain.setTargetAtTime(spin * (0.035 + effort * 0.03), t, 0.1);
+    d.wash.gain.setTargetAtTime(spin * (0.05 + effort * 0.12), t, 0.1);
   }
 
   /** A soft footstep on the gravel paths (heavier when running). */

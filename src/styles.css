@@ -457,6 +457,53 @@ kbd {
   outline: 3px solid var(--mustard);
   outline-offset: 2px;
 }
+/* Graphics panel: shares the time panel's card */
+.gfx-options {
+  display: grid;
+  gap: 6px;
+  margin-top: 10px;
+}
+.gfx-option {
+  display: grid;
+  gap: 3px;
+  padding: 10px 14px;
+  border: 0;
+  border-radius: 12px;
+  background: rgba(34, 22, 63, 0.06);
+  color: var(--text);
+  font: 400 0.8rem/1.25 var(--body);
+  text-align: left;
+  cursor: pointer;
+  transition: background 0.2s;
+}
+.gfx-option strong {
+  font-size: 0.9rem;
+}
+.gfx-option span {
+  color: var(--muted);
+}
+.gfx-option:hover {
+  background: rgba(34, 22, 63, 0.12);
+}
+.gfx-option[aria-pressed='true'] {
+  background: var(--violet);
+  color: #fff;
+}
+.gfx-option[aria-pressed='true'] span {
+  color: rgba(255, 255, 255, 0.8);
+}
+.gfx-option:focus-visible {
+  outline: 3px solid var(--mustard);
+  outline-offset: 2px;
+}
+.gfx-note {
+  margin: 10px 0 0;
+  font-size: 0.75rem;
+  color: var(--muted);
+}
+#gfx-toggle[aria-expanded='true'] {
+  box-shadow: var(--shadow), inset 0 0 0 2px var(--mustard);
+}
 .hud-help {
   position: absolute;
   left: 200px;
@@ -956,6 +1003,113 @@ kbd {
 .is-riding-coaster .stick {
   display: block;
 }
+
+/* Drone flight: the stick and the map stay up; the HUD sits top-left, where the nav was */
+.is-flying .stick,
+.is-flying .minimap {
+  display: block;
+}
+.drone-hud {
+  top: max(16px, env(safe-area-inset-top));
+  bottom: auto;
+}
+.drone-hud .rh-toast {
+  top: calc(100% + 10px);
+  bottom: auto;
+}
+.dh-battery {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  margin-bottom: 10px;
+}
+.dh-time {
+  margin: 0;
+  display: grid;
+}
+.dh-time b {
+  font: 400 2.2rem/1 var(--display);
+  font-variant-numeric: tabular-nums;
+  transition: color 0.2s;
+}
+.dh-time span {
+  font-weight: 700;
+  font-size: 0.7rem;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+  opacity: 0.6;
+}
+.dh-bar {
+  flex: 1;
+  height: 10px;
+  border-radius: 99px;
+  background: rgba(255, 245, 227, 0.15);
+  overflow: hidden;
+}
+.dh-bar i {
+  display: block;
+  height: 100%;
+  width: 100%;
+  border-radius: 99px;
+  background: var(--teal);
+  transition: width 0.2s linear, background 0.3s;
+}
+.drone-hud.is-low .dh-bar i {
+  background: var(--mustard);
+}
+.drone-hud.is-critical .dh-bar i {
+  background: var(--candy);
+}
+.drone-hud.is-critical .dh-time b {
+  color: var(--candy);
+  animation: blink 1s steps(2, jump-none) infinite;
+}
+@keyframes blink {
+  50% {
+    opacity: 0.35;
+  }
+}
+.drone-offer {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+.drone-offer span {
+  padding: 6px 12px;
+  border-radius: 999px;
+  background: var(--cream);
+  color: var(--ink);
+  font-weight: 700;
+  font-size: 0.9rem;
+}
+.touch-lift {
+  position: absolute;
+  right: 36px;
+  bottom: max(186px, calc(env(safe-area-inset-bottom) + 176px));
+  display: none;
+  flex-direction: column;
+  gap: 12px;
+}
+.is-flying .touch-lift {
+  display: flex;
+}
+.touch-lift button {
+  width: 60px;
+  height: 60px;
+  border: 0;
+  border-radius: 50%;
+  background: var(--teal);
+  color: #fff;
+  font: 400 1.4rem/1 var(--display);
+  box-shadow: 0 4px 0 #1f8f85, var(--shadow);
+  touch-action: none;
+  user-select: none;
+  -webkit-user-select: none;
+}
+.touch-lift button:active {
+  transform: translateY(3px);
+  box-shadow: 0 1px 0 #1f8f85, var(--shadow);
+}
 @media (max-width: 720px) {
   /* sits above the joystick / camera button row */
   .ride-hud {
@@ -970,5 +1124,15 @@ kbd {
   }
   .rh-keys {
     display: none;
+  }
+}
+@media (max-width: 720px) {
+  /* the drone's HUD stays at the top, clear of the stick and the ▲ ▼ buttons */
+  .drone-hud {
+    top: max(12px, env(safe-area-inset-top));
+    bottom: auto;
+  }
+  .dh-time b {
+    font-size: 1.7rem;
   }
 }

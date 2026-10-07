@@ -10,6 +10,36 @@ import { DS, sampleTrack, stepRide, zoneAt, type Phys, type RideState, type Trac
 const HEART = 1.0;
 const CAR_GAP = 2.75;
 const START_S = 3;
+/** How long the ghost train waits in the station while guests get off and on. */
+const DWELL = 16;
+/** Gentlest stop the ghost train makes when pulling into the station (m/s²). */
+const STATION_DECEL = 3;
+
+/** A seat on the train, in its car's local frame. */
+export interface Seat {
+  car: THREE.Group;
+  local: THREE.Vector3;
+  /** Simple stand-in rider, shown when no crowd model sits here. */
+  puppet: THREE.Object3D;
+}
+
+/** Where guests queue, board and leave a coaster (world space, at platform height). */
+export interface StationInfo {
+  /** Station straight: from the platform's start, along the track. */
+  origin: THREE.Vector3;
+  along: THREE.Vector3;
+  /** Points from the track toward the platform. */
+  out: THREE.Vector3;
+  length: number;
+  platformY: number;
+  /** Foot and head of the entrance stairs, and of the exit stairs further along. */
+  entryFoot: THREE.Vector3;
+  entryTop: THREE.Vector3;
+  exitFoot: THREE.Vector3;
+  exitTop: THREE.Vector3;
+}
+
+const STAIR_RUN = 2.6;
 
 export interface CoasterConfig {
   /** Short id, also used for the best-lap storage key. */
@@ -80,6 +110,13 @@ export class Coaster implements Attraction {
   private zoneVisits = new Map<Zone, number>();
   private introTimer = 0;
   private maxSpeed = 0;
+  private stopS = START_S;
+  private dwellLeft = 0;
+  private dwelled = false;
+  readonly seats: Seat[] = [];
+  station!: StationInfo;
+  /** Fired when the ghost train stops in the station and when it leaves again. */
+  onDwell: ((dwelling: boolean) => void) | null = null;
   input: Input | null = null;
   active = false;
   onFinish: (() => void) | null = null;
@@ -254,6 +291,23 @@ export class Coaster implements Attraction {
     const out = R.clone().multiplyScalar(side); // toward the platform
     const rotY = Math.atan2(T.x, T.z);
     const along = (t: number, o: number, y: number) => P0.clone().addScaledVector(T, t).addScaledVector(out, o).setY(y);
+    // the platform is level with the car floors, so guests step straight in
+    const deckY = P0.y + 0.12;
+    const entryT = L * 0.28;
+    const exitT = L * 0.8;
+    this.station = {
+      origin: P0.clone().setY(0),
+      along: T.clone(),
+      out: out.clone(),
+      length: L,
+      platformY: deckY,
+      entryFoot: along(entryT, 3.5 + STAIR_RUN + 0.4, 0),
+      entryTop: along(entryT, 3.1, deckY),
+      exitFoot: along(exitT, 3.5 + STAIR_RUN + 0.4, 0),
+      exitTop: along(exitT, 3.1, deckY),
+    };
+    // the ghost train stops with its whole length inside the station
+    this.stopS = Math.max(START_S, L - 3);
 
     const g = new THREE.Group();
     const add = (mesh: THREE.Mesh, at: THREE.Vector3) => {
@@ -262,9 +316,35 @@ export class Coaster implements Attraction {
       g.add(mesh);
       return mesh;
     };
-    const pc = along(L / 2, 2.4, 0.55);
-    add(new THREE.Mesh(new THREE.BoxGeometry(2.2, 1.1, L), std('#b98a5a')), pc).receiveShadow = true;
-    staticBox(this.ctx, pc.x, 0.55, pc.z, 1.1, 0.55, L / 2, rotY);
+    const pc = along(L / 2, 2.4, deckY / 2);
+    const deckMat = std('#b98a5a');
+    add(new THREE.Mesh(new THREE.BoxGeometry(2.2, deckY, L), deckMat), pc).receiveShadow = true;
+    staticBox(this.ctx, pc.x, deckY / 2, pc.z, 1.1, deckY / 2, L / 2, rotY);
+    // entrance and exit stairs down to the queue line (solid, so you can't walk through them)
+    const steps = Math.ceil(deckY / 0.18);
+    const stepMat = std('#9c7048');
+    const railMat = std(PALETTE.cream, { roughness: 0.5 });
+    for (const t of [entryT, exitT]) {
+      for (let i = 0; i < steps; i++) {
+        const h = deckY * ((i + 1) / steps);
+        const o = 3.5 + STAIR_RUN * (1 - (i + 0.5) / steps);
+        const step = add(new THREE.Mesh(new THREE.BoxGeometry(1.4, h, STAIR_RUN / steps), stepMat), along(t, o, h / 2));
+        step.rotation.y = rotY + Math.PI / 2;
+        step.receiveShadow = true;
+      }
+      for (const side of [-0.75, 0.75]) {
+        // handrails following the slope
+        const a = along(t + side, 3.5, deckY + 0.9);
+        const b = along(t + side, 3.5 + STAIR_RUN, 0.9);
+        const rail = new THREE.Mesh(new THREE.CylinderGeometry(0.035, 0.035, a.distanceTo(b)), railMat);
+        rail.position.copy(a).add(b).multiplyScalar(0.5);
+        rail.quaternion.setFromUnitVectors(new THREE.Vector3(0, 1, 0), b.clone().sub(a).normalize());
+        g.add(rail);
+        for (const [o, y] of [[3.5, deckY], [3.5 + STAIR_RUN, 0]]) add(new THREE.Mesh(new THREE.CylinderGeometry(0.04, 0.04, 0.9), railMat), along(t + side, o, y + 0.45));
+      }
+      const sc = along(t, 3.5 + STAIR_RUN / 2, deckY / 4);
+      staticBox(this.ctx, sc.x, deckY / 4, sc.z, 0.75, deckY / 4, STAIR_RUN / 2, rotY + Math.PI / 2);
+    }
     const tc = along(L / 2, 0, 1);
     staticBox(this.ctx, tc.x, 1, tc.z, 1.1, 1, L / 2 + 0.5, rotY);
 
@@ -395,6 +475,7 @@ export class Coaster implements Attraction {
           }
           if (mine) continue;
           const person = new THREE.Group();
+          this.seats.push({ car, local: new THREE.Vector3(x, 0.85, z), puppet: person });
           const skin = std(skins[rider % skins.length]);
           const torso = new THREE.Mesh(new THREE.CapsuleGeometry(0.17, 0.3, 4, 8), std(shirts[rider % shirts.length]));
           torso.position.y = 1.08;
@@ -445,6 +526,10 @@ export class Coaster implements Attraction {
 
   start() {
     this.active = true;
+    if (this.dwellLeft > 0) {
+      this.dwellLeft = 0;
+      this.onDwell?.(false);
+    }
     this.state = { s: START_S, v: 0, launching: false };
     this.lapStart = this.ctx.time.t;
     this.camMode = 'driver';
@@ -499,10 +584,17 @@ export class Coaster implements Attraction {
 
     // two physics substeps per frame for stability at high speed
     const h = dt / 2;
-    for (let i = 0; i < 2; i++) {
-      sampleTrack(this.d, this.state.s, this.f);
-      stepRide(this.d, this.state, inp, h, this.f.t, this.cfg.phys);
-    }
+    if (this.dwellLeft > 0 && !this.active) {
+      // parked in the station while guests change over
+      this.dwellLeft -= dt;
+      this.state.v = 0;
+      if (this.dwellLeft <= 0) this.onDwell?.(false);
+    } else
+      for (let i = 0; i < 2; i++) {
+        sampleTrack(this.d, this.state.s, this.f);
+        stepRide(this.d, this.state, inp, h, this.f.t, this.cfg.phys);
+        if (!this.active) this.ghostStation();
+      }
     if (this.state.s >= L) {
       this.state.s -= L;
       if (this.active) this.onLap();
@@ -553,6 +645,48 @@ export class Coaster implements Attraction {
     if (zoneAt(this.d, this.state.s) === 'launch' && this.state.v < -0.5) this.toast('Rolled back! Hold W for power');
 
     this.updateHud(dt);
+  }
+
+  /** The ghost train eases to a stop in the station once a lap, then the tyres pull it out. */
+  private ghostStation() {
+    const st = this.state;
+    if (st.s > this.stopS + 4 && st.s < this.d.length - 30) this.dwelled = false;
+    if (this.dwelled || zoneAt(this.d, st.s) !== 'station' || st.s > this.stopS) return;
+    const left = this.stopS - st.s;
+    st.v = Math.max(0.35, Math.min(st.v, Math.sqrt(2 * STATION_DECEL * left)));
+    if (left < 0.05) {
+      st.s = this.stopS;
+      st.v = 0;
+      this.dwelled = true;
+      this.dwellLeft = DWELL;
+      this.onDwell?.(true);
+    }
+  }
+
+  /** Keep the parked ghost train waiting at least this much longer (guests still boarding). */
+  holdDwell(seconds: number) {
+    if (this.dwelling) this.dwellLeft = Math.max(this.dwellLeft, seconds);
+  }
+
+  /** How excited the riders are: hands go up on airtime and at speed. */
+  get thrill() {
+    return this.gSmooth < 0.4 || this.state.v > 22 ? 1 : 0;
+  }
+
+  /** True while the ghost train stands in the station with its gates open. */
+  get dwelling() {
+    return !this.active && this.dwellLeft > 0;
+  }
+
+  /** Seconds until the parked ghost train leaves. */
+  get dwellRemaining() {
+    return this.dwelling ? this.dwellLeft : 0;
+  }
+
+  /** World position of a seat (where a rider's hips go). */
+  seatWorld(i: number, out = new THREE.Vector3()) {
+    const seat = this.seats[i];
+    return out.copy(seat.local).applyMatrix4(seat.car.matrix);
   }
 
   private onLap() {

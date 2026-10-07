@@ -1,4 +1,4 @@
-import { LAYOUT, PATHS, PLAZAS, ZONES, type ZoneId } from './layout';
+import { FLIP_YAW, LAYOUT, PATHS, PLAZAS, ZONES, type ZoneId } from './layout';
 import { FALCON_TRACK, STACK_TRACK } from './rides';
 import { PALETTE } from './textures';
 
@@ -11,6 +11,9 @@ const ICONS: Record<ZoneId, string> = {
   striker: '🔔',
   ferris: '🎡',
   booth: '🎟️',
+  drone: '🚁',
+  flip: '🌀',
+  ship: '🛸',
 };
 
 /** Pixels per metre in the pre-rendered map sheet. */
@@ -141,6 +144,25 @@ export class Minimap {
     g.moveTo(X(LAYOUT.ferris.x - 124), Z(wz));
     g.lineTo(X(LAYOUT.ferris.x + 124), Z(wz));
     g.stroke();
+
+    // the Sky Flip from above: its fenced swing and the tower
+    const along = { x: Math.cos(FLIP_YAW), z: -Math.sin(FLIP_YAW) };
+    const out = { x: Math.sin(FLIP_YAW), z: Math.cos(FLIP_YAW) };
+    const fp = (lx: number, lz: number) => [X(LAYOUT.flip.x + along.x * lx + out.x * lz), Z(LAYOUT.flip.z + along.z * lx + out.z * lz)] as const;
+    g.fillStyle = 'rgba(255, 138, 61, 0.35)';
+    g.beginPath();
+    for (const [lx, lz] of [[-26, -4], [26, -4], [26, 16], [-26, 16]]) g.lineTo(...fp(lx, lz));
+    g.fill();
+    g.strokeStyle = PALETTE.candy;
+    g.lineWidth = 2.4 * s;
+    g.beginPath();
+    g.moveTo(...fp(-60, 3.6));
+    g.lineTo(...fp(60, 3.6));
+    g.stroke();
+    g.fillStyle = '#3a3f48';
+    g.beginPath();
+    g.arc(...fp(0, 0), 2.6 * s, 0, Math.PI * 2);
+    g.fill();
   }
   private resize() {
     const size = this.canvas.clientWidth;

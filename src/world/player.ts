@@ -1,26 +1,20 @@
 import * as THREE from 'three';
 import * as CANNON from 'cannon-es';
-import type { GLTF } from 'three/addons/loaders/GLTFLoader.js';
 import type { Ctx } from './context';
 import type { Input } from './input';
-import { LAYOUT } from './layout';
-import { smoothSkinned } from './subdivide';
+import { clampToGrounds, LAYOUT } from './layout';
+import type { PersonRig } from './crowd/people';
 
-// The visitor is "Casual Character" by Quaternius (CC0, via Poly Pizza): a rigged glTF with
-// motion clips. We blend Idle / Walk / Run by speed and layer one-shot moves on top.
-export const VISITOR_URL = `${import.meta.env.BASE_URL}models/visitor.glb`;
+// The visitor is one of the park's realistic people (see crowd/people.ts): the same rig and
+// animation library as every guest, with a fixed outfit. Idle / walk / jog / sprint blend by
+// speed; rolling, kicking, waving and reaching out are layered on top.
 
 const WALK_SPEED = 2.4; // m/s, a brisk stroll
 const RUN_SPEED = 7;
 const ROLL_SPEED = 7.5;
 const ACCEL = 16;
-const HEIGHT = 1.78;
 const BODY_R = 0.42; // lower collision sphere: its centre sits this high when standing
-// ground speed each clip was animated for, so playback rate can follow the real speed
-const WALK_CLIP_SPEED = 1.9;
-const RUN_CLIP_SPEED = 6.2;
-// bones that belong to the upper body: the wave plays on these only, so legs keep walking
-const UPPER = /Abdomen|Torso|Chest|Neck|Head|Shoulder|Arm|Wrist|Index|Middle|Ring|Pinky|Thumb/;
+const KICK_TIME = 0.55;
 
 type Move = 'roll' | 'kick' | 'interact';
 
@@ -30,94 +24,31 @@ export class Player {
   body: CANNON.Body;
   speed = 0;
   enabled = true;
-  private mixer: THREE.AnimationMixer;
-  private idle: THREE.AnimationAction;
-  private walk: THREE.AnimationAction;
-  private run: THREE.AnimationAction;
-  private waveAction: THREE.AnimationAction;
-  private moves: Record<Move, THREE.AnimationAction>;
+  /** Fired when the visitor waves or kicks, so guests nearby can react. */
+  onWave: (() => void) | null = null;
+  onKick: (() => void) | null = null;
   private move: Move | null = null;
   private moveT = 0;
+  private moveDur = 0;
   private kicked = false;
-  private waveT = 0;
   private heading = 0;
+  /** Yaw of the follow camera (0 = looking north); movement input is relative to it. */
+  camYaw = 0;
   private turnRate = 0;
-  private phase = 0;
-  private gait = 0;
-  private runK = 0;
   private lastStep = 0;
   private lastImpact = 0;
   private vel = new THREE.Vector2();
   private lean = new THREE.Group();
-  private mats: THREE.MeshStandardMaterial[] = [];
 
-  constructor(private ctx: Ctx, gltf: GLTF) {
-    const model = gltf.scene;
-    model.traverse((o) => {
-      const m = o as THREE.Mesh;
-      if (!m.isMesh) return;
-      m.castShadow = true;
-      m.frustumCulled = false; // skinned bounds don't follow the animation
-      // the asset is faceted low-poly: round it off (tiny eye/brow cards stay crisp)
-      if ((m as THREE.SkinnedMesh).isSkinnedMesh && m.geometry.getAttribute('position').count > 60) {
-        const old = m.geometry;
-        m.geometry = smoothSkinned(old);
-        old.dispose();
-      }
-      const mat = m.material as THREE.MeshStandardMaterial;
-      if (mat?.isMeshStandardMaterial) {
-        mat.flatShading = false;
-        mat.metalness = 0;
-        mat.roughness = 0.72;
-        // the jeans ship almost black; give them a denim blue
-        if (mat.name === 'LightBlue') mat.color.setRGB(0.05, 0.09, 0.2);
-        if (!this.mats.includes(mat)) this.mats.push(mat);
-      }
-    });
-
-    const clip = (name: string) => {
-      const c = gltf.animations.find((a) => a.name === name || a.name.endsWith(`|${name}`));
-      if (!c) throw new Error(`visitor.glb has no "${name}" clip`);
-      return c;
-    };
-    this.mixer = new THREE.AnimationMixer(model);
-    const loop = (name: string) => {
-      const a = this.mixer.clipAction(clip(name));
-      a.play();
-      a.setEffectiveWeight(0);
-      return a;
-    };
-    this.idle = loop('Idle');
-    this.walk = loop('Walk');
-    this.run = loop('Run');
-    // locomotion phase is driven by distance travelled, not by the mixer clock
-    this.walk.timeScale = this.run.timeScale = 0;
-    const once = (c: THREE.AnimationClip) => {
-      const a = this.mixer.clipAction(c);
-      a.setLoop(THREE.LoopOnce, 1);
-      a.clampWhenFinished = true;
-      return a;
-    };
-    const wave = clip('Wave').clone();
-    wave.tracks = wave.tracks.filter((t) => UPPER.test(t.name.slice(0, t.name.lastIndexOf('.'))));
-    this.waveAction = once(wave);
-    this.moves = { roll: once(clip('Roll')), kick: once(clip('Kick_Right')), interact: once(clip('Interact')) };
-    this.moves.roll.timeScale = 1.15;
-    this.moves.kick.timeScale = 1.2;
-
-    // measure the posed character and scale it to a real person's height, feet on the ground
-    this.idle.setEffectiveWeight(1);
-    this.mixer.update(0);
-    model.updateMatrixWorld(true);
-    model.traverse((o) => (o as THREE.SkinnedMesh).isSkinnedMesh && (o as THREE.SkinnedMesh).skeleton.update());
-    const box = new THREE.Box3().setFromObject(model, true);
-    const k = HEIGHT / (box.max.y - box.min.y);
-    const holder = new THREE.Group();
-    holder.add(model);
-    holder.scale.setScalar(k);
-    holder.position.y = -box.min.y * k - BODY_R;
-    holder.rotation.y = Math.PI; // glTF faces +z; the park's convention is -z forward
-    this.lean.add(holder);
+  constructor(
+    private ctx: Ctx,
+    readonly rig: PersonRig,
+  ) {
+    // the rig stands on its feet; the physics body's centre sits BODY_R above the ground
+    rig.root.position.y = -BODY_R;
+    rig.setShadows(true);
+    rig.setDetail(true);
+    this.lean.add(rig.root);
     this.group.add(this.lean);
     ctx.scene.add(this.group);
 
@@ -139,7 +70,7 @@ export class Player {
 
   /** After dark the visitor carries a faint glow of their own colours, so they stay readable. */
   setNightGlow(k: number) {
-    for (const m of this.mats) m.emissive.copy(m.color).multiplyScalar(0.55 * k);
+    this.rig.setGlow(k);
   }
 
   reset(x: number, z: number, heading: number) {
@@ -155,16 +86,15 @@ export class Player {
     return this.group.position;
   }
 
-  private get forward() {
+  get forward() {
     return new THREE.Vector2(-Math.sin(this.heading), -Math.cos(this.heading));
   }
 
   /** Wave with the right hand (upper body only, so it works while walking). */
   wave() {
-    if (this.waveT > 0) return;
-    this.waveAction.reset().setEffectiveWeight(4).fadeIn(0.2).play();
-    this.waveT = this.waveAction.getClip().duration;
+    this.rig.wave(1.8);
     this.ctx.sfx.whistle();
+    this.onWave?.();
   }
 
   /** Dodge-roll forward. */
@@ -185,20 +115,26 @@ export class Player {
   private startMove(m: Move) {
     if (!this.enabled || this.move) return false;
     this.move = m;
-    const a = this.moves[m];
-    a.reset().setEffectiveWeight(1).fadeIn(0.12).play();
-    this.moveT = a.getClip().duration / a.timeScale;
+    if (m === 'kick') {
+      this.rig.kick();
+      this.moveT = KICK_TIME;
+    } else this.moveT = this.rig.play(m === 'roll' ? 'Roll' : 'Interact', m === 'roll' ? 1.15 : 1.2);
+    this.moveDur = this.moveT;
     return true;
   }
 
   update(dt: number, input: Input) {
     const b = this.body;
-    // camera-relative movement: the camera always looks north, so W = north, D = east
+    // camera-relative movement: W = away from the camera, D = to its right
     let mx = 0;
     let mz = 0;
     if (this.enabled) {
-      mx = -input.steer;
-      mz = -input.throttle;
+      const ix = -input.steer;
+      const iz = -input.throttle;
+      const c = Math.cos(this.camYaw);
+      const s = Math.sin(this.camYaw);
+      mx = ix * c + iz * s;
+      mz = -ix * s + iz * c;
     }
     const mag = Math.min(1, Math.hypot(mx, mz));
     const running = this.enabled && input.boost && mag > 0.1;
@@ -237,12 +173,11 @@ export class Player {
     b.velocity.z = this.vel.y;
     this.speed = this.vel.length();
 
-    // keep inside the fair
-    const r = Math.hypot(b.position.x, b.position.z);
-    if (r > LAYOUT.boundary) {
-      const k = LAYOUT.boundary / r;
-      b.position.x *= k;
-      b.position.z *= k;
+    // keep inside the fair (or on the road out to the giant wheel)
+    const clamped = clampToGrounds(b.position.x, b.position.z);
+    if (clamped) {
+      b.position.x = clamped[0];
+      b.position.z = clamped[1];
       this.vel.multiplyScalar(0.3);
     }
     if (b.position.y < -5) this.reset(LAYOUT.spawn.x, LAYOUT.spawn.z, 0);
@@ -254,54 +189,28 @@ export class Player {
 
   private animate(dt: number) {
     const s = this.speed;
-    // ---- one-shot moves ----
-    let moveW = 0;
     if (this.move) {
       this.moveT -= dt;
-      const a = this.moves[this.move];
-      if (this.moveT < 0.18 && a.getEffectiveWeight() > 0.99) a.fadeOut(0.18);
-      if (this.move === 'kick' && !this.kicked && a.time > a.getClip().duration * 0.38) {
+      // the foot connects a third of the way into the kick
+      if (this.move === 'kick' && !this.kicked && this.moveT < this.moveDur * 0.62) {
         this.kicked = true;
         this.kickProps();
+        this.onKick?.();
       }
-      moveW = a.getEffectiveWeight();
-      if (this.moveT <= 0) {
-        a.stop();
-        this.move = null;
-        moveW = 0;
-      }
+      if (this.moveT <= 0) this.move = null;
     }
-    if (this.waveT > 0) {
-      this.waveT -= dt;
-      if (this.waveT < 0.25 && this.waveAction.getEffectiveWeight() > 3.9) this.waveAction.fadeOut(0.25);
-      if (this.waveT <= 0) this.waveAction.stop();
-    }
-
-    // ---- locomotion: idle → walk → run, one shared stride phase so the blend never stutters ----
-    const kk = 1 - Math.exp(-dt * 10);
-    this.gait += (Math.min(1, s / (WALK_SPEED * 0.6)) - this.gait) * kk;
-    this.runK += (THREE.MathUtils.clamp((s - WALK_SPEED) / (RUN_SPEED - WALK_SPEED), 0, 1) - this.runK) * kk;
-    const walkDur = this.walk.getClip().duration;
-    const runDur = this.run.getClip().duration;
-    const rate = (1 - this.runK) * (s / WALK_CLIP_SPEED / walkDur) + this.runK * (s / RUN_CLIP_SPEED / runDur);
-    this.phase = (this.phase + rate * dt) % 1;
-    this.walk.time = this.phase * walkDur;
-    this.run.time = this.phase * runDur;
-    const loco = this.move === 'roll' ? 0 : 1 - moveW;
-    this.idle.setEffectiveWeight((1 - this.gait) * loco);
-    this.walk.setEffectiveWeight(this.gait * (1 - this.runK) * loco);
-    this.run.setEffectiveWeight(this.gait * this.runK * loco);
+    this.rig.update(dt, this.move === 'roll' ? 0 : s);
 
     // footsteps: two per stride
-    const stepIndex = Math.floor(this.phase * 2);
+    const stepIndex = Math.floor(this.rig.stride * 2);
     if (stepIndex !== this.lastStep) {
       this.lastStep = stepIndex;
-      if (s > 0.6 && !this.move) this.ctx.sfx.footstep(this.runK > 0.5);
+      if (s > 0.6 && !this.move) this.ctx.sfx.footstep(this.rig.runBlend > 0.5);
     }
 
     // a little lean into turns at speed
+    const kk = 1 - Math.exp(-dt * 10);
     this.lean.rotation.z = THREE.MathUtils.lerp(this.lean.rotation.z, THREE.MathUtils.clamp(-this.turnRate * s * 0.01, -0.2, 0.2), kk);
-    this.mixer.update(dt);
   }
 
   /** Launch every loose prop just in front of the kicking foot. */

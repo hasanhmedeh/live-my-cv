@@ -4,10 +4,10 @@ import { Sky } from 'three/addons/objects/Sky.js';
 import { mergeGeometries } from 'three/addons/utils/BufferGeometryUtils.js';
 import { std, staticCylinder, type Ctx } from './context';
 import { Grass } from './grass';
-import { LAYOUT, PATHS, PLAZAS } from './layout';
+import { flipLocal, LAYOUT, onPath, PATHS, PLAZAS, WHEEL_LAWN, WHEEL_ROAD } from './layout';
 import type { Quality } from './quality';
 import { mulberry } from './random';
-import { detailNormalTexture, glowTexture, groundTexture, hdr, PALETTE, poolTexture, stripeTexture } from './textures';
+import { detailNormalTexture, glowTexture, groundTexture, hdr, PALETTE, lawnPatchTexture, poolTexture, stripeTexture } from './textures';
 import { addWind } from './wind';
 import { FALCON_TRACK, nearTrack } from './rides';
 import { fogSun, installSunFog } from './fog';
@@ -158,7 +158,7 @@ export class Environment {
     this.hemi = new THREE.HemisphereLight('#9a8ee0', '#4a3b30', 0.55);
     scene.add(this.hemi);
     this.sun = new THREE.DirectionalLight('#ffbe86', 4.2);
-    this.sun.castShadow = true;
+    this.sun.castShadow = q.shadows;
     this.sun.shadow.mapSize.set(q.shadowSize, q.shadowSize);
     const cam = this.sun.shadow.camera;
     cam.left = cam.bottom = -46;
@@ -171,7 +171,7 @@ export class Environment {
     scene.add(this.sun, this.sun.target);
 
     // ---------- Ground ----------
-    const ground = groundTexture(ctx.mobile ? 2048 : 4096, WORLD, PATHS, PLAZAS);
+    const ground = groundTexture(ctx.mobile || q.tier === 'lowest' ? 2048 : 4096, WORLD, PATHS, PLAZAS);
     const detail = detailNormalTexture(512);
     detail.repeat.set(90, 90);
     const groundMesh = new THREE.Mesh(
@@ -181,6 +181,32 @@ export class Environment {
     groundMesh.rotation.x = -Math.PI / 2;
     groundMesh.receiveShadow = true;
     scene.add(groundMesh);
+    // the road to the giant wheel runs on past the edge of the park's ground texture, through a
+    // lawn that carries on from the park's and fades out into the open country
+    const L = WHEEL_LAWN;
+    const lawnRect = { x0: -L.half, x1: L.half, z0: L.z0, z1: L.z1 };
+    const lawnW = lawnRect.x1 - lawnRect.x0;
+    const lawnH = lawnRect.z1 - lawnRect.z0;
+    const lawnDetail = detail.clone();
+    lawnDetail.repeat.set((90 * lawnW) / WORLD, (90 * lawnH) / WORLD);
+    const lawnFadeNear = L.z1 + WORLD / 2; // the overlap with the park ground
+    const lawn = new THREE.Mesh(
+      new THREE.PlaneGeometry(lawnW, lawnH).rotateX(-Math.PI / 2),
+      std('#ffffff', {
+        map: lawnPatchTexture(lawnRect, ctx.mobile || q.tier === 'lowest' ? 8 : 12, WORLD, { side: L.fade, near: lawnFadeNear }, PATHS, PLAZAS),
+        normalMap: lawnDetail,
+        normalScale: new THREE.Vector2(0.9, 0.9),
+        roughness: 0.96,
+        transparent: true,
+        alphaTest: 0.02,
+        depthWrite: false,
+        polygonOffset: true,
+        polygonOffsetFactor: -1,
+      }),
+    );
+    lawn.position.set((lawnRect.x0 + lawnRect.x1) / 2, 0.03, (lawnRect.z0 + lawnRect.z1) / 2);
+    lawn.receiveShadow = true;
+    scene.add(lawn);
     const far = new THREE.Mesh(new THREE.CircleGeometry(900, 64), std('#2b5c40', { roughness: 1 }));
     far.rotation.x = -Math.PI / 2;
     far.position.y = -0.05;
@@ -192,7 +218,16 @@ export class Environment {
     groundBody.quaternion.setFromEuler(-Math.PI / 2, 0, 0);
     ctx.world.addBody(groundBody);
 
-    this.grass = new Grass(scene, ground.isSand, q.grass, q.grassDistance, q.tier !== 'low');
+    // grass grows on the park's lawn and on the lawn along the wheel road (thinning out where it fades)
+    const R = LAYOUT.boundary + 1;
+    const growth = (x: number, z: number) => {
+      if (Math.hypot(x, z) < R) return ground.isSand(x, z) ? 0 : 1;
+      if (Math.abs(x) > L.half || z < L.z0 || z > 0 || onPath(x, z, 1.2)) return 0;
+      const edge = Math.min(L.half - Math.abs(x), z - L.z0);
+      return THREE.MathUtils.smoothstep(edge, L.fade * 0.25, L.fade);
+    };
+    const grassBounds = { x0: -R, x1: R, z0: L.z0, z1: R };
+    this.grass = new Grass(scene, growth, grassBounds, q.grass, q.grassDistance, q.tier !== 'low' && q.tier !== 'lowest');
 
     this.buildTrees();
     this.buildFence();
@@ -202,7 +237,7 @@ export class Environment {
     this.buildBalloons();
 
     // fireflies drifting over the meadow
-    const n = q.tier === 'low' ? 60 : 160;
+    const n = q.tier === 'lowest' ? 0 : q.tier === 'low' ? 60 : 160;
     this.fireflySeeds = new Float32Array(n * 4);
     const fr = mulberry(77);
     for (let i = 0; i < n; i++) {
@@ -304,8 +339,14 @@ export class Environment {
     const color = new THREE.Color();
     let nl = 0;
     let np = 0;
-    // nothing may grow through a coaster
-    for (let i = spots.length - 1; i >= 0; i--) if (nearTrack(spots[i][0], spots[i][1], 5, 9)) spots.splice(i, 1);
+    // nothing may grow through a coaster, on the road out to the giant wheel, or where the Sky Flip swings low
+    const underFlip = (x: number, z: number) => {
+      const [lx, lz] = flipLocal(x, z);
+      return Math.abs(lx) < 34 && lz > -3 && lz < 21;
+    };
+    for (let i = spots.length - 1; i >= 0; i--)
+      if (nearTrack(spots[i][0], spots[i][1], 5, 9) || (spots[i][1] < 0 && Math.abs(spots[i][0]) < WHEEL_ROAD.half + 5) || underFlip(spots[i][0], spots[i][1]))
+        spots.splice(i, 1);
     spots.forEach(([x, z, sc], i) => {
       q.setFromAxisAngle(THREE.Object3D.DEFAULT_UP, rnd() * 6);
       m.compose(new THREE.Vector3(x, 0, z), q, new THREE.Vector3(sc, sc * (0.9 + rnd() * 0.25), sc));
@@ -337,16 +378,22 @@ export class Environment {
     const posts = new THREE.InstancedMesh(geo, std(PALETTE.cream, { roughness: 0.7 }), n);
     const m = new THREE.Matrix4();
     const r = LAYOUT.boundary + 2.5;
+    // the north gate, where the road leaves for the giant wheel (centred on angle -π/2)
+    const gate = Math.asin((WHEEL_ROAD.half + 0.6) / r);
     for (let i = 0; i < n; i++) {
       const a = (i / n) * Math.PI * 2;
-      // leave a gap where a coaster runs through the fence
-      if (nearTrack(Math.cos(a) * r, Math.sin(a) * r, 3, 4)) m.makeScale(0, 0, 0);
+      // leave a gap where a coaster runs through the fence, and at the gate
+      const g = Math.abs(((a + Math.PI / 2 + Math.PI * 3) % (Math.PI * 2)) - Math.PI);
+      if (nearTrack(Math.cos(a) * r, Math.sin(a) * r, 3, 4) || g < gate) m.makeScale(0, 0, 0);
       else m.makeRotationY(-a).setPosition(Math.cos(a) * r, 0, Math.sin(a) * r);
       posts.setMatrixAt(i, m);
     }
     posts.castShadow = true;
     this.ctx.scene.add(posts);
-    const rail = new THREE.Mesh(new THREE.TorusGeometry(r, 0.06, 4, 160), std(PALETTE.candy, { roughness: 0.5 }));
+    const rail = new THREE.Mesh(
+      new THREE.TorusGeometry(r, 0.06, 4, 160, Math.PI * 2 - gate * 2).rotateZ(-Math.PI / 2 + gate),
+      std(PALETTE.candy, { roughness: 0.5 }),
+    );
     rail.rotation.x = Math.PI / 2;
     rail.position.y = 0.95;
     this.ctx.scene.add(rail);
@@ -355,6 +402,8 @@ export class Environment {
   private buildLamps() {
     const spots: [number, number][] = [];
     for (let z = -14; z > -56; z -= 10) spots.push([-5.2, z], [5.2, z]);
+    // …and on along the road out to the giant wheel
+    for (let z = -66; z > WHEEL_ROAD.end + 4; z -= 12) spots.push([-5.2, z], [5.2, z]);
     spots.push([-13.5, 15], [13.5, 15], [-14.5, 4], [14.5, 4], [28, -6], [38, -24], [-12, -36], [24, -40], [-8, -26], [8, -26]);
 
     const iron = std('#2c2433', { metalness: 0.75, roughness: 0.35 });

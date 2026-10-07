@@ -3,11 +3,13 @@ export class Input {
   throttle = 0; // -1..1
   steer = 0; // -1..1 (positive = left)
   boost = false;
+  lift = 0; // -1..1: climb / descend (the drone)
+  private touchLift = 0;
   private keys = new Set<string>();
   private stick = { x: 0, y: 0, active: false };
   private handlers: Record<string, (() => void)[]> = {};
 
-  constructor(private touchEls: { stick: HTMLElement; knob: HTMLElement; action: HTMLElement }) {
+  constructor(private touchEls: { stick: HTMLElement; knob: HTMLElement; action: HTMLElement; lift: HTMLElement }) {
     window.addEventListener('keydown', this.onKeyDown);
     window.addEventListener('keyup', (e) => this.keys.delete(e.code));
     window.addEventListener('blur', () => this.keys.clear());
@@ -15,6 +17,18 @@ export class Input {
     touchEls.action.addEventListener('pointerdown', (e) => {
       e.preventDefault();
       this.emit('action');
+    });
+    // the drone's ▲ / ▼ buttons: held down to climb or descend
+    touchEls.lift.querySelectorAll<HTMLElement>('[data-lift]').forEach((b) => {
+      const dir = Number(b.dataset.lift);
+      b.addEventListener('pointerdown', (e) => {
+        e.preventDefault();
+        b.setPointerCapture(e.pointerId);
+        this.touchLift = dir;
+      });
+      const end = () => this.touchLift === dir && (this.touchLift = 0);
+      b.addEventListener('pointerup', end);
+      b.addEventListener('pointercancel', end);
     });
   }
 
@@ -95,6 +109,10 @@ export class Input {
     if (k.has('KeyA') || k.has('KeyQ') || k.has('ArrowLeft')) s += 1;
     if (k.has('KeyD') || k.has('ArrowRight')) s -= 1;
     this.boost = k.has('ShiftLeft') || k.has('ShiftRight');
+    let l = 0;
+    if (k.has('Space') || k.has('PageUp')) l += 1;
+    if (k.has('KeyX') || k.has('PageDown')) l -= 1;
+    this.lift = this.touchLift || l;
 
     if (this.stick.active) {
       // Up = throttle, sideways = steer (behaves like the keyboard).
