@@ -1,5 +1,4 @@
 import { defineConfig, type Plugin } from 'vite';
-import { renderCvHtml, renderJsonLd } from './seo/render.ts';
 
 // Set SITE_URL in Vercel (Project → Settings → Environment Variables) once you
 // attach a custom domain. Falls back to the Vercel production URL, then a default.
@@ -10,12 +9,9 @@ const SITE_URL = (
 
 function seo(): Plugin {
   return {
-    name: 'cv-seo',
+    name: 'seo',
     transformIndexHtml(html) {
-      return html
-        .replaceAll('__SITE_URL__', SITE_URL)
-        .replace('<!--CV_CONTENT-->', renderCvHtml())
-        .replace('<!--JSON_LD-->', `<script type="application/ld+json">${renderJsonLd(SITE_URL)}</script>`);
+      return html.replaceAll('__SITE_URL__', SITE_URL);
     },
     generateBundle() {
       const today = new Date().toISOString().slice(0, 10);

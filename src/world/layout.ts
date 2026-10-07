@@ -18,13 +18,14 @@ export type ZoneId = 'entrance' | 'coaster' | 'falcon' | 'rocket' | 'crates' | '
 /** Where the car is placed when teleporting to a zone, and the zone trigger. */
 export const ZONES: Record<ZoneId, { x: number; z: number; radius: number; title: string; action: string; heading: number }> = {
   entrance: { x: 0, z: 14, radius: 0, title: 'Entrance', action: '', heading: 0 },
-  coaster: { x: -19, z: 2, radius: 3.6, title: 'Projects Coaster', action: 'Drive the coaster', heading: Math.PI / 2 },
-  falcon: { x: 78, z: 12, radius: 3.6, title: 'Sky Falcon', action: 'Ride the 500 km/h cliff coaster', heading: Math.PI / 2 },
-  rocket: { x: 42, z: -40, radius: 3.6, title: 'Career Rocket', action: 'Launch my timeline', heading: 0 },
-  crates: { x: 34, z: -2, radius: 3.6, title: 'Skill Smash', action: 'Restack the crates', heading: 0 },
+  coaster: { x: -19, z: 2, radius: 3.6, title: 'Thunder Loop', action: 'Drive the coaster', heading: Math.PI / 2 },
+  // west of the station: the track itself is a solid wall the car can't cross
+  falcon: { x: 63, z: 12, radius: 3.6, title: 'Sky Falcon', action: 'Ride the 250 km/h cliff coaster', heading: -Math.PI / 2 },
+  rocket: { x: 42, z: -40, radius: 3.6, title: 'Rocket Ride', action: 'Launch into orbit', heading: 0 },
+  crates: { x: 34, z: -2, radius: 3.6, title: 'Crate Smash', action: 'Restack the crates', heading: 0 },
   striker: { x: -20, z: -33, radius: 3.4, title: 'High Striker', action: 'Swing the hammer', heading: 0 },
-  ferris: { x: 0, z: -55, radius: 3.6, title: 'Ferris Wheel', action: 'About me', heading: 0 },
-  booth: { x: 20, z: 18, radius: 3.4, title: 'Ticket Booth', action: 'Contact me', heading: 0 },
+  ferris: { x: 0, z: -55, radius: 3.6, title: 'Ferris Wheel', action: 'Take in the view', heading: 0 },
+  booth: { x: 20, z: 18, radius: 3.4, title: 'Ticket Booth', action: 'Park guide', heading: 0 },
 };
 
 export const PATHS: { points: [number, number][]; width: number }[] = [
@@ -38,7 +39,7 @@ export const PATHS: { points: [number, number][]; width: number }[] = [
   { points: [[34, -2], [40, -20], [42, -40]], width: 5 },
   { points: [[0, -30], [22, -38], [42, -40]], width: 4.5 },
   // east gate to the Sky Falcon
-  { points: [[20, 18], [48, 17], [66, 13], [78, 12]], width: 4.5 },
+  { points: [[20, 18], [48, 17], [63, 12]], width: 4.5 },
   // booth spur
   { points: [[0, 18], [12, 18], [20, 18]], width: 4.5 },
 ];
@@ -51,6 +52,6 @@ export const PLAZAS: [number, number, number][] = [
   [34, -6, 9],
   [-20, -36, 6],
   [20, 16, 5],
-  [78, 12, 5],
+  [63, 12, 5],
   [-20, 2, 5],
 ];

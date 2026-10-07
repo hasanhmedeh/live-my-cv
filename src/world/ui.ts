@@ -20,6 +20,9 @@ export class UI {
   constructor(private mobile: boolean) {
     this.promptEl.addEventListener('click', () => this.onPromptClick?.());
     this.rideExitEl.querySelector('button')!.addEventListener('click', () => this.onRideExit?.());
+    // transient badges dismiss on click too
+    this.scoreEl.addEventListener('click', () => (this.scoreEl.hidden = true));
+    $('rh-toast').addEventListener('click', (e) => ((e.currentTarget as HTMLElement).hidden = true));
     this.panelEl.addEventListener('click', (e) => {
       const t = e.target as HTMLElement;
       if (t.closest('[data-panel-close]')) {
@@ -42,11 +45,11 @@ export class UI {
   }
 
   /** Shows an info card. `key` avoids re-rendering identical content every frame. */
-  panel(key: string, html: string, opts: { left?: boolean; accent?: string; closable?: boolean } = {}) {
+  panel(key: string, html: string, opts: { left?: boolean; accent?: string } = {}) {
     if (this.panelKey === key && !this.panelEl.hidden) return;
     this.panelKey = key;
     this.panelEl.innerHTML =
-      (opts.closable === false ? '' : '<button class="close" type="button" data-panel-close aria-label="Close">✕</button>') + html;
+      '<button class="close" type="button" data-panel-close aria-label="Close" title="Close (Esc)">✕</button>' + html;
     this.panelEl.classList.toggle('panel-left', !!opts.left);
     this.panelEl.style.borderTopColor = opts.accent ?? '';
     this.panelEl.hidden = false;

@@ -182,7 +182,7 @@ export function makeSprite(tex: THREE.Texture, worldWidth: number) {
   return s;
 }
 
-/** Crate face with a skill name. */
+/** Crate face with its points value. */
 export function crateTexture(label: string, color: string) {
   const c = document.createElement('canvas');
   c.width = c.height = 256;

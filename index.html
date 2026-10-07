@@ -3,30 +3,27 @@
   <head>
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
-    <title>Hasan Hmedeh — Senior Full-Stack Developer (React, NestJS, Flutter) | Interactive CV</title>
-    <meta name="description" content="Hasan Hmedeh is a Senior Full-Stack Software Developer at Poyesis building scalable web apps with React, Next.js and NestJS, and cross-platform mobile apps with Flutter. Explore his CV as a 3D funfair." />
-    <meta name="author" content="Hasan Hmedeh" />
+    <title>The Funfair — a 3D theme park in your browser</title>
+    <meta name="description" content="Drive a car around a 3D funfair at dusk: ride two rollercoasters, including a 250 km/h cliff coaster, launch a rocket into orbit, smash crates and ring the high striker bell." />
     <meta name="robots" content="index, follow, max-image-preview:large" />
     <link rel="canonical" href="__SITE_URL__/" />
     <meta name="theme-color" content="#1d1238" />
     <meta name="color-scheme" content="dark light" />
 
     <!-- Open Graph / social -->
-    <meta property="og:type" content="profile" />
-    <meta property="og:site_name" content="Hasan Hmedeh" />
-    <meta property="og:title" content="Hasan Hmedeh — Senior Full-Stack Developer" />
-    <meta property="og:description" content="Drive a bumper car through my CV: ride the projects rollercoaster, launch the career rocket and smash the skill crates." />
+    <meta property="og:type" content="website" />
+    <meta property="og:site_name" content="The Funfair" />
+    <meta property="og:title" content="The Funfair — a 3D theme park in your browser" />
+    <meta property="og:description" content="Drive around the park, ride the rollercoasters, launch the rocket and smash the crates." />
     <meta property="og:url" content="__SITE_URL__/" />
     <meta property="og:image" content="__SITE_URL__/og-image.jpg" />
     <meta property="og:image:width" content="1200" />
     <meta property="og:image:height" content="630" />
-    <meta property="og:image:alt" content="A 3D funfair at dusk with a rollercoaster, Ferris wheel and rocket — Hasan Hmedeh's interactive CV" />
+    <meta property="og:image:alt" content="A 3D funfair at dusk with a rollercoaster, Ferris wheel and rocket" />
     <meta property="og:locale" content="en_US" />
-    <meta property="profile:first_name" content="Hasan" />
-    <meta property="profile:last_name" content="Hmedeh" />
     <meta name="twitter:card" content="summary_large_image" />
-    <meta name="twitter:title" content="Hasan Hmedeh — Senior Full-Stack Developer" />
-    <meta name="twitter:description" content="An interactive 3D funfair CV — React, NestJS, Flutter, AWS." />
+    <meta name="twitter:title" content="The Funfair — a 3D theme park in your browser" />
+    <meta name="twitter:description" content="Rollercoasters, a rocket ride and carnival games in a 3D funfair." />
     <meta name="twitter:image" content="__SITE_URL__/og-image.jpg" />
 
     <link rel="icon" href="/favicon.svg" type="image/svg+xml" />
@@ -37,60 +34,46 @@
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
     <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=DM+Sans:opsz,wght@9..40,400;9..40,500;9..40,700&family=Lilita+One&display=swap" />
 
-    <!--JSON_LD-->
     <script>document.documentElement.classList.replace('no-js', 'js');</script>
   </head>
   <body>
-    <a class="skip-link" href="#cv">Skip to the classic CV</a>
-
     <div id="world" aria-hidden="true"></div>
 
     <main>
       <section id="intro" class="intro" aria-labelledby="intro-title">
         <div class="intro-card">
           <p class="intro-kicker">Admit one · Welcome to the fair</p>
-          <h1 id="intro-title">Hasan Hmedeh</h1>
-          <p class="intro-role">Senior Full-Stack Software Developer</p>
+          <h1 id="intro-title">The Funfair</h1>
+          <p class="intro-role">Rides · Games · Thrills</p>
           <p class="intro-lead">
-            React · Next.js · NestJS · Flutter · AWS. Drive a bumper car through my career: ride the
-            <strong>projects rollercoaster</strong>, launch the <strong>career rocket</strong> and smash the
-            <strong>skill crates</strong>.
+            Hop in a car and explore the park: drive the <strong>Thunder Loop</strong> coaster, plunge off the cliff on the
+            <strong>Sky Falcon</strong>, launch the <strong>rocket</strong> into orbit and smash the <strong>crates</strong>.
           </p>
           <div class="intro-actions">
             <button id="enter" class="btn btn-primary" type="button" disabled>
               <span class="btn-label">Building the fair…</span>
             </button>
-            <a class="btn btn-ghost" href="#cv" id="open-cv-intro">Read the classic CV</a>
           </div>
           <div class="intro-progress" aria-hidden="true"><span id="progress-bar"></span></div>
           <p class="intro-hint">Best with a keyboard: <kbd>W</kbd><kbd>A</kbd><kbd>S</kbd><kbd>D</kbd> or arrows to drive, <kbd>E</kbd> to play. Touch works too.</p>
         </div>
       </section>
-
-      <article id="cv" class="cv" tabindex="-1" aria-label="Hasan Hmedeh — classic CV">
-        <button class="cv-close" type="button" data-close-cv aria-label="Close the classic CV">✕</button>
-        <!--CV_CONTENT-->
-        <footer class="cv-foot">
-          <p>This CV is also an interactive 3D funfair. Built with Three.js &amp; cannon-es.</p>
-        </footer>
-      </article>
     </main>
 
     <!-- In-world HUD (enhanced experience only) -->
     <div id="hud" class="hud" hidden>
       <nav class="hud-nav" aria-label="Attractions">
         <button type="button" data-goto="entrance" title="Entrance">🎪<span>Entrance</span></button>
-        <button type="button" data-goto="coaster" title="Projects rollercoaster">🎢<span>Projects</span></button>
+        <button type="button" data-goto="coaster" title="Thunder Loop rollercoaster">🎢<span>Coaster</span></button>
         <button type="button" data-goto="falcon" title="Sky Falcon — 250 km/h cliff coaster">🦅<span>Falcon</span></button>
-        <button type="button" data-goto="rocket" title="Career rocket">🚀<span>Timeline</span></button>
-        <button type="button" data-goto="crates" title="Skill crates">🥫<span>Skills</span></button>
-        <button type="button" data-goto="striker" title="High striker">🔔<span>Wins</span></button>
-        <button type="button" data-goto="ferris" title="Ferris wheel">🎡<span>About</span></button>
-        <button type="button" data-goto="booth" title="Ticket booth">🎟️<span>Contact</span></button>
+        <button type="button" data-goto="rocket" title="Rocket ride">🚀<span>Rocket</span></button>
+        <button type="button" data-goto="crates" title="Crate smash">🥫<span>Crates</span></button>
+        <button type="button" data-goto="striker" title="High striker">🔔<span>Striker</span></button>
+        <button type="button" data-goto="ferris" title="Ferris wheel">🎡<span>Ferris</span></button>
+        <button type="button" data-goto="booth" title="Ticket booth">🎟️<span>Tickets</span></button>
       </nav>
       <div class="hud-tools">
         <button type="button" id="sound-toggle" class="hud-icon" aria-pressed="true" title="Sound">🔊</button>
-        <button type="button" id="open-cv" class="hud-pill" title="Classic CV">📄 <span>Classic CV</span></button>
       </div>
 
       <div id="prompt" class="prompt" role="status" aria-live="polite" hidden></div>
@@ -114,7 +97,12 @@
       <div id="ride-exit" class="ride-exit" hidden><button type="button" class="btn btn-small btn-cream">Exit ride <kbd>Esc</kbd></button></div>
       <aside id="panel" class="panel" aria-live="polite" hidden></aside>
 
-      <p class="hud-help" id="hud-help"><kbd>WASD</kbd>/<kbd>↑↓←→</kbd> drive · <kbd>Shift</kbd> boost · <kbd>E</kbd> play · <kbd>R</kbd> reset · <kbd>H</kbd> honk</p>
+      <div id="minimap" class="minimap" title="Map · click an icon to drive there, M to zoom">
+        <canvas aria-label="Map of the fair"></canvas>
+        <button type="button" class="minimap-zoom" data-map-zoom aria-label="Zoom the map">⤢</button>
+      </div>
+
+      <p class="hud-help" id="hud-help"><kbd>WASD</kbd>/<kbd>↑↓←→</kbd> drive · <kbd>Shift</kbd> boost · <kbd>E</kbd> play · <kbd>R</kbd> reset · <kbd>H</kbd> honk · <kbd>M</kbd> map · <kbd>Esc</kbd> close</p>
 
       <div class="touch" id="touch" hidden>
         <div class="stick" id="stick"><span class="stick-knob" id="stick-knob"></span></div>

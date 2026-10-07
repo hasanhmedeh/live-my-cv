@@ -1,16 +1,17 @@
-# Hasan's Funfair — an interactive 3D CV
+# The Funfair — a 3D theme park in the browser
 
-Drive a bumper car around a low-poly funfair at dusk and explore Hasan Hmedeh's CV:
+Drive a car around a low-poly funfair at dusk:
 
-| Attraction | What it shows |
+| Attraction | What it is |
 | --- | --- |
-| 🎪 Entrance + physical name letters | Knock over **HASAN HMEDEH** (Bruno Simon style) |
-| 🎢 The Stack (Projects Coaster) | A launched steel coaster **you drive**: throttle, brakes and turbo, real physics (roll back if you're too slow), loop, zero-g roll, airtime hill, helix and tunnel. Billboards along the track are projects |
-| 🚀 Career Rocket | Countdown, lift-off, stage separation — each ring in the sky is a career milestone (2019 → today) |
-| 🥫 Skill Smash | 22 physics crates, one per skill — ram them to light them up |
-| 🔔 High Striker | Timing mini-game; each tier unlocks an achievement |
-| 🎡 Ferris Wheel | About me, languages, education |
-| 🎟️ Ticket Booth | Email, GitHub, LinkedIn, PDF download |
+| 🎪 Entrance + physical letters | Knock over the giant **FUNFAIR** letters (Bruno Simon style) |
+| 🎢 Thunder Loop | A launched steel coaster **you drive**: throttle, brakes and turbo, real physics (roll back if you're too slow), loop, zero-g roll, airtime hill, helix and tunnel |
+| 🦅 Sky Falcon | A 4.25 km cliff coaster modelled on Falcons Flight: 158 m drop at 90°, 250 km/h |
+| 🚀 Rocket Ride | Countdown, lift-off, stage separation: fire six stages up to orbit |
+| 🥫 Crate Smash | 22 physics crates worth 10, 25 or 50 points; ram them for a high score |
+| 🔔 High Striker | Timing mini-game: swing the hammer and ring the bell |
+| 🎡 Ferris Wheel | The best view in the park |
+| 🎟️ Ticket Booth | Park guide |
 
 Stack: **Vite + TypeScript + Three.js + cannon-es + postprocessing + N8AO**. No 3D model files — everything is built procedurally, and all sound is synthesized with WebAudio.
 
@@ -28,14 +29,14 @@ The track is built like in real coaster-design tools (`src/world/attractions/tra
 
 A tribute to Falcon's Flight, the record-breaking cliff coaster at Six Flags Qiddiya near Riyadh. Board it from the 🦅 station at the east gate.
 
-- **~3.2 km of track** (`src/world/attractions/falcon-track.ts`). A 165 km/h launch takes you out of the park. An LSM lift climbs the escarpment to a plateau ~150 m up. The train crawls to the edge, plunges over the edge — where, like the real ride, an **LSM launch fires on the vertical drop** — and pulls out at **250 km/h**. Then a speed hill, a 78°-banked turn, and a run straight across the fair high above every attraction. A sweeping turnaround leads onto a **550 m hyper-launch strip that fires the train to 500 km/h** out into the desert. Magnetic trim brakes (~3.4 G) slow it down, then a tight turnaround and airtime camelbacks bring it back to the station.
-- **The mountain** (`src/world/mountain.ts`) is generated from the track: a sandstone table mountain with strata, a sheer wall behind the drop, and a ridge carrying the lift. Every other part of the track is guaranteed to clear the rock. The strata are painted in the shader from world height.
-- Same driving controls, cameras and HUD as The Stack. Both coasters share one physics model (`stepRide`) with per-ride tuning (`FALCON_PHYS`). Its trees, fence posts and support columns keep clear of both tracks (`src/world/rides.ts`).
-- A coasting lap takes ~110 s, peaking at 500 km/h with −1.9 to 4.9 G and under 1.3 G sideways.
+- **4,247 m of track** (`src/world/attractions/falcon-track.ts`), following the real ride's published sequence and stats (4,250 m, 250 km/h, 158 m drop at 90°, 163 m arch, no inversions). Dispatch turns right onto a 39 km/h LSM lift, then a 55 m twisted drop, airtime hills, a wave turn and an extreme overbanked turn. A **160 km/h LSM launch** fires the train up the cliff face, and it climbs the rest on momentum. On top is a slow clifftop section with an overbanked turn. Brakes hold the train at the edge, then it drops **158 m at 90° into a tunnel**. An LSM launch out of the tunnel takes it downhill to **250 km/h**. Heavy trims slow it on the way up the **163 m arch**, then speed turns run around the park boundary and over the main entrance. The final brake run ends with a right turn into the station. The real track plan isn't public, so turn radii, hill shapes and the route are fitted to the park.
+- **The mountain** (`src/world/mountain.ts`) is generated from the track: a sandstone table mountain with strata, a sheer wall behind the drop, and a ridge carrying the launch up the cliff. Every other part of the track is guaranteed to clear the rock. The strata are painted in the shader from world height.
+- Same driving controls, cameras and HUD as Thunder Loop. Both coasters share one physics model (`stepRide`) with per-ride tuning (`FALCON_PHYS`). Its trees, fence posts and support columns keep clear of both tracks (`src/world/rides.ts`).
+- A coasting lap takes ~170 s, peaking at 250 km/h with −1.6 to 4.7 G and up to 2.1 G sideways. Trains have four cars and a single-row lead car, for 14 riders.
 
 ## Graphics
 
-- **Physically based sunset sky** (Preetham scattering with drifting clouds). The same sky is baked into an environment map, so every glossy surface reflects it: clearcoat paint on the bumper car, rocket and letters, chrome, gilded lettering and metallic coaster rails.
+- **Physically based sunset sky** (Preetham scattering with drifting clouds). The same sky is baked into an environment map, so every glossy surface reflects it: clearcoat paint on the car, rocket and letters, chrome, gilded lettering and metallic coaster rails.
 - **HDR pipeline**: scene → N8AO ambient occlusion (half-res) → bloom + ACES filmic tone mapping + vignette (one merged pass) → SMAA. Marquee bulbs, lamps, string lights and engine flames render above 1.0, so they glow through the bloom.
 - **Atmosphere**: fog that blends to orange toward the sun and violet away from it, layered horizon hills, stars that fade in as the rocket reaches space, and fireflies.
 - **Living ground**: tens of thousands of instanced grass blades that sway in the wind and part around the car. A tiling detail normal map makes the sand and soil catch the low sun. Trees sway too, with soft volumetric foliage shading.
@@ -62,39 +63,27 @@ Controls: `WASD`/arrows drive · `Shift` boost · `E`/`Enter`/`Space` interact �
 
 1. Push this folder to a GitHub repo and import it in Vercel — the framework (Vite), build command and output dir are already set in `vercel.json`.
    Or from this folder: `npx vercel` then `npx vercel --prod`.
-2. **Set `SITE_URL`** (Project → Settings → Environment Variables) to your final domain, e.g. `https://hasanhmedeh.com`.
-   It is used for the canonical URL, Open Graph tags, JSON-LD, `sitemap.xml` and `robots.txt`. Without it the build falls back to Vercel's production URL.
+2. **Set `SITE_URL`** (Project → Settings → Environment Variables) to your final domain.
+   It is used for the canonical URL, Open Graph tags, `sitemap.xml` and `robots.txt`. Without it the build falls back to Vercel's production URL.
 3. Submit `https://<your-domain>/sitemap.xml` in Google Search Console.
 
-## SEO — how it works
+## Content and settings
 
-The 3D world is a progressive enhancement on top of a fully static, crawlable page:
-
-- `src/data/cv.ts` is the single source of truth. At build time `seo/render.ts` turns it into semantic HTML (`<h1>`, sections, `<time>`, lists) inside `index.html`, so crawlers and no-JS visitors get the full CV instantly. It also powers the "Classic CV" drawer and the print stylesheet.
-- JSON-LD `ProfilePage` + `Person` + `WebSite` structured data, canonical URL, Open Graph / Twitter cards (`public/og-image.jpg`), web manifest and icons.
-- `sitemap.xml` and `robots.txt` are generated during the build.
-- Fast first paint: the initial HTML + CSS + JS is ≈11 KB gzipped. The 3D world (~375 KB gzipped) is code-split and loaded only after the page has rendered.
-- Graceful fallbacks: no WebGL 2 → the button opens the classic CV; no JS → the CV is shown as a normal page.
-
-## Updating the CV
-
-Edit `src/data/cv.ts` — experience, skills, languages, the coaster's `projects`, the rocket's `timeline` and the striker's `achievements` all live there. Replace `public/hasan-hmedeh-cv.pdf` with the latest PDF.
-
-Other knobs:
+- Rocket stages and High Striker tiers: `src/data/fair.ts`
 - Park layout / zone positions: `src/world/layout.ts`
 - Colors: `PALETTE` in `src/world/textures.ts` and CSS variables in `src/styles.css`
 - 3D font: `node scripts/build-font.mjs` regenerates `src/assets/lilita.typeface.json` (add characters to `CHARS` if you need more glyphs in 3D text)
+- The page has Open Graph / Twitter cards (`public/og-image.jpg`), a web manifest and icons; `sitemap.xml` and `robots.txt` are generated during the build. The 3D world is code-split and loads after the intro card has rendered.
 
 ## Project structure
 
 ```
-index.html              page shell + SEO meta (CV HTML is injected at build time)
-vite.config.ts          SEO plugin: renders CV HTML, JSON-LD, sitemap, robots
-seo/render.ts           CV → HTML / JSON-LD
-src/main.ts             intro, classic CV drawer, lazy-loads the 3D world
-src/data/cv.ts          the CV content
+index.html              page shell + intro card + HUD markup
+vite.config.ts          site URL, sitemap and robots.txt
+src/main.ts             intro card, lazy-loads the 3D world
+src/data/fair.ts        rocket stages and striker tiers
 src/world/Game.ts       renderer, physics, loop, camera modes, interactions
-src/world/car.ts        bumper car (arcade physics)
+src/world/car.ts        sports car (arcade physics, spinning/steering wheels, suspension)
 src/world/environment.ts sky, lights, ground, trees, lamps, tents, balloons
 src/world/attractions/  coaster, rocket, crates, striker, ferris/carousel/booth/arch
 ```

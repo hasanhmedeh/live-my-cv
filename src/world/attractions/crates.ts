@@ -1,46 +1,39 @@
 import * as THREE from 'three';
 import * as CANNON from 'cannon-es';
-import { cv } from '../../data/cv';
 import { shadowed, std, staticBox, type Attraction, type Ctx } from '../context';
 import { LAYOUT } from '../layout';
 import { crateTexture, PALETTE, signMaterial, signTexture, stripeTexture } from '../textures';
-import { escapeHtml } from '../ui';
 
 const SIZE = 1.5;
-const GROUP_COLORS: Record<string, string> = {
-  Languages: PALETTE.teal,
-  Frameworks: PALETTE.candy,
-  'Data & Tools': PALETTE.violet,
-};
+// points per crate by row (bottom → top): the high crates are worth the most
+const ROW_POINTS = [10, 10, 25, 50];
+const POINT_COLORS: Record<number, string> = { 10: PALETTE.teal, 25: PALETTE.candy, 50: PALETTE.violet };
 
 interface Crate {
-  skill: string;
-  group: string;
+  points: number;
   mesh: THREE.Mesh;
   body: CANNON.Body;
   home: CANNON.Vec3;
   knocked: boolean;
 }
 
-/** "Knock 'em down" stall — every crate is a skill. */
+/** "Knock 'em down" stall: ram the crates for points. */
 export class Crates implements Attraction {
   private crates: Crate[] = [];
   private center = new THREE.Vector3(LAYOUT.crates.x, 0, LAYOUT.crates.z);
-  onScore: ((n: number, total: number, skill: string) => void) | null = null;
+  onScore: ((n: number, total: number, points: number, score: number) => void) | null = null;
 
   constructor(private ctx: Ctx) {
     this.buildStall();
-    const skills = Object.entries(cv.skills).flatMap(([group, items]) => items.map((skill) => ({ skill, group })));
     // staggered wall: rows of 7, 6, 5, 4 (= 22 crates)
     const rows = [7, 6, 5, 4];
-    let i = 0;
     rows.forEach((count, row) => {
-      for (let c = 0; c < count && i < skills.length; c++, i++) {
-        const { skill, group } = skills[i];
+      const points = ROW_POINTS[row];
+      for (let c = 0; c < count; c++) {
         const x = this.center.x + (c - (count - 1) / 2) * (SIZE + 0.04);
         const y = SIZE / 2 + row * SIZE + 0.01;
         const z = this.center.z - 4;
-        const tex = crateTexture(skill, GROUP_COLORS[group]);
+        const tex = crateTexture(String(points), POINT_COLORS[points]);
         const mesh = new THREE.Mesh(new THREE.BoxGeometry(SIZE, SIZE, SIZE), std('#ffffff', { map: tex, roughness: 0.7 }));
         mesh.castShadow = mesh.receiveShadow = true;
         const body = new CANNON.Body({ mass: 14, material: ctx.mats.prop, linearDamping: 0.05, angularDamping: 0.1 });
@@ -53,7 +46,7 @@ export class Crates implements Attraction {
         body.sleep();
         ctx.scene.add(mesh);
         ctx.dynamics.push({ mesh, body });
-        this.crates.push({ skill, group, mesh, body, home: body.position.clone(), knocked: false });
+        this.crates.push({ points, mesh, body, home: body.position.clone(), knocked: false });
       }
     });
   }
@@ -68,7 +61,7 @@ export class Crates implements Attraction {
     awning.rotation.x = 0.25;
     const sign = new THREE.Mesh(
       new THREE.PlaneGeometry(10, 2.6),
-      signMaterial(signTexture('SKILL SMASH', { sub: 'Drive into the crates · 22 skills to knock down', border: PALETTE.teal })),
+      signMaterial(signTexture('CRATE SMASH', { sub: 'Drive into the crates · 22 crates · 455 points', border: PALETTE.teal })),
     );
     sign.position.set(0, 9.2, -6.6);
     for (const x of [-6.8, 6.8]) {
@@ -77,12 +70,12 @@ export class Crates implements Attraction {
       g.add(post);
       staticBox(this.ctx, this.center.x + x, 4, this.center.z - 4.2, 0.2, 4, 0.2);
     }
-    // legend boards on the side walls
-    const legend = Object.keys(GROUP_COLORS);
-    legend.forEach((name, i) => {
+    // points legend on the back wall
+    const legend = Object.keys(POINT_COLORS).map(Number);
+    legend.forEach((pts, i) => {
       const tile = new THREE.Mesh(
         new THREE.PlaneGeometry(3.6, 1.1),
-        signMaterial(signTexture(name, { border: GROUP_COLORS[name], width: 768, height: 230, bulbs: false }), { emissiveIntensity: 1.5 }),
+        signMaterial(signTexture(`${pts} POINTS`, { border: POINT_COLORS[pts], width: 768, height: 230, bulbs: false }), { emissiveIntensity: 1.5 }),
       );
       tile.position.set(-4.5 + i * 4.5, 6.3, -6.75);
       g.add(tile);
@@ -114,16 +107,24 @@ export class Crates implements Attraction {
     return this.crates.length;
   }
 
+  get score() {
+    return this.crates.reduce((a, c) => a + (c.knocked ? c.points : 0), 0);
+  }
+
+  get maxScore() {
+    return this.crates.reduce((a, c) => a + c.points, 0);
+  }
+
   panelHtml() {
-    const groups = Object.keys(GROUP_COLORS)
-      .map((g) => {
-        const items = this.crates.filter((c) => c.group === g);
-        return `<h3>${escapeHtml(g)}</h3><ul class="tags">${items
-          .map((c) => `<li class="${c.knocked ? 'hit' : ''}">${escapeHtml(c.skill)}</li>`)
-          .join('')}</ul>`;
+    const rows = Object.keys(POINT_COLORS)
+      .map(Number)
+      .map((pts) => {
+        const items = this.crates.filter((c) => c.points === pts);
+        const hit = items.filter((c) => c.knocked).length;
+        return `<li class="${hit === items.length ? 'hit' : ''}">${pts} pts · ${hit} / ${items.length}</li>`;
       })
       .join('');
-    return `<p class="eyebrow">Skill Smash · ${this.knockedCount} / ${this.total} knocked</p><h2>My tech stack</h2><p>Every crate is a technology I work with. Ram them with the bumper car — knocked skills light up below.</p>${groups}`;
+    return `<p class="eyebrow">Crate Smash · ${this.knockedCount} / ${this.total} knocked</p><h2>${this.score} / ${this.maxScore} points</h2><p>Ram the crates with the car. The higher the crate, the more it's worth. Press <kbd>E</kbd> in the ring to restack.</p><ul class="tags">${rows}</ul>`;
   }
 
   update() {
@@ -135,7 +136,7 @@ export class Crates implements Attraction {
       const tilted = up.y < 0.8;
       if (moved || tilted) {
         c.knocked = true;
-        this.onScore?.(this.knockedCount, this.total, c.skill);
+        this.onScore?.(this.knockedCount, this.total, c.points, this.score);
       }
     }
   }

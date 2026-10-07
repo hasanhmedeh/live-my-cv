@@ -7,7 +7,7 @@ import { hdr, PALETTE, signMaterial, signTexture } from './textures';
 // Terrain window (outside the park, north-east): x, z bounds and grid spacing in metres.
 const X0 = -110;
 const X1 = 340;
-const Z0 = -680;
+const Z0 = -950;
 const Z1 = -96;
 const STEP = 2.5;
 const NX = Math.round((X1 - X0) / STEP);
@@ -34,7 +34,7 @@ function makeNoise(seed: number) {
 
 /**
  * The escarpment the Sky Falcon climbs and dives off: a table mountain (mesa) with a sheer
- * sandstone wall right behind the drop, and a ramp-like spur carrying the LSM climb. The
+ * sandstone wall right behind the drop, and a ramp-like spur carrying the launch up the cliff. The
  * heightfield is derived from the track, so the climb and plateau rest on the rock, the drop
  * plunges out in front of the cliff face, and all other track is guaranteed to clear it.
  */
@@ -44,7 +44,7 @@ export class Mountain {
   constructor(ctx: Ctx) {
     const d = FALCON_TRACK;
     const n = d.pos.length;
-    const firstLift = d.zone.indexOf('lift');
+    const firstLift = d.zone.indexOf('launch'); // the cliff launch: where the rock begins
     const edgeIdx = d.zone.lastIndexOf('brake', d.zone.indexOf('boost')); // end of the plateau trim brakes
     const lastMountain = d.zone.indexOf('boost');
     const rail = (i: number) => d.pos[i].y - d.up[i].y;
@@ -89,7 +89,7 @@ export class Mountain {
         // talus apron at the foot of the walls
         const apron = top * 0.22 * (1 - THREE.MathUtils.smoothstep(Math.max(dc - 150, planeDist), 0, 90));
         let h = Math.max(base, mesa, apron);
-        // ---- the spur under the LSM climb ----
+        // ---- the spur under the launch climb ----
         for (const c of climb) {
           const dd = Math.hypot(x - c.x, z - c.z);
           // a knife-edge ridge whose flanks wobble, so it reads as rock rather than a ramp
@@ -195,7 +195,7 @@ export class Mountain {
     const sign = new THREE.Group();
     const board = new THREE.Mesh(
       new THREE.PlaneGeometry(64, 16),
-      signMaterial(signTexture('SKY FALCON', { sub: '3.2 km · 188 m cliff drop · 500 km/h · ride it from the east gate', border: PALETTE.mustard, width: 1536, height: 384 }), {
+      signMaterial(signTexture('SKY FALCON', { sub: '4.25 km · 158 m drop at 90° · 250 km/h · ride it from the east gate', border: PALETTE.mustard, width: 1536, height: 384 }), {
         emissiveIntensity: 2.4,
       }),
     );

@@ -10,12 +10,13 @@ import { NAME_COLORS, physicsWord } from './letters';
 import { PALETTE } from './textures';
 import { UI } from './ui';
 import { Zones } from './zones';
+import { Minimap } from './minimap';
 import { Post } from './post';
 import { AdaptiveResolution, detectQuality, type Quality } from './quality';
 import { wind } from './wind';
 import { Coaster } from './attractions/coaster';
 import { Mountain } from './mountain';
-import { FALCON_TRACK, nearTrack, STACK_TRACK } from './rides';
+import { FALCON_TRACK, nearTrack, STACK_TRACK, TRACK_DS } from './rides';
 import { PHYS } from './attractions/track';
 import { FALCON_PHYS } from './attractions/falcon-track';
 import { Rocket } from './attractions/rocket';
@@ -41,6 +42,7 @@ export class Game {
   private env!: Environment;
   private car!: Car;
   private zones!: Zones;
+  private minimap!: Minimap;
   private stack!: Coaster;
   private falcon!: Coaster;
   /** The coaster currently being ridden (valid while mode === 'coaster'). */
@@ -57,6 +59,8 @@ export class Game {
   private camPos = new THREE.Vector3();
   private zoom = 1;
   private panelZone: ZoneId | null = null;
+  /** The crates card auto-opens in its ring; once closed it stays closed until you leave. */
+  private cratesDismissed = false;
   private running = false;
   private mobile = matchMedia('(pointer: coarse)').matches;
   private fadeEl!: HTMLDivElement;
@@ -79,8 +83,8 @@ export class Game {
       this.env = new Environment(this.ctx, this.quality);
     });
     step(1, () => {
-      // Bruno-style physical name letters in front of the spawn point.
-      physicsWord(this.ctx, 'HASAN HMEDEH', new THREE.Vector3(LAYOUT.letters.x, 0, LAYOUT.letters.z), 2.4, NAME_COLORS);
+      // Bruno-style physical letters in front of the spawn point.
+      physicsWord(this.ctx, 'FUNFAIR', new THREE.Vector3(LAYOUT.letters.x, 0, LAYOUT.letters.z), 2.4, NAME_COLORS);
       this.updatables.push(new Arch(this.ctx));
     });
     step(1, () => {
@@ -92,13 +96,12 @@ export class Game {
     step(3, () => {
       this.stack = new Coaster(this.ctx, {
         id: 'stack',
-        name: 'The Stack',
+        name: 'Thunder Loop',
         track: STACK_TRACK,
         phys: PHYS,
-        station: { title: 'THE STACK', sub: 'Drive it yourself · launch · loop · roll', side: -1 },
+        station: { title: 'THUNDER LOOP', sub: 'Drive it yourself · launch · loop · roll', side: -1 },
         colors: { rail: PALETTE.candy, spine: PALETTE.mustard, cars: [PALETTE.mustard, PALETTE.candy, PALETTE.teal] },
         cars: 3,
-        signs: true,
         trackside: [
           new THREE.Vector3(-50, 3, 38), // loop
           new THREE.Vector3(-66, 4, 6), // banked turn + camelback
@@ -107,11 +110,11 @@ export class Game {
           new THREE.Vector3(-16, 4, 12), // station
         ],
         intro: (touch) =>
-          `<p class="eyebrow">The Stack · You're the driver</p><h2>Hold on tight!</h2><p>${
+          `<p class="eyebrow">Thunder Loop · You're the driver</p><h2>Hold on tight!</h2><p>${
             touch
               ? 'Push the joystick <strong>up</strong> for power, <strong>down</strong> to brake. Tap <kbd>E</kbd> to switch camera.'
               : 'Hold <kbd>W</kbd> for power, <kbd>S</kbd> to brake, <kbd>Shift</kbd> for turbo, <kbd>C</kbd> to switch camera.'
-          } The launch fires automatically — brake too hard before the loop and you'll roll back!</p><p>Every billboard is a project I've built; its card pops up here as you pass.</p>`,
+          } The launch fires automatically — brake too hard before the loop and you'll roll back!</p>`,
       });
       this.ride = this.stack;
       this.updatables.push(this.stack);
@@ -131,18 +134,27 @@ export class Game {
         const z = p.z + offset[2];
         return new THREE.Vector3(x, Math.max(p.y * 0.4, ground(x, z)) + offset[1], z);
       };
+      // a camera beside the track at arc length s (metres from the station)
+      const atS = (s: number, offset: [number, number, number], y?: number) => {
+        const p = f.pos[Math.round(s / TRACK_DS) % f.pos.length];
+        const x = p.x + offset[0];
+        const z = p.z + offset[2];
+        return new THREE.Vector3(x, y ?? Math.max(p.y * 0.4, ground(x, z)) + offset[1], z);
+      };
       this.falcon = new Coaster(this.ctx, {
         id: 'falcon',
         name: 'Sky Falcon',
         track: FALCON_TRACK,
         phys: FALCON_PHYS,
-        station: { title: 'SKY FALCON', sub: 'Cliff drop · 250 km/h · hyper launch 500 km/h', side: 1 },
+        station: { title: 'SKY FALCON', sub: '4.25 km · 158 m drop at 90° · 250 km/h', side: 1 },
         colors: { rail: PALETTE.teal, spine: '#e6c08a', cars: ['#e6c08a', PALETTE.teal, '#e6c08a', PALETTE.teal] },
         cars: 4,
-        signs: false,
+        leadRows: 1, // 2 + 4 + 4 + 4 = 14 riders, like the real Exa trains
         trackside: [
-          new THREE.Vector3(88, 5, 34), // station
-          at('lift', [-38, 8, -60]), // the climb
+          new THREE.Vector3(54, 6, 34), // station
+          atS(110, [0, 8, 45]), // the LSM lift hill
+          atS(250, [-45, 6, 0]), // twisted drop + airtime hills
+          at('launch', [-38, 8, -60]), // the launch up the cliff
           at('brake', [-60, 30, 40]), // the plateau rim
           (() => {
             // hovering over the run-out (always open air: the track sits in a cutting), looking back
@@ -151,24 +163,25 @@ export class Game {
             const p = f.pos[i];
             return new THREE.Vector3(p.x, Math.max(p.y + 14, ground(p.x, p.z) + 6), p.z);
           })(),
-          new THREE.Vector3(30, 5, 26), // flying over the park
-          new THREE.Vector3(-150, 6, 60), // western sweep
+          atS(2160, [0, 0, 95], 70), // beside the 163 m arch
+          atS(3200, [40, 6, -30]), // speed turns around the park boundary
+          atS(3650, [0, 6, 45]), // the hill over the main entrance
         ],
         ground,
         keepOut,
         beats: {
-          launch: 'LAUNCH → 165 km/h 🚀',
-          lift: 'Climbing the escarpment… ⛰️',
-          brake: 'The edge. Look down. 😱',
-          boost: 'LAUNCHED DOWN THE CLIFF → 250 km/h 🦅',
-          hyper: 'HYPER LAUNCH → 500 km/h ⚡',
-          trim: 'Magnetic brakes… breathe 😮‍💨',
+          lift: ['LSM lift hill · 39 km/h ⚙️', 'The clifftop… 190 m up ⛰️'],
+          launch: 'LAUNCH → 160 km/h up the cliff 🚀',
+          brake: ['The edge. Look down. 😱', 'Final brake run'],
+          tunnel: 'Into the tunnel… 🕳️',
+          boost: 'LSM LAUNCH → 250 km/h 🦅',
+          trim: ['The 163 m arch — trims bite 😮‍💨', 'Speed turns around the park 🏁'],
           station: 'Welcome back to the fair!',
         },
         intro: (touch) =>
-          `<p class="eyebrow">Sky Falcon · tribute to the record-breaking cliff coaster in Qiddiya, Riyadh</p><h2>The biggest ride in the park</h2><p>Launch out of the park, climb the escarpment, crawl to the edge… then plunge ~180 m down the cliff face and launch off the drop to <strong>250 km/h</strong>, fly over the whole fair, then hit the hyper strip: <strong>0 → 500 km/h</strong> out into the desert.</p><p>${
+          `<p class="eyebrow">Sky Falcon · tribute to Falcons Flight, Six Flags Qiddiya City</p><h2>The world's tallest, fastest, longest</h2><p>An LSM lift and a twisted drop, airtime hills and an overbanked turn, then a <strong>160 km/h launch</strong> up the cliff. Crawl to the edge… drop <strong>158 m at 90°</strong> into a tunnel, launch out of it to <strong>250 km/h</strong>, crest the <strong>163 m arch</strong> and race around the park back home: 4.25 km, no inversions.</p><p>${
             touch ? 'Joystick <strong>up</strong> = power, <strong>down</strong> = brake, <kbd>E</kbd> = camera.' : '<kbd>W</kbd> power · <kbd>S</kbd> brake · <kbd>Shift</kbd> turbo · <kbd>C</kbd> camera.'
-          } Or just hold on — the launches and lift do the work.</p>`,
+          } Or just hold on — the lift and launches do the work.</p>`,
       });
       this.updatables.push(this.falcon);
     });
@@ -281,14 +294,19 @@ export class Game {
     this.falcon.input = this.input;
     this.ui.onPromptClick = () => this.onAction();
     this.ui.onRideExit = () => this.onEscape();
-    this.ui.onPanelClose = () => (this.panelZone = null);
+    this.ui.onPanelClose = () => {
+      if (this.zones.active === 'crates') this.cratesDismissed = true;
+      this.panelZone = null;
+    };
+    this.minimap = new Minimap(document.getElementById('minimap')!);
+    this.minimap.onGoto = (id) => this.teleport(id);
 
     this.stack.onFinish = () => this.endRide();
     this.falcon.onFinish = () => this.endRide();
     this.rocket.onFinish = () => this.endRide();
     this.striker.onFinish = () => this.endRide();
-    this.crates.onScore = (n, total, skill) => {
-      this.ui.score(`🥫 ${skill}! · ${n} / ${total} skills`);
+    this.crates.onScore = (n, total, points, score) => {
+      this.ui.score(`🥫 +${points}! · ${score} points · ${n} / ${total} crates`);
       if (this.panelZone === 'crates') this.ui.panel(`crates-${n}`, this.crates.panelHtml(), { accent: PALETTE.teal });
       if (n === total) this.sfx.ding();
       else this.sfx.pop();
@@ -320,14 +338,14 @@ export class Game {
     this.ui.hud.hidden = false;
     this.ui.panel(
       'welcome',
-      `<p class="eyebrow">Welcome to the fair</p><h2>Hi, I'm Hasan 👋</h2><p>I'm a Senior Full-Stack Developer. Hop in the bumper car and explore my CV:</p><ul>
-        <li>🎢 <strong>Projects Coaster</strong> — drive past what I've built</li>
-        <li>🦅 <strong>Sky Falcon</strong> — a 3.2 km cliff coaster: 250 km/h drop, 500 km/h hyper launch</li>
-        <li>🚀 <strong>Career Rocket</strong> — launch my timeline, 2019 → today</li>
-        <li>🥫 <strong>Skill Smash</strong> — knock down my tech stack</li>
-        <li>🔔 <strong>High Striker</strong> — ring the bell for my wins</li>
-        <li>🎡 <strong>Ferris Wheel</strong> — about me · 🎟️ <strong>Tickets</strong> — contact</li>
-      </ul><p>${this.mobile ? 'Use the joystick to drive and the <kbd>E</kbd> button to play.' : 'Drive with <kbd>WASD</kbd> or arrows, <kbd>E</kbd> to play. Try knocking over my name!'}</p>`,
+      `<p class="eyebrow">Welcome to the fair</p><h2>Step right up! 🎪</h2><p>Hop in the car and drive around the park. Every ride is free:</p><ul>
+        <li>🎢 <strong>Thunder Loop</strong> — drive the coaster yourself: launch, loop and roll</li>
+        <li>🦅 <strong>Sky Falcon</strong> — a 4.25 km cliff coaster: 158 m drop at 90°, 250 km/h</li>
+        <li>🚀 <strong>Rocket Ride</strong> — fire six stages all the way to orbit</li>
+        <li>🥫 <strong>Crate Smash</strong> — ram the crates and rack up points</li>
+        <li>🔔 <strong>High Striker</strong> — swing the hammer and ring the bell</li>
+        <li>🎡 <strong>Ferris Wheel</strong> — the best view · 🎟️ <strong>Tickets</strong> — park guide</li>
+      </ul><p>${this.mobile ? 'Use the joystick to drive and the <kbd>E</kbd> button to play.' : 'Drive with <kbd>WASD</kbd> or arrows, <kbd>E</kbd> to play. Try knocking over the big letters!'}</p>`,
       { accent: PALETTE.candy },
     );
   }
@@ -393,11 +411,11 @@ export class Game {
   }
 
   private onEscape() {
-    if (document.querySelector('.cv.is-open')) return;
     if (this.mode === 'coaster') this.fade(() => this.ride.exit());
     else if (this.mode === 'rocket') this.fade(() => this.rocket.exit());
     else if (this.mode === 'striker') this.striker.exit();
     else {
+      if (this.zones.active === 'crates') this.cratesDismissed = true;
       this.ui.hidePanel();
       this.panelZone = null;
     }
@@ -481,6 +499,7 @@ export class Game {
 
     for (const u of this.updatables) u.update(dt, t);
     this.updateCoasterAudio();
+    if (this.mode === 'drive') this.updateMinimap(dt);
     wind.uTime.value = t;
     wind.uCar.value.copy(this.car.position);
 
@@ -528,6 +547,17 @@ export class Game {
     this.post.render(dt);
   }
 
+  private updateMinimap(dt: number) {
+    const q = this.car.group.quaternion;
+    // yaw from the quaternion (the car only ever rotates about y)
+    const heading = Math.atan2(2 * (q.w * q.y + q.x * q.z), 1 - 2 * (q.y * q.y + q.z * q.z));
+    const p = this.car.position;
+    this.minimap.update(dt, { x: p.x, z: p.z, heading }, [
+      { x: this.stack.trainPosition.x, z: this.stack.trainPosition.z, color: PALETTE.mustard },
+      { x: this.falcon.trainPosition.x, z: this.falcon.trainPosition.z, color: PALETTE.teal },
+    ]);
+  }
+
   /** One shared set of coaster sounds: the ride you're on, otherwise the nearest ghost train. */
   private updateCoasterAudio() {
     if (this.mode === 'coaster') {
@@ -573,10 +603,11 @@ export class Game {
     if (zone) {
       const z = ZONES[zone];
       this.ui.prompt(zone, z.title, z.action);
-      if (zone === 'crates' && this.panelZone !== 'crates') this.showZonePanel('crates');
+      if (zone === 'crates' && this.panelZone !== 'crates' && !this.cratesDismissed) this.showZonePanel('crates');
     } else {
       this.ui.prompt('', '', '');
     }
+    if (zone !== 'crates') this.cratesDismissed = false;
 
     // close a zone's panel once you drive well away from it
     if (this.panelZone) {

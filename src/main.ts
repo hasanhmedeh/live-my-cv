@@ -1,41 +1,11 @@
 import './styles.css';
 
-// The page is fully usable (and indexable) as plain HTML. Everything below is
-// progressive enhancement: the 3D fair is code-split and loaded after first paint.
+// The 3D fair is code-split and loaded after first paint, while the intro card shows progress.
 
 const intro = document.getElementById('intro')!;
 const enterBtn = document.getElementById('enter') as HTMLButtonElement;
 const enterLabel = enterBtn.querySelector('.btn-label')!;
 const progressBar = document.getElementById('progress-bar')!;
-const cvEl = document.getElementById('cv')!;
-let lastFocus: HTMLElement | null = null;
-
-// ---------- Classic CV drawer ----------
-function openCv() {
-  lastFocus = document.activeElement as HTMLElement;
-  cvEl.classList.add('is-open');
-  cvEl.setAttribute('aria-modal', 'true');
-  cvEl.setAttribute('role', 'dialog');
-  cvEl.focus({ preventScroll: true });
-}
-function closeCv() {
-  cvEl.classList.remove('is-open');
-  cvEl.removeAttribute('aria-modal');
-  cvEl.removeAttribute('role');
-  if (location.hash === '#cv') history.replaceState(null, '', location.pathname + location.search);
-  lastFocus?.focus({ preventScroll: true });
-}
-document.querySelectorAll<HTMLAnchorElement>('a[href="#cv"], #open-cv').forEach((el) =>
-  el.addEventListener('click', (e) => {
-    e.preventDefault();
-    openCv();
-  }),
-);
-cvEl.querySelector('[data-close-cv]')!.addEventListener('click', closeCv);
-window.addEventListener('keydown', (e) => {
-  if (e.key === 'Escape' && cvEl.classList.contains('is-open')) closeCv();
-});
-if (location.hash === '#cv') openCv();
 
 // ---------- 3D fair ----------
 function webglAvailable() {
@@ -48,9 +18,8 @@ function webglAvailable() {
 }
 
 function fallback(message: string) {
-  enterLabel.textContent = 'Read my CV';
-  enterBtn.disabled = false;
-  enterBtn.onclick = openCv;
+  enterLabel.textContent = 'The fair is closed';
+  enterBtn.disabled = true;
   progressBar.parentElement!.hidden = true;
   const note = document.createElement('p');
   note.className = 'intro-hint';
@@ -68,7 +37,7 @@ async function fontsReady() {
 
 async function boot() {
   if (!webglAvailable()) {
-    fallback('Your browser does not support WebGL 2, so the 3D funfair is unavailable — the classic CV has everything.');
+    fallback('Your browser does not support WebGL 2, so the 3D funfair cannot open here. Try a recent Chrome, Edge, Firefox or Safari.');
     return;
   }
   try {
@@ -90,7 +59,7 @@ async function boot() {
     };
   } catch (err) {
     console.error(err);
-    fallback('The 3D funfair could not load on this device — the classic CV has everything.');
+    fallback('The 3D funfair could not load on this device. Try reloading, or a different browser.');
   }
 }
 

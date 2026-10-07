@@ -1,12 +1,12 @@
 import * as THREE from 'three';
-import { timeline } from '../../data/cv';
+import { rocketStages } from '../../data/fair';
 import { shadowed, staticCylinder, std, type Attraction, type Ctx } from '../context';
 import type { Environment } from '../environment';
 import { LAYOUT } from '../layout';
 import { floatingTextTexture, glowTexture, hdr, makeSprite, PALETTE, stripeTexture } from '../textures';
 import { escapeHtml } from '../ui';
 
-// Altitude of each career milestone (metres above the pad).
+// Altitude of each stage ring (metres above the pad).
 const ALTITUDES = [28, 90, 170, 260, 370, 500];
 const ORBIT = ALTITUDES[ALTITUDES.length - 1];
 const AUTO_ADVANCE = 9; // seconds before the next stage fires on its own
@@ -113,7 +113,7 @@ export class Rocket implements Attraction {
     tower.position.set(5.2, 0.8, 0);
     g.add(tower);
 
-    const label = makeSprite(floatingTextTexture('CAREER ROCKET', 'My timeline, 2019 → today'), 11);
+    const label = makeSprite(floatingTextTexture('ROCKET RIDE', 'Launch into orbit'), 11);
     label.position.set(0, 26, 0);
     g.add(label);
 
@@ -168,7 +168,7 @@ export class Rocket implements Attraction {
       upper.add(fin);
     }
     // a little HH monogram on the hull
-    const mono = makeSprite(floatingTextTexture('HH'), 1.4);
+    const mono = makeSprite(floatingTextTexture('FF'), 1.4);
     mono.position.set(0, 7, 1.3);
     mono.material.depthTest = true;
     upper.add(mono);
@@ -180,7 +180,7 @@ export class Rocket implements Attraction {
   }
 
   private buildRings() {
-    timeline.forEach((m, i) => {
+    rocketStages.forEach((m, i) => {
       const g = new THREE.Group();
       const ring = new THREE.Mesh(
         new THREE.TorusGeometry(7, 0.22, 8, 64),
@@ -188,7 +188,7 @@ export class Rocket implements Attraction {
       );
       ring.rotation.x = Math.PI / 2;
       g.add(ring);
-      const label = makeSprite(floatingTextTexture(m.year, m.title), 14);
+      const label = makeSprite(floatingTextTexture(`${ALTITUDES[i]} m`, m.title), 14);
       label.position.set(13, 1, 0);
       label.material.fog = false;
       g.add(label);
@@ -212,8 +212,8 @@ export class Rocket implements Attraction {
     this.camLook.copy(this.pad).setY(8);
     this.ctx.ui.panel(
       'rocket-intro',
-      `<p class="eyebrow">Career Rocket</p><h2>T-minus 3…</h2><p>Each ring in the sky is a milestone of my journey. Press <kbd>E</kbd> (or tap the button) to fire the next stage.</p>`,
-      { accent: PALETTE.teal, closable: false, left: true },
+      `<p class="eyebrow">Rocket Ride</p><h2>T-minus 3…</h2><p>Each ring in the sky is a stage of the climb to orbit. Press <kbd>E</kbd> (or tap the button) to fire the next stage.</p>`,
+      { accent: PALETTE.teal, left: true },
     );
   }
 
@@ -256,22 +256,22 @@ export class Rocket implements Attraction {
   }
 
   private summaryHtml() {
-    return `<p class="eyebrow">Career Rocket · Mission log</p><h2>From launch pad to orbit</h2>${timeline
-      .map((m) => `<h3>${escapeHtml(m.year)} · ${escapeHtml(m.title)}</h3><p class="sub">${escapeHtml(m.sub)}</p><p>${escapeHtml(m.text)}</p>`)
+    return `<p class="eyebrow">Rocket Ride · Mission log</p><h2>From launch pad to orbit</h2>${rocketStages
+      .map((m, i) => `<h3>${ALTITUDES[i]} m · ${escapeHtml(m.title)}</h3><p class="sub">${escapeHtml(m.sub)}</p><p>${escapeHtml(m.text)}</p>`)
       .join('')}`;
   }
 
   private milestonePanel(i: number) {
-    const m = timeline[i];
-    const last = i === timeline.length - 1;
+    const m = rocketStages[i];
+    const last = i === rocketStages.length - 1;
     this.ctx.ui.panel(
       `rocket-${i}`,
-      `<p class="eyebrow">Stage ${i + 1} / ${timeline.length} · ${escapeHtml(m.year)}</p><h2>${escapeHtml(m.title)}</h2><p class="sub">${escapeHtml(m.sub)}</p><p>${escapeHtml(
+      `<p class="eyebrow">Stage ${i + 1} / ${rocketStages.length} · ${ALTITUDES[i]} m</p><h2>${escapeHtml(m.title)}</h2><p class="sub">${escapeHtml(m.sub)}</p><p>${escapeHtml(
         m.text,
-      )}</p><div class="progress-dots">${timeline.map((_, j) => `<span class="${j <= i ? 'on' : ''}"></span>`).join('')}</div><p style="margin-top:12px"><button class="btn btn-primary btn-small" type="button" data-rocket-next>${
+      )}</p><div class="progress-dots">${rocketStages.map((_, j) => `<span class="${j <= i ? 'on' : ''}"></span>`).join('')}</div><p style="margin-top:12px"><button class="btn btn-primary btn-small" type="button" data-rocket-next>${
         last ? 'Return to the fair' : 'Fire next stage 🔥'
       }</button></p>`,
-      { accent: PALETTE.teal, closable: false, left: true },
+      { accent: PALETTE.teal, left: true },
     );
     this.ctx.ui.panelElement.querySelector('[data-rocket-next]')?.addEventListener('click', () => this.action());
   }
@@ -307,7 +307,7 @@ export class Rocket implements Attraction {
       if (dist < 0.6) {
         this.altitude = target;
         this.stage++;
-        this.phase = this.stage === timeline.length - 1 ? 'orbit' : 'hold';
+        this.phase = this.stage === rocketStages.length - 1 ? 'orbit' : 'hold';
         this.phaseTime = 0;
         this.milestonePanel(this.stage);
         this.ctx.sfx.chime();

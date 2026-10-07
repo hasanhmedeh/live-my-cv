@@ -208,7 +208,7 @@ export function zoneAt(d: TrackData, s: number): Zone | null {
 }
 
 // ---------------------------------------------------------------------------------------
-// The layout of "The Stack" — Hasan's coaster. Station on x = -26, trains depart south
+// The layout of "Thunder Loop", the drive-it-yourself coaster. Station on x = -26, trains depart south
 // and come home from the north, so the circuit never has to cross itself at ground level.
 // ---------------------------------------------------------------------------------------
 export const STATION_START = new THREE.Vector3(-26, 2.5, -6);

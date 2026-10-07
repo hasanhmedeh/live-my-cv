@@ -28,7 +28,7 @@ export class Input {
 
   private onKeyDown = (e: KeyboardEvent) => {
     const target = e.target as HTMLElement;
-    if (target && (target.closest('.cv') || target.tagName === 'INPUT' || target.tagName === 'TEXTAREA')) return;
+    if (target && (target.tagName === 'INPUT' || target.tagName === 'TEXTAREA')) return;
     const driving = ['KeyW', 'KeyA', 'KeyS', 'KeyD', 'KeyZ', 'KeyQ', 'ArrowUp', 'ArrowDown', 'ArrowLeft', 'ArrowRight', 'Space'];
     if (driving.includes(e.code)) e.preventDefault();
     if (e.repeat) {

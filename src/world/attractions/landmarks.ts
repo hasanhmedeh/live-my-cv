@@ -1,12 +1,10 @@
 import * as THREE from 'three';
-import { cv } from '../../data/cv';
 import { shadowed, staticBox, staticCylinder, std, type Attraction, type Ctx } from '../context';
 import { LAYOUT } from '../layout';
 import { textMesh } from '../letters';
 import { hdr, PALETTE, signMaterial, signTexture, stripeTexture } from '../textures';
-import { escapeHtml } from '../ui';
 
-/** Ferris wheel — the "About me" stop. */
+/** Ferris wheel — the best view in the park. */
 export class FerrisWheel implements Attraction {
   private wheel = new THREE.Group();
   private cabins: THREE.Group[] = [];
@@ -86,7 +84,7 @@ export class FerrisWheel implements Attraction {
 
     const sign = new THREE.Mesh(
       new THREE.PlaneGeometry(7, 2),
-      signMaterial(signTexture('ABOUT ME', { sub: 'Who is driving this bumper car?', border: PALETTE.violet })),
+      signMaterial(signTexture('FERRIS WHEEL', { sub: 'The best view in the park', border: PALETTE.violet })),
     );
     sign.position.set(0, 3, 3.2);
     root.add(sign);
@@ -98,12 +96,11 @@ export class FerrisWheel implements Attraction {
   }
 
   panelHtml() {
-    const current = cv.experience[0];
-    return `<p class="eyebrow">Ferris Wheel · About me</p><h2>Hi, I'm ${escapeHtml(cv.firstName)} 👋</h2><p class="sub">${escapeHtml(cv.title)} @ ${escapeHtml(
-      current.company,
-    )}</p><p>${escapeHtml(cv.summary)}</p><h3>Languages</h3><ul>${cv.languages
-      .map((l) => `<li><strong>${escapeHtml(l.name)}</strong> — ${escapeHtml(l.level)}</li>`)
-      .join('')}</ul><h3>Education</h3><p>${escapeHtml(cv.education.degree)} — ${escapeHtml(cv.education.school)} (${cv.education.start}–${cv.education.end})</p>`;
+    return `<p class="eyebrow">Ferris Wheel</p><h2>The best view in the park</h2><p>Fourteen cabins turn slowly above the fair. From the top you can see both coasters, the rocket pad and the cliffs the Sky Falcon climbs.</p><ul>
+      <li>🎡 One full turn takes just under a minute</li>
+      <li>🌅 Best at sunset, when the bulbs come on</li>
+      <li>🦅 Look north to spot the Sky Falcon on the cliff</li>
+    </ul>`;
   }
 
   update(dt: number) {
@@ -194,7 +191,7 @@ export class Carousel implements Attraction {
   }
 }
 
-/** Ticket booth — contact details. */
+/** Ticket booth — the park guide. */
 export class Booth implements Attraction {
   private ticket: THREE.Mesh;
 
@@ -212,7 +209,7 @@ export class Booth implements Attraction {
     roof.position.y = 4;
     const sign = new THREE.Mesh(
       new THREE.PlaneGeometry(4.4, 1.5),
-      signMaterial(signTexture('TICKETS', { sub: 'Contact · GitHub · LinkedIn · CV', border: PALETTE.candy })),
+      signMaterial(signTexture('TICKETS', { sub: 'Park guide · Ride info', border: PALETTE.candy })),
     );
     sign.position.set(0, 3.55, 1.75);
     sign.rotation.x = -0.2;
@@ -229,11 +226,13 @@ export class Booth implements Attraction {
   }
 
   panelHtml() {
-    return `<p class="eyebrow">Ticket Booth · Contact</p><h2>Let's build something</h2><p>I'm always happy to talk about full-stack projects, mobile apps and tough integrations.</p><ul class="links">
-      <li><a href="mailto:${escapeHtml(cv.email)}">✉️ ${escapeHtml(cv.email)}</a></li>
-      <li><a href="${cv.github}" target="_blank" rel="noopener me">🐙 GitHub — hasanhmedeh</a></li>
-      <li><a href="${cv.linkedin}" target="_blank" rel="noopener me">💼 LinkedIn — hasanhmedeh</a></li>
-      <li><a href="${cv.cvPdf}" download>📄 Download my CV (PDF)</a></li>
+    return `<p class="eyebrow">Ticket Booth · Park guide</p><h2>Welcome to the fair</h2><p>Every ride is free today. Drive up to a glowing ring and press <kbd>E</kbd> to play.</p><ul>
+      <li>🎢 <strong>Thunder Loop</strong> — drive the coaster yourself: launch, loop and roll</li>
+      <li>🦅 <strong>Sky Falcon</strong> — 4.25 km cliff coaster, 158 m drop at 90°, 250 km/h</li>
+      <li>🚀 <strong>Rocket Ride</strong> — fire six stages all the way to orbit</li>
+      <li>🥫 <strong>Crate Smash</strong> — ram the crates and rack up points</li>
+      <li>🔔 <strong>High Striker</strong> — swing the hammer and ring the bell</li>
+      <li>🎡 <strong>Ferris Wheel</strong> — the best view in the park</li>
     </ul>`;
   }
 
@@ -273,12 +272,12 @@ export class Arch implements Attraction {
     });
     root.add(this.bulbs);
 
-    const title = textMesh("HASAN'S FUNFAIR", 1.15, 0.35, std('#ffcf5a', { roughness: 0.22, metalness: 1 })); // gilded marquee lettering
+    const title = textMesh('THE FUNFAIR', 1.15, 0.35, std('#ffcf5a', { roughness: 0.22, metalness: 1 })); // gilded marquee lettering
     title.position.set(0, 7.6, 0.2);
     root.add(title);
     const sub = new THREE.Mesh(
       new THREE.PlaneGeometry(9, 1.3),
-      signMaterial(signTexture('FULL-STACK · REACT · NESTJS · FLUTTER', { border: PALETTE.violet, height: 160, width: 1100, bulbs: false })),
+      signMaterial(signTexture('RIDES · GAMES · THRILLS · PRIZES', { border: PALETTE.violet, height: 160, width: 1100, bulbs: false })),
     );
     sub.position.set(0, 6.1, 0.3);
     root.add(sub);

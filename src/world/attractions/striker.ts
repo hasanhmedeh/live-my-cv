@@ -1,5 +1,5 @@
 import * as THREE from 'three';
-import { achievements } from '../../data/cv';
+import { strikerTiers } from '../../data/fair';
 import { shadowed, staticBox, std, type Attraction, type Ctx } from '../context';
 import { LAYOUT } from '../layout';
 import { PALETTE, signMaterial, signTexture } from '../textures';
@@ -9,7 +9,7 @@ const HEIGHT = 9;
 
 type Phase = 'idle' | 'aim' | 'fly' | 'result';
 
-/** The classic "test your strength" high striker. Hit the bell to unlock every achievement. */
+/** The classic "test your strength" high striker. Hit the bell to reach the top tier. */
 export class Striker implements Attraction {
   private puck: THREE.Mesh;
   private bell: THREE.Mesh;
@@ -52,7 +52,7 @@ export class Striker implements Attraction {
 
     const sign = new THREE.Mesh(
       new THREE.PlaneGeometry(4.6, 1.5),
-      signMaterial(signTexture('HIGH STRIKER', { sub: 'Ring the bell, unlock my wins', border: PALETTE.mustard })),
+      signMaterial(signTexture('HIGH STRIKER', { sub: 'Ring the bell, win a prize', border: PALETTE.mustard })),
     );
     sign.position.set(0, HEIGHT + 2.7, 0.2);
 
@@ -90,7 +90,7 @@ export class Striker implements Attraction {
     c.width = 256;
     c.height = 1440;
     const ctx = c.getContext('2d')!;
-    const tiers = [...achievements].reverse();
+    const tiers = [...strikerTiers].reverse();
     const colors = [PALETTE.candy, PALETTE.orange, PALETTE.mustard, PALETTE.teal];
     const h = c.height / tiers.length;
     tiers.forEach((t, i) => {
@@ -124,15 +124,15 @@ export class Striker implements Attraction {
   private renderAim() {
     this.ctx.ui.panel(
       'striker-aim',
-      `<p class="eyebrow">High Striker</p><h2>Test my strength!</h2><p>Press <kbd>E</kbd> / <kbd>Space</kbd> or tap when the marker is in the red to ring the bell. Each tier unlocks an achievement.</p><div class="meter"><i id="striker-marker"></i></div>${this.achievementsHtml()}<p><button class="btn btn-primary btn-small" type="button" data-striker-hit>Swing! 🔨</button></p>`,
+      `<p class="eyebrow">High Striker</p><h2>Test your strength!</h2><p>Press <kbd>E</kbd> / <kbd>Space</kbd> or tap when the marker is in the red to ring the bell. How high can you send the puck?</p><div class="meter"><i id="striker-marker"></i></div>${this.tiersHtml()}<p><button class="btn btn-primary btn-small" type="button" data-striker-hit>Swing! 🔨</button></p>`,
       { accent: PALETTE.mustard },
     );
     this.ctx.ui.panelElement.querySelector('[data-striker-hit]')?.addEventListener('click', () => this.action());
   }
 
-  private achievementsHtml() {
-    const unlocked = Math.ceil(this.best * achievements.length - 0.001);
-    return `<ul>${achievements
+  private tiersHtml() {
+    const unlocked = Math.ceil(this.best * strikerTiers.length - 0.001);
+    return `<ul>${strikerTiers
       .map((a, i) => (i < unlocked ? `<li><strong>${escapeHtml(a.tier)}:</strong> ${escapeHtml(a.text)}</li>` : `<li style="opacity:.45">🔒 ${escapeHtml(a.tier)} — hit higher to unlock</li>`))
       .join('')}</ul>`;
   }
@@ -192,7 +192,7 @@ export class Striker implements Attraction {
   }
 
   private onPeak() {
-    const tier = Math.ceil(this.power * achievements.length - 0.001);
+    const tier = Math.ceil(this.power * strikerTiers.length - 0.001);
     const rang = this.power >= 0.97;
     this.best = Math.max(this.best, this.power);
     if (rang) {
@@ -202,10 +202,10 @@ export class Striker implements Attraction {
     } else {
       this.ctx.sfx.pop();
     }
-    const heading = rang ? 'DING! You rang the bell! 🔔' : tier ? `Tier ${tier}: ${achievements[tier - 1].tier}` : 'Almost — try again!';
+    const heading = rang ? 'DING! You rang the bell! 🔔' : tier ? `Tier ${tier}: ${strikerTiers[tier - 1].tier}` : 'Almost — try again!';
     this.ctx.ui.panel(
       `striker-result-${Date.now()}`,
-      `<p class="eyebrow">High Striker · Power ${Math.round(this.power * 100)}%</p><h2>${escapeHtml(heading)}</h2>${this.achievementsHtml()}<p><button class="btn btn-primary btn-small" type="button" data-striker-again>Swing again 🔨</button></p>`,
+      `<p class="eyebrow">High Striker · Power ${Math.round(this.power * 100)}%</p><h2>${escapeHtml(heading)}</h2>${this.tiersHtml()}<p><button class="btn btn-primary btn-small" type="button" data-striker-again>Swing again 🔨</button></p>`,
       { accent: PALETTE.mustard },
     );
     this.ctx.ui.panelElement.querySelector('[data-striker-again]')?.addEventListener('click', () => this.action());

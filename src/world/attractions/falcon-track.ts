@@ -1,6 +1,14 @@
-// "Sky Falcon" — a tribute to the record-breaking cliff coaster at Six Flags Qiddiya (Riyadh).
-// Launch out of the park, LSM climb up the escarpment, a crawl along the plateau, a near-
-// vertical drop off the cliff face, a 250 km/h boost and a high-speed flight over the park.
+// "Sky Falcon" — a tribute to Falcons Flight at Six Flags Qiddiya City (Intamin Exa coaster,
+// opened 31 Dec 2025), laid out from the published ride sequence and statistics:
+//   4,250 m long · 250 km/h · 158 m drop at 90° · 163 m arch hill · ~195 m elevation change
+//   0 inversions · LSM lift hill + two LSM launches · 6 trains × 4 cars, 14 riders
+// Sequence: station → right turn → 39 km/h LSM lift → 55 m twisted drop → airtime hills, a
+// wave turn and an extreme overbanked turn → 160 km/h LSM launch up the cliff → slow clifftop
+// section with an overbanked turn → brakes at the edge → 90° drop into a tunnel → LSM launch
+// downhill to 250 km/h → 163 m arch with heavy trims → speed turns around the park boundary,
+// over the main entrance → final brake run → right turn into the station.
+// Our version: 4,247 m, 251 km/h, 157.9 m drop at 90°, arch crest ~163 m, 0 inversions.
+// The exact plan is not public, so turn radii, hill shapes and the route are fitted to the park.
 import * as THREE from 'three';
 import { PHYS, type Element, type Phys, type Zone } from './track.ts';
 
@@ -10,65 +18,87 @@ export const FALCON_CONNECTOR: Zone = 'brake';
 
 export const FALCON_ELEMENTS: Element[] = [
   { t: 'straight', len: 20, zone: 'station' },
-  { t: 'straight', len: 6 },
-  // launch 1: out of the park toward the escarpment
-  { t: 'straight', len: 83.62, zone: 'launch' },
-  // LSM climb up the mountain
-  { t: 'pitch', angle: 35, radius: 70, zone: 'lift' },
-  { t: 'straight', len: 280, zone: 'lift' },
-  { t: 'pitch', angle: -35, radius: 70, zone: 'lift' },
-  { t: 'straight', len: 12.23 },
-  // swing around on the plateau to face the cliff edge and the park far below
-  { t: 'turn', angle: -180, radius: 32, bank: 45 },
+  // dispatch: a right turn onto the LSM lift, which pushes the train up at 39 km/h
+  { t: 'straight', len: 4, zone: 'lift' },
+  { t: 'turn', angle: -90, radius: 18, bank: 15, zone: 'lift' },
+  { t: 'straight', len: 6, zone: 'lift' },
+  { t: 'pitch', angle: 40, radius: 30, zone: 'lift' },
+  { t: 'straight', len: 66, zone: 'lift' },
+  { t: 'pitch', angle: -40, radius: 22, zone: 'lift' },
+  // 55 m twisted drop, unwinding left to face the escarpment
+  { t: 'pitch', angle: -50, radius: 20 },
+  { t: 'turn', angle: 100, radius: 26, bank: 50 },
+  { t: 'pitch', angle: 50, radius: 36 },
+  // airtime hills
+  { t: 'pitch', angle: 35, radius: 50 },
+  { t: 'straight', len: 8 },
+  { t: 'pitch', angle: -70, radius: 45 },
+  { t: 'straight', len: 8 },
+  { t: 'pitch', angle: 35, radius: 50 },
+  { t: 'pitch', angle: 25, radius: 50 },
+  { t: 'pitch', angle: -50, radius: 40 },
+  { t: 'pitch', angle: 25, radius: 50 },
+  // wave turn (banked outward), then the extreme overbanked turn on a rise
+  { t: 'turn', angle: -60, radius: 80, bank: -10 },
+  { t: 'pitch', angle: 20, radius: 50 },
+  { t: 'turn', angle: 50, radius: 55, bank: 100 },
+  { t: 'pitch', angle: -40, radius: 50 },
+  { t: 'straight', len: 47 },
+  { t: 'pitch', angle: 20, radius: 50 },
+  // LSM launch to 160 km/h at the foot of the Tuwaiq cliffs; it keeps pushing on the way
+  // up, then the train climbs the rest of the cliff face on momentum
+  { t: 'straight', len: 50, zone: 'launch' },
+  { t: 'pitch', angle: 40, radius: 90, zone: 'launch' },
+  { t: 'straight', len: 122, zone: 'launch' },
+  { t: 'straight', len: 114 },
+  { t: 'pitch', angle: -40, radius: 70 },
+  // the slow clifftop section (LSMs hold ~39 km/h): turns, a hill and an overbanked turn
+  { t: 'straight', len: 20, zone: 'lift' },
+  { t: 'turn', angle: 90, radius: 30, bank: 40, zone: 'lift' },
+  { t: 'straight', len: 30, zone: 'lift' },
+  { t: 'pitch', angle: 8, radius: 60, zone: 'lift' },
+  { t: 'pitch', angle: -16, radius: 60, zone: 'lift' },
+  { t: 'pitch', angle: 8, radius: 60, zone: 'lift' },
+  { t: 'straight', len: 10, zone: 'lift' },
+  { t: 'turn', angle: 90, radius: 26, bank: 100, zone: 'lift' },
+  { t: 'straight', len: 15, zone: 'lift' },
+  // brakes at the very edge: the train creeps over the lip…
   { t: 'straight', len: 25, zone: 'brake' },
-  // over the edge — and, like the real Falcon's Flight, an LSM launch fires on the way
-  // down the near-vertical drop, slingshotting the train to 250 km/h
-  { t: 'pitch', angle: -85, radius: 25 }, // tip over the lip first (launching here would lift riders out of their seats)
-  { t: 'straight', len: 44.1, zone: 'boost' },
-  // long, gentle pull-out: gravity finishes the job, 250 km/h at the bottom (~4.9 G)
-  { t: 'pitch', angle: 85, radius: 125 },
-  { t: 'straight', len: 16.6 },
-  // speed hill into the park
-  { t: 'pitch', angle: 18, radius: 160 },
-  { t: 'straight', len: 10 },
-  { t: 'pitch', angle: -18, radius: 160 },
-  // huge banked turn, then straight across the middle of the park, high above it all
-  { t: 'turn', angle: -90, radius: 110, bank: 78 },
-  { t: 'straight', len: 40 },
-  // dive over the west side
-  { t: 'pitch', angle: -16, radius: 200 },
+  // …and falls 158 m at 90°, pulling out inside a tunnel at the foot of the cliff
+  { t: 'pitch', angle: -90, radius: 20 },
+  { t: 'straight', len: 58 },
+  { t: 'pitch', angle: 90, radius: 80, zone: 'tunnel' },
+  { t: 'straight', len: 40, zone: 'tunnel' },
+  // out of the tunnel, the third LSM fires downhill: 250 km/h
+  { t: 'pitch', angle: -8, radius: 100, zone: 'boost' },
+  { t: 'straight', len: 110, zone: 'boost' },
+  { t: 'pitch', angle: 4.34, radius: 100 },
+  { t: 'turn', angle: -90, radius: 140, bank: 74 },
+  { t: 'pitch', angle: 3.66, radius: 100 },
   { t: 'straight', len: 20 },
-  { t: 'pitch', angle: 16, radius: 200 },
-  // sweeping turnaround around the south-west
-  { t: 'turn', angle: 180, radius: 75, bank: 80 },
-  { t: 'straight', len: 2.2 },
-  // HYPER STRIP: 550 m of linear motors out into the desert — 0 → 500 km/h, then flat-out
-  { t: 'straight', len: 550, zone: 'hyper' },
-  // magnetic brakes bleed it back down to ~80 km/h (about 3.4 G of deceleration)
-  { t: 'straight', len: 300, zone: 'trim' },
-  // tight banked turnaround back toward the park
-  { t: 'turn', angle: 180, radius: 25, bank: 72 },
-  // return run: airtime camelbacks over the desert
-  { t: 'straight', len: 60 },
-  { t: 'pitch', angle: 14, radius: 80 },
-  { t: 'pitch', angle: -28, radius: 60 },
-  { t: 'pitch', angle: 14, radius: 80 },
-  { t: 'straight', len: 120 },
-  { t: 'pitch', angle: 14, radius: 80 },
-  { t: 'pitch', angle: -28, radius: 60 },
-  { t: 'pitch', angle: 14, radius: 80 },
-  { t: 'straight', len: 120 },
-  { t: 'pitch', angle: 10, radius: 80 },
-  { t: 'pitch', angle: -20, radius: 60 },
-  { t: 'pitch', angle: 10, radius: 80 },
-  // final dip back to ground level
-  { t: 'pitch', angle: -8, radius: 100 },
-  { t: 'straight', len: 10 },
-  { t: 'pitch', angle: 8, radius: 100 },
-  { t: 'straight', len: 86.3 },
-  // home: swing north into the brakes
-  { t: 'turn', angle: -90, radius: 20, bank: 45 },
-  { t: 'straight', len: 28.2, zone: 'brake' },
+  // the 163 m arch, with heavy trim brakes on the way up
+  { t: 'pitch', angle: 70, radius: 140 },
+  { t: 'straight', len: 24, zone: 'trim' },
+  { t: 'pitch', angle: -140, radius: 70 },
+  { t: 'straight', len: 24 },
+  { t: 'pitch', angle: 70, radius: 140 },
+  { t: 'straight', len: 60, zone: 'trim' },
+  // speed turns around the park boundary, a hill over the main (south) entrance
+  { t: 'turn', angle: 135, radius: 130, bank: 45 },
+  { t: 'straight', len: 504 },
+  { t: 'turn', angle: 45, radius: 130, bank: 40 },
+  { t: 'straight', len: 76 },
+  { t: 'pitch', angle: 18, radius: 120 },
+  { t: 'pitch', angle: -36, radius: 100 },
+  { t: 'pitch', angle: 18, radius: 120 },
+  { t: 'straight', len: 140 },
+  { t: 'turn', angle: 90, radius: 80, bank: 58 },
+  { t: 'straight', len: 25 },
+  { t: 'turn', angle: 90, radius: 60, bank: 62 },
+  // final brake run, then a right turn into the station
+  { t: 'straight', len: 55 },
+  { t: 'straight', len: 60, zone: 'brake' },
+  { t: 'turn', angle: -90, radius: 20, bank: 10, zone: 'brake' },
 ];
 
 export const FALCON_PHYS: Phys = {
@@ -76,15 +106,13 @@ export const FALCON_PHYS: Phys = {
   maxPowered: 72,
   motor: 5,
   turbo: 10,
-  launchTarget: 46, // ~165 km/h launch out of the station area
+  liftSpeed: 10.8, // 39 km/h: the LSM lift out of the station, and the slow LSM crawl along the clifftop
+  launchTarget: 44.4, // 160 km/h launch up the Tuwaiq cliff face
   launchAccel: 14,
-  boostTarget: 58, // LSM cut-off on the vertical drop; the pull-out's last ~114 m of fall brings it to 250 km/h
-  boostAccel: 32,
-  liftSpeed: 20,
-  hyperTarget: 138.9, // 500 km/h
-  hyperAccel: 30,
-  trimSpeed: 28,
-  trimDecel: 33,
-  trimMax: 8,
-  drag: 0.0006, // heavy train, low drag
+  boostTarget: 69.4, // 250 km/h: the LSM launch out of the tunnel, downhill
+  boostAccel: 14,
+  trimSpeed: 36, // heavy trims on the way up the 163 m arch
+  trimDecel: 12,
+  trimMax: 5, // brakes at the cliff edge (the train creeps over) and the final brake run
+  drag: 0.00018, // ~10 t train, CdA ≈ 3 m²: about 0.9 m/s² of drag at 250 km/h
 };

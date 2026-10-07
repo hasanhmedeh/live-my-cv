@@ -1,12 +1,12 @@
 {
-  "name": "hasan-hmedeh-cv",
+  "name": "funfair",
   "version": "1.0.0",
   "scripts": {
     "dev": "vite",
     "build": "tsc --noEmit && vite build",
     "preview": "vite preview"
   },
-  "description": "Hasan Hmedeh — interactive 3D funfair CV",
+  "description": "A 3D funfair in the browser",
   "dependencies": {
     "cannon-es": "^0.20.0",
     "n8ao": "^2.0.1",
