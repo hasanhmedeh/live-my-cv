@@ -20,8 +20,8 @@ const VIEW = { near: 55, far: 150 };
 
 /**
  * North-up circular minimap in the bottom-left corner. The whole fair is drawn once
- * into an offscreen sheet; each frame we just blit a window of it around the car.
- * Click / tap it to toggle a zoomed-out view; click an attraction icon to drive there.
+ * into an offscreen sheet; each frame we just blit a window of it around the visitor.
+ * Click / tap it to toggle a zoomed-out view; click an attraction icon to go there.
  */
 export class Minimap {
   private canvas: HTMLCanvasElement;
@@ -123,6 +123,24 @@ export class Minimap {
         g.stroke();
       }
     }
+
+    // the giant wheel seen from above: the rim edge-on, the hub, and its two A-frames
+    const wz = LAYOUT.ferris.z;
+    g.strokeStyle = '#3a3f48';
+    g.lineWidth = 1.6 * s;
+    for (const side of [-1, 1])
+      for (const sx of [-1, 1]) {
+        g.beginPath();
+        g.moveTo(X(LAYOUT.ferris.x + sx * 56), Z(wz + side * 40));
+        g.lineTo(X(LAYOUT.ferris.x), Z(wz + side * 22));
+        g.stroke();
+      }
+    g.strokeStyle = '#e9edf2';
+    g.lineWidth = 3 * s;
+    g.beginPath();
+    g.moveTo(X(LAYOUT.ferris.x - 124), Z(wz));
+    g.lineTo(X(LAYOUT.ferris.x + 124), Z(wz));
+    g.stroke();
   }
   private resize() {
     const size = this.canvas.clientWidth;
@@ -161,7 +179,7 @@ export class Minimap {
     this.resize();
     if (!this.size) return;
     this.view += (this.targetView - this.view) * Math.min(1, dt * 6);
-    // when zoomed out, frame the park rather than chase the car
+    // when zoomed out, frame the park rather than follow the visitor
     const far = (this.view - VIEW.near) / (VIEW.far - VIEW.near);
     this.centre.x = car.x * (1 - far) + 30 * far;
     this.centre.z = car.z * (1 - far) + -10 * far;
@@ -210,7 +228,7 @@ export class Minimap {
       g.fillText(ICONS[id], p.x, p.y + 1);
     }
 
-    // the car: an arrow pointing where it's heading (car faces -z at heading 0)
+    // the visitor: an arrow pointing where they're heading (heading 0 faces -z)
     const c = this.toMap(car.x, car.z);
     g.translate(c.x, c.y);
     g.rotate(-car.heading);

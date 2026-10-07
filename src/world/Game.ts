@@ -1,7 +1,8 @@
 import * as THREE from 'three';
 import * as CANNON from 'cannon-es';
 import { Sfx } from './audio';
-import { Car } from './car';
+import { Player, VISITOR_URL } from './player';
+import { GLTFLoader } from 'three/addons/loaders/GLTFLoader.js';
 import type { Ctx } from './context';
 import { Environment } from './environment';
 import { Input } from './input';
@@ -22,9 +23,10 @@ import { FALCON_PHYS } from './attractions/falcon-track';
 import { Rocket } from './attractions/rocket';
 import { Crates } from './attractions/crates';
 import { Striker } from './attractions/striker';
-import { Arch, Booth, Carousel, FerrisWheel } from './attractions/landmarks';
+import { Arch, Booth, Carousel } from './attractions/landmarks';
+import { GiantWheel } from './attractions/giant-wheel';
 
-type Mode = 'drive' | 'coaster' | 'rocket' | 'striker';
+type Mode = 'drive' | 'coaster' | 'rocket' | 'striker' | 'wheel';
 
 const nextFrame = () => new Promise<void>((r) => requestAnimationFrame(() => r()));
 
@@ -40,7 +42,7 @@ export class Game {
   private ui!: UI;
   private sfx = new Sfx();
   private env!: Environment;
-  private car!: Car;
+  private player!: Player;
   private zones!: Zones;
   private minimap!: Minimap;
   private stack!: Coaster;
@@ -51,7 +53,7 @@ export class Game {
   private rocket!: Rocket;
   private crates!: Crates;
   private striker!: Striker;
-  private ferris!: FerrisWheel;
+  private wheel!: GiantWheel;
   private booth!: Booth;
   private updatables: { update(dt: number, t: number): void }[] = [];
   private mode: Mode = 'drive';
@@ -69,13 +71,17 @@ export class Game {
   private post!: Post;
   private adaptive = new AdaptiveResolution();
   private focus = new THREE.Vector3();
+  private clockEl = document.getElementById('clock')!;
+  private clockText = '';
 
   constructor(private container: HTMLElement) {}
 
   /** Builds the whole fair in small steps so the progress bar can update. */
   async build(onProgress: (p: number) => void) {
-    const steps: [number, () => void][] = [];
-    const step = (w: number, fn: () => void) => steps.push([w, fn]);
+    // the visitor model downloads while the world is being built
+    const visitor = new GLTFLoader().loadAsync(VISITOR_URL);
+    const steps: [number, () => void | Promise<void>][] = [];
+    const step = (w: number, fn: () => void | Promise<void>) => steps.push([w, fn]);
 
     step(1, () => this.setupRenderer());
     step(1, () => this.setupPhysics());
@@ -89,9 +95,8 @@ export class Game {
     });
     step(1, () => {
       this.updatables.push(new Carousel(this.ctx));
-      this.ferris = new FerrisWheel(this.ctx);
       this.booth = new Booth(this.ctx);
-      this.updatables.push(this.ferris, this.booth);
+      this.updatables.push(this.booth);
     });
     step(3, () => {
       this.stack = new Coaster(this.ctx, {
@@ -124,7 +129,7 @@ export class Game {
       const ground = (x: number, z: number) => this.mountain.sample(x, z);
       // landmarks a support column must never land on
       const keep: [number, number, number][] = [
-        [0, 5, 14], [0, -8, 10], [0, -30, 9], [0, -68, 8], [34, -14, 9], [42, -52, 9], [20, 12, 4], [-20, -40, 4], [-26, 3, 6],
+        [0, 5, 14], [0, -8, 10], [0, -30, 9], [34, -14, 9], [42, -52, 9], [20, 12, 4], [-20, -40, 4], [-26, 3, 6],
       ];
       const keepOut = (x: number, z: number) => keep.some(([kx, kz, r]) => Math.hypot(x - kx, z - kz) < r) || nearTrack(x, z, 3.5, Infinity, 'stack');
       const f = FALCON_TRACK;
@@ -186,6 +191,10 @@ export class Game {
       this.updatables.push(this.falcon);
     });
     step(2, () => {
+      this.wheel = new GiantWheel(this.ctx, (x, z) => this.mountain.sample(x, z));
+      this.updatables.push(this.wheel);
+    });
+    step(2, () => {
       this.rocket = new Rocket(this.ctx, this.env);
       this.updatables.push(this.rocket);
     });
@@ -194,9 +203,9 @@ export class Game {
       this.striker = new Striker(this.ctx);
       this.updatables.push(this.crates, this.striker);
     });
-    step(1, () => {
+    step(1, async () => {
       this.zones = new Zones(this.ctx);
-      this.car = new Car(this.ctx);
+      this.player = new Player(this.ctx, await visitor);
       this.wire();
     });
     step(2, () => {
@@ -211,7 +220,7 @@ export class Game {
     const total = steps.reduce((a, [w]) => a + w, 0);
     let done = 0;
     for (const [w, fn] of steps) {
-      fn();
+      await fn();
       done += w;
       onProgress(done / total);
       await nextFrame();
@@ -252,11 +261,11 @@ export class Game {
     w.allowSleep = true;
     (w.solver as CANNON.GSSolver).iterations = 8;
     const ground = new CANNON.Material('ground');
-    const car = new CANNON.Material('car');
+    const player = new CANNON.Material('player');
     const prop = new CANNON.Material('prop');
-    w.addContactMaterial(new CANNON.ContactMaterial(ground, car, { friction: 0, restitution: 0 }));
+    w.addContactMaterial(new CANNON.ContactMaterial(ground, player, { friction: 0, restitution: 0 }));
     w.addContactMaterial(new CANNON.ContactMaterial(ground, prop, { friction: 0.45, restitution: 0.15 }));
-    w.addContactMaterial(new CANNON.ContactMaterial(car, prop, { friction: 0.05, restitution: 0.35 }));
+    w.addContactMaterial(new CANNON.ContactMaterial(player, prop, { friction: 0.05, restitution: 0.25 }));
     w.addContactMaterial(new CANNON.ContactMaterial(prop, prop, { friction: 0.4, restitution: 0.1 }));
 
     this.ui = new UI(this.mobile);
@@ -272,7 +281,7 @@ export class Game {
       sfx: this.sfx,
       ui: this.ui,
       mobile: this.mobile,
-      mats: { ground, car, prop },
+      mats: { ground, player, prop },
       quality: this.quality,
       dynamics: [],
       time: this.time,
@@ -288,8 +297,15 @@ export class Game {
     this.input.on('action', () => this.onAction());
     this.input.on('escape', () => this.onEscape());
     this.input.on('reset', () => this.mode === 'drive' && this.teleport('entrance'));
-    this.input.on('honk', () => this.sfx.honk());
-    this.input.on('camera', () => this.mode === 'coaster' && this.ride.cycleCamera());
+    this.input.on('honk', () => this.mode === 'drive' && this.player.wave());
+    // Space rolls on foot; on rides and the striker it keeps working as the action key
+    this.input.on('roll', () => (this.mode === 'drive' ? this.player.roll() : this.onAction()));
+    this.input.on('kick', () => this.mode === 'drive' && this.player.kick());
+    this.input.on('camera', () => {
+      if (this.mode === 'coaster') this.ride.cycleCamera();
+      else if (this.mode === 'wheel') this.wheel.cycleCamera();
+    });
+    this.wheel.input = this.input;
     this.stack.input = this.input;
     this.falcon.input = this.input;
     this.ui.onPromptClick = () => this.onAction();
@@ -304,6 +320,7 @@ export class Game {
     this.stack.onFinish = () => this.endRide();
     this.falcon.onFinish = () => this.endRide();
     this.rocket.onFinish = () => this.endRide();
+    this.wheel.onFinish = () => this.endRide();
     this.striker.onFinish = () => this.endRide();
     this.crates.onScore = (n, total, points, score) => {
       this.ui.score(`🥫 +${points}! · ${score} points · ${n} / ${total} crates`);
@@ -338,14 +355,14 @@ export class Game {
     this.ui.hud.hidden = false;
     this.ui.panel(
       'welcome',
-      `<p class="eyebrow">Welcome to the fair</p><h2>Step right up! 🎪</h2><p>Hop in the car and drive around the park. Every ride is free:</p><ul>
+      `<p class="eyebrow">Welcome to the fair</p><h2>Step right up! 🎪</h2><p>Walk around the park and try everything. Every ride is free:</p><ul>
         <li>🎢 <strong>Thunder Loop</strong> — drive the coaster yourself: launch, loop and roll</li>
         <li>🦅 <strong>Sky Falcon</strong> — a 4.25 km cliff coaster: 158 m drop at 90°, 250 km/h</li>
         <li>🚀 <strong>Rocket Ride</strong> — fire six stages all the way to orbit</li>
         <li>🥫 <strong>Crate Smash</strong> — ram the crates and rack up points</li>
         <li>🔔 <strong>High Striker</strong> — swing the hammer and ring the bell</li>
-        <li>🎡 <strong>Ferris Wheel</strong> — the best view · 🎟️ <strong>Tickets</strong> — park guide</li>
-      </ul><p>${this.mobile ? 'Use the joystick to drive and the <kbd>E</kbd> button to play.' : 'Drive with <kbd>WASD</kbd> or arrows, <kbd>E</kbd> to play. Try knocking over the big letters!'}</p>`,
+        <li>🎡 <strong>Giant Wheel</strong> — ride the tallest wheel on Earth, 250 m up · 🎟️ <strong>Tickets</strong> — park guide</li>
+      </ul><p>${this.mobile ? 'Use the joystick to walk (push it all the way to run) and the <kbd>E</kbd> button to play.' : 'Walk with <kbd>WASD</kbd> or arrows, hold <kbd>Shift</kbd> to run, <kbd>Space</kbd> to roll, <kbd>F</kbd> to kick, <kbd>H</kbd> to wave and <kbd>E</kbd> to play. Try kicking the big letters over!'}</p>`,
       { accent: PALETTE.candy },
     );
   }
@@ -355,6 +372,7 @@ export class Game {
     if (this.mode === 'rocket') return this.rocket.action();
     if (this.mode === 'striker') return this.striker.action();
     if (this.mode === 'coaster') return this.ride.cycleCamera();
+    if (this.mode === 'wheel') return this.wheel.cycleCamera();
     if (this.mode !== 'drive') return;
     const z = this.zones.active;
     if (!z) return;
@@ -372,20 +390,25 @@ export class Game {
         this.startRide('rocket', () => this.rocket.start());
         break;
       case 'striker':
+        this.player.interact();
         this.mode = 'striker';
-        this.car.enabled = false;
+        this.player.enabled = false;
         this.ui.rideExit(true);
         this.ui.prompt('', '', '');
         this.striker.start();
         this.panelZone = 'striker';
         break;
       case 'crates':
+        this.player.interact();
         this.crates.restack();
         this.ui.score(null);
         this.showZonePanel('crates');
         break;
       case 'ferris':
+        this.startRide('wheel', () => this.wheel.start());
+        break;
       case 'booth':
+        this.player.interact();
         this.showZonePanel(z);
         this.sfx.chime();
         break;
@@ -394,14 +417,14 @@ export class Game {
 
   private showZonePanel(z: ZoneId) {
     this.panelZone = z;
-    const html = z === 'crates' ? this.crates.panelHtml() : z === 'ferris' ? this.ferris.panelHtml() : this.booth.panelHtml();
-    const accent = z === 'crates' ? PALETTE.teal : z === 'ferris' ? PALETTE.violet : PALETTE.candy;
+    const html = z === 'crates' ? this.crates.panelHtml() : this.booth.panelHtml();
+    const accent = z === 'crates' ? PALETTE.teal : PALETTE.candy;
     this.ui.panel(`${z}-${Date.now()}`, html, { accent });
   }
 
   private startRide(mode: Mode, start: () => void) {
     this.ui.prompt('', '', '');
-    this.car.enabled = false;
+    this.player.enabled = false;
     this.fade(() => {
       this.mode = mode;
       this.ui.cinematic(true);
@@ -413,6 +436,7 @@ export class Game {
   private onEscape() {
     if (this.mode === 'coaster') this.fade(() => this.ride.exit());
     else if (this.mode === 'rocket') this.fade(() => this.rocket.exit());
+    else if (this.mode === 'wheel') this.fade(() => this.wheel.exit());
     else if (this.mode === 'striker') this.striker.exit();
     else {
       if (this.zones.active === 'crates') this.cratesDismissed = true;
@@ -423,14 +447,16 @@ export class Game {
 
   private endRide() {
     this.camera.up.set(0, 1, 0);
-    const wasRide = this.mode === 'coaster' || this.mode === 'rocket';
+    const wasRide = this.mode === 'coaster' || this.mode === 'rocket' || this.mode === 'wheel';
+    if (this.mode === 'wheel') this.env.setHaze(1);
     const from = this.mode;
     this.mode = 'drive';
-    this.car.enabled = true;
+    this.player.enabled = true;
     this.ui.cinematic(false);
     this.ui.rideExit(false);
     this.ui.countdown(null);
-    this.panelZone = from === 'striker' ? 'striker' : from === 'coaster' ? (this.ride === this.falcon ? 'falcon' : 'coaster') : 'rocket';
+    this.panelZone =
+      from === 'striker' ? 'striker' : from === 'coaster' ? (this.ride === this.falcon ? 'falcon' : 'coaster') : from === 'wheel' ? 'ferris' : 'rocket';
     if (wasRide) this.updateDriveCamera(1, true);
   }
 
@@ -448,7 +474,7 @@ export class Game {
     const z = ZONES[id];
     this.fade(() => {
       // park just in front of the trigger ring so the prompt shows up immediately
-      this.car.reset(z.x, z.z, z.heading);
+      this.player.reset(z.x, z.z, z.heading);
       this.updateDriveCamera(1, true);
     });
   }
@@ -465,11 +491,12 @@ export class Game {
   }
 
   private updateDriveCamera(dt: number, snap = false) {
-    const p = this.car.position;
-    const vel = this.car.body.velocity;
+    const p = this.player.position;
+    const vel = this.player.body.velocity;
     const portrait = this.camera.aspect < 0.8;
-    const offset = new THREE.Vector3(0, 17, 21).multiplyScalar(this.zoom * (portrait ? 1.25 : 1));
-    const target = new THREE.Vector3(p.x + vel.x * 0.25, 1.2, p.z + vel.z * 0.25);
+    // a third-person view over the visitor's shoulder height, looking a little ahead of them
+    const offset = new THREE.Vector3(0, 4.6, 7.6).multiplyScalar(this.zoom * (portrait ? 1.25 : 1));
+    const target = new THREE.Vector3(p.x + vel.x * 0.3, 1.3, p.z + vel.z * 0.3);
     const k = snap ? 1 : 1 - Math.exp(-dt * 4);
     this.camTarget.lerp(target, k);
     this.camPos.lerp(target.clone().add(offset), k);
@@ -488,20 +515,20 @@ export class Game {
     const t = this.time.t;
 
     this.input.update();
-    this.car.update(dt, this.input); // car.enabled is false during rides
+    this.player.update(dt, this.input); // player.enabled is false during rides
 
     this.world.step(1 / 60, dt, 4);
     for (const d of this.ctx.dynamics) {
       d.mesh.position.set(d.body.position.x, d.body.position.y, d.body.position.z);
       d.mesh.quaternion.set(d.body.quaternion.x, d.body.quaternion.y, d.body.quaternion.z, d.body.quaternion.w);
     }
-    this.car.sync();
+    this.player.sync();
 
     for (const u of this.updatables) u.update(dt, t);
     this.updateCoasterAudio();
     if (this.mode === 'drive') this.updateMinimap(dt);
     wind.uTime.value = t;
-    wind.uCar.value.copy(this.car.position);
+    wind.uCar.value.copy(this.player.position);
 
     // camera + shadow focus per mode
     if (this.mode === 'coaster') {
@@ -513,6 +540,11 @@ export class Game {
       this.zones.setVisible(false);
       this.rocket.updateCamera(this.camera, dt);
       this.env.follow(new THREE.Vector3(LAYOUT.rocket.x, 0, LAYOUT.rocket.z));
+    } else if (this.mode === 'wheel') {
+      this.zones.setVisible(false);
+      this.wheel.updateCamera(this.camera, dt);
+      this.env.follow(this.wheel.focus);
+      this.env.setHaze(1 - 0.3 * THREE.MathUtils.clamp(this.wheel.altitude / 250, 0, 1));
     } else if (this.mode === 'striker') {
       this.camera.up.set(0, 1, 0);
       this.zones.setVisible(false);
@@ -525,7 +557,7 @@ export class Game {
     } else {
       this.camera.up.set(0, 1, 0); // the coaster cam may have rolled it
       this.updateDriveCamera(dt);
-      this.env.follow(this.car.position);
+      this.env.follow(this.player.position);
       this.zones.setVisible(true);
       this.updateZones(t);
     }
@@ -539,6 +571,7 @@ export class Game {
     if (this.mode === 'drive' && !this.debugCam) this.focus.copy(this.camTarget);
     else this.focus.copy(this.camera.position);
     this.env.update(t, this.focus);
+    this.updateClock();
 
     if (this.adaptive.update(dt)) {
       this.renderer.setPixelRatio(this.quality.dpr * this.adaptive.scale);
@@ -548,14 +581,21 @@ export class Game {
   }
 
   private updateMinimap(dt: number) {
-    const q = this.car.group.quaternion;
-    // yaw from the quaternion (the car only ever rotates about y)
+    const q = this.player.group.quaternion;
+    // yaw from the quaternion (the visitor only ever turns about y)
     const heading = Math.atan2(2 * (q.w * q.y + q.x * q.z), 1 - 2 * (q.y * q.y + q.z * q.z));
-    const p = this.car.position;
+    const p = this.player.position;
     this.minimap.update(dt, { x: p.x, z: p.z, heading }, [
       { x: this.stack.trainPosition.x, z: this.stack.trainPosition.z, color: PALETTE.mustard },
       { x: this.falcon.trainPosition.x, z: this.falcon.trainPosition.z, color: PALETTE.teal },
     ]);
+  }
+
+  private updateClock() {
+    const h = this.env.hours;
+    const icon = h >= 5.5 && h < 7.5 ? '🌅' : h >= 7.5 && h < 17.5 ? '☀️' : h >= 17.5 && h < 19.5 ? '🌇' : '🌙';
+    const text = `${icon} ${this.env.clock}`;
+    if (text !== this.clockText) this.clockEl.textContent = this.clockText = text;
   }
 
   /** One shared set of coaster sounds: the ride you're on, otherwise the nearest ghost train. */
@@ -582,6 +622,8 @@ export class Game {
   private setupDebug() {
     if (!import.meta.env.DEV) return;
     (window as unknown as { __game: Game }).__game = this;
+    const hour = new URLSearchParams(location.search).get('hour');
+    if (hour) this.env.setHour(Number(hour), this.time.t);
     const cam = new URLSearchParams(location.search).get('cam');
     if (cam) {
       const n = cam.split(',').map(Number);
@@ -592,13 +634,13 @@ export class Game {
   /** Dev helper used by screenshot scripts. */
   debugAction(zone: ZoneId) {
     const z = ZONES[zone];
-    this.car.reset(z.x, z.z, z.heading);
-    this.zones.update(this.car.position, this.time.t);
+    this.player.reset(z.x, z.z, z.heading);
+    this.zones.update(this.player.position, this.time.t);
     this.onAction();
   }
 
   private updateZones(t: number) {
-    const zone = this.zones.update(this.car.position, t);
+    const zone = this.zones.update(this.player.position, t);
     this.ui.highlightNav(zone);
     if (zone) {
       const z = ZONES[zone];
@@ -609,16 +651,16 @@ export class Game {
     }
     if (zone !== 'crates') this.cratesDismissed = false;
 
-    // close a zone's panel once you drive well away from it
+    // close a zone's panel once you walk well away from it
     if (this.panelZone) {
       const z = ZONES[this.panelZone];
-      if (Math.hypot(this.car.position.x - z.x, this.car.position.z - z.z) > 28) {
+      if (Math.hypot(this.player.position.x - z.x, this.player.position.z - z.z) > 28) {
         this.ui.hidePanel();
         this.panelZone = null;
       }
     }
     // crate score badge only near the stall
-    const dCrates = Math.hypot(this.car.position.x - LAYOUT.crates.x, this.car.position.z - LAYOUT.crates.z);
+    const dCrates = Math.hypot(this.player.position.x - LAYOUT.crates.x, this.player.position.z - LAYOUT.crates.z);
     if (dCrates > 30 || this.crates.knockedCount === 0) this.ui.score(null);
   }
 }

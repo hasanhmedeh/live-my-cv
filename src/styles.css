@@ -341,6 +341,12 @@ kbd {
 .is-cinematic .minimap {
   display: none;
 }
+.hud-clock {
+  display: inline-flex;
+  align-items: center;
+  font-variant-numeric: tabular-nums;
+  cursor: default;
+}
 .hud-help {
   position: absolute;
   left: 200px;

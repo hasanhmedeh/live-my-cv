@@ -4,7 +4,7 @@
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
     <title>The Funfair — a 3D theme park in your browser</title>
-    <meta name="description" content="Drive a car around a 3D funfair at dusk: ride two rollercoasters, including a 250 km/h cliff coaster, launch a rocket into orbit, smash crates and ring the high striker bell." />
+    <meta name="description" content="Walk around a 3D funfair at dusk: ride two rollercoasters, including a 250 km/h cliff coaster, launch a rocket into orbit, smash crates and ring the high striker bell." />
     <meta name="robots" content="index, follow, max-image-preview:large" />
     <link rel="canonical" href="__SITE_URL__/" />
     <meta name="theme-color" content="#1d1238" />
@@ -14,7 +14,7 @@
     <meta property="og:type" content="website" />
     <meta property="og:site_name" content="The Funfair" />
     <meta property="og:title" content="The Funfair — a 3D theme park in your browser" />
-    <meta property="og:description" content="Drive around the park, ride the rollercoasters, launch the rocket and smash the crates." />
+    <meta property="og:description" content="Explore the park on foot, ride the rollercoasters, launch the rocket and smash the crates." />
     <meta property="og:url" content="__SITE_URL__/" />
     <meta property="og:image" content="__SITE_URL__/og-image.jpg" />
     <meta property="og:image:width" content="1200" />
@@ -46,7 +46,7 @@
           <h1 id="intro-title">The Funfair</h1>
           <p class="intro-role">Rides · Games · Thrills</p>
           <p class="intro-lead">
-            Hop in a car and explore the park: drive the <strong>Thunder Loop</strong> coaster, plunge off the cliff on the
+            Walk in and explore the park: drive the <strong>Thunder Loop</strong> coaster yourself, plunge off the cliff on the
             <strong>Sky Falcon</strong>, launch the <strong>rocket</strong> into orbit and smash the <strong>crates</strong>.
           </p>
           <div class="intro-actions">
@@ -55,7 +55,7 @@
             </button>
           </div>
           <div class="intro-progress" aria-hidden="true"><span id="progress-bar"></span></div>
-          <p class="intro-hint">Best with a keyboard: <kbd>W</kbd><kbd>A</kbd><kbd>S</kbd><kbd>D</kbd> or arrows to drive, <kbd>E</kbd> to play. Touch works too.</p>
+          <p class="intro-hint">Best with a keyboard: <kbd>W</kbd><kbd>A</kbd><kbd>S</kbd><kbd>D</kbd> or arrows to walk, <kbd>Shift</kbd> to run, <kbd>E</kbd> to play. Touch works too.</p>
         </div>
       </section>
     </main>
@@ -69,10 +69,11 @@
         <button type="button" data-goto="rocket" title="Rocket ride">🚀<span>Rocket</span></button>
         <button type="button" data-goto="crates" title="Crate smash">🥫<span>Crates</span></button>
         <button type="button" data-goto="striker" title="High striker">🔔<span>Striker</span></button>
-        <button type="button" data-goto="ferris" title="Ferris wheel">🎡<span>Ferris</span></button>
+        <button type="button" data-goto="ferris" title="Giant wheel — 250 m">🎡<span>Wheel</span></button>
         <button type="button" data-goto="booth" title="Ticket booth">🎟️<span>Tickets</span></button>
       </nav>
       <div class="hud-tools">
+        <span id="clock" class="hud-pill hud-clock" title="Park time · a full day every 10 minutes">🌅 17:00</span>
         <button type="button" id="sound-toggle" class="hud-icon" aria-pressed="true" title="Sound">🔊</button>
       </div>
 
@@ -97,12 +98,12 @@
       <div id="ride-exit" class="ride-exit" hidden><button type="button" class="btn btn-small btn-cream">Exit ride <kbd>Esc</kbd></button></div>
       <aside id="panel" class="panel" aria-live="polite" hidden></aside>
 
-      <div id="minimap" class="minimap" title="Map · click an icon to drive there, M to zoom">
+      <div id="minimap" class="minimap" title="Map · click an icon to go there, M to zoom">
         <canvas aria-label="Map of the fair"></canvas>
         <button type="button" class="minimap-zoom" data-map-zoom aria-label="Zoom the map">⤢</button>
       </div>
 
-      <p class="hud-help" id="hud-help"><kbd>WASD</kbd>/<kbd>↑↓←→</kbd> drive · <kbd>Shift</kbd> boost · <kbd>E</kbd> play · <kbd>R</kbd> reset · <kbd>H</kbd> honk · <kbd>M</kbd> map · <kbd>Esc</kbd> close</p>
+      <p class="hud-help" id="hud-help"><kbd>WASD</kbd>/<kbd>↑↓←→</kbd> walk · <kbd>Shift</kbd> run · <kbd>Space</kbd> roll · <kbd>F</kbd> kick · <kbd>E</kbd> play · <kbd>H</kbd> wave · <kbd>R</kbd> reset · <kbd>M</kbd> map · <kbd>Esc</kbd> close</p>
 
       <div class="touch" id="touch" hidden>
         <div class="stick" id="stick"><span class="stick-knob" id="stick-knob"></span></div>

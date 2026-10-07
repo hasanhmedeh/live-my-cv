@@ -4,7 +4,7 @@ export const LAYOUT = {
   letters: { x: 0, z: 5 },
   arch: { x: 0, z: -8 },
   carousel: { x: 0, z: -30 },
-  ferris: { x: 0, z: -68 },
+  ferris: { x: 0, z: -200 }, // the giant wheel stands outside the park, at the end of the boulevard
   coasterStation: { x: -26, z: 0 },
   rocket: { x: 42, z: -52 },
   crates: { x: 34, z: -12 },
@@ -15,16 +15,16 @@ export const LAYOUT = {
 
 export type ZoneId = 'entrance' | 'coaster' | 'falcon' | 'rocket' | 'crates' | 'striker' | 'ferris' | 'booth';
 
-/** Where the car is placed when teleporting to a zone, and the zone trigger. */
+/** Where the visitor is placed when teleporting to a zone, and the zone trigger. */
 export const ZONES: Record<ZoneId, { x: number; z: number; radius: number; title: string; action: string; heading: number }> = {
   entrance: { x: 0, z: 14, radius: 0, title: 'Entrance', action: '', heading: 0 },
   coaster: { x: -19, z: 2, radius: 3.6, title: 'Thunder Loop', action: 'Drive the coaster', heading: Math.PI / 2 },
-  // west of the station: the track itself is a solid wall the car can't cross
+  // west of the station: the track itself is a solid wall you can't cross
   falcon: { x: 63, z: 12, radius: 3.6, title: 'Sky Falcon', action: 'Ride the 250 km/h cliff coaster', heading: -Math.PI / 2 },
   rocket: { x: 42, z: -40, radius: 3.6, title: 'Rocket Ride', action: 'Launch into orbit', heading: 0 },
   crates: { x: 34, z: -2, radius: 3.6, title: 'Crate Smash', action: 'Restack the crates', heading: 0 },
   striker: { x: -20, z: -33, radius: 3.4, title: 'High Striker', action: 'Swing the hammer', heading: 0 },
-  ferris: { x: 0, z: -55, radius: 3.6, title: 'Ferris Wheel', action: 'Take in the view', heading: 0 },
+  ferris: { x: 0, z: -55, radius: 3.6, title: 'Giant Wheel', action: 'Ride the 250 m wheel', heading: 0 },
   booth: { x: 20, z: 18, radius: 3.4, title: 'Ticket Booth', action: 'Park guide', heading: 0 },
 };
 

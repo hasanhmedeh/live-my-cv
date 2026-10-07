@@ -11,7 +11,7 @@ interface Marker {
   baseY: number;
 }
 
-/** Glowing ground rings: drive onto one to get the "Press E" prompt. */
+/** Glowing ground rings: step onto one to get the "Press E" prompt. */
 export class Zones {
   private markers: Marker[] = [];
   active: ZoneId | null = null;

@@ -61,7 +61,7 @@ export class Crates implements Attraction {
     awning.rotation.x = 0.25;
     const sign = new THREE.Mesh(
       new THREE.PlaneGeometry(10, 2.6),
-      signMaterial(signTexture('CRATE SMASH', { sub: 'Drive into the crates · 22 crates · 455 points', border: PALETTE.teal })),
+      signMaterial(signTexture('CRATE SMASH', { sub: 'Run into the crates · 22 crates · 455 points', border: PALETTE.teal })),
     );
     sign.position.set(0, 9.2, -6.6);
     for (const x of [-6.8, 6.8]) {
@@ -124,7 +124,7 @@ export class Crates implements Attraction {
         return `<li class="${hit === items.length ? 'hit' : ''}">${pts} pts · ${hit} / ${items.length}</li>`;
       })
       .join('');
-    return `<p class="eyebrow">Crate Smash · ${this.knockedCount} / ${this.total} knocked</p><h2>${this.score} / ${this.maxScore} points</h2><p>Ram the crates with the car. The higher the crate, the more it's worth. Press <kbd>E</kbd> in the ring to restack.</p><ul class="tags">${rows}</ul>`;
+    return `<p class="eyebrow">Crate Smash · ${this.knockedCount} / ${this.total} knocked</p><h2>${this.score} / ${this.maxScore} points</h2><p>Run into the crates to knock them down. The higher the crate, the more it's worth. Press <kbd>E</kbd> in the ring to restack.</p><ul class="tags">${rows}</ul>`;
   }
 
   update() {

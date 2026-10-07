@@ -1,4 +1,5 @@
 import * as THREE from 'three';
+import { withFogSun } from './fog';
 
 /** One set of uniforms drives every swaying thing, updated once per frame. */
 export const wind = {
@@ -8,10 +9,11 @@ export const wind = {
 
 /**
  * Injects world-space wind into an instanced material. `aSway` (0 at the root, 1 at the
- * tip) controls how much each vertex moves. `push` makes the car flatten nearby blades.
+ * tip) controls how much each vertex moves. `push` makes the visitor part the nearby blades.
  */
 export function addWind(material: THREE.Material, amount: number, push = false) {
   material.onBeforeCompile = (shader) => {
+    withFogSun(shader);
     shader.uniforms.uTime = wind.uTime;
     shader.uniforms.uCar = wind.uCar;
     shader.vertexShader = shader.vertexShader

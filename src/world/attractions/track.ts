@@ -123,12 +123,26 @@ export function buildTrack(start: THREE.Vector3, heading: THREE.Quaternion, elem
     }
   }
 
-  // ---- close the circuit with a Hermite connector back to the start ----
+  // ---- close the circuit back to the start ----
+  // drop trailing samples that land (almost) on top of the start: a near-duplicate point
+  // there makes a kink in the tangents right at the station
+  while (pos.length > 1 && pos[pos.length - 1].distanceTo(start) < DS * 0.75) {
+    pos.pop();
+    up.pop();
+    zone.pop();
+  }
+  const startT = new THREE.Vector3(0, 0, -1).applyQuaternion(heading);
+  // if the layout already ends right at the station, ease its last stretch so it lands exactly
+  // one sample before the start; otherwise bridge the gap with a Hermite connector
+  const lastI = pos.length - 1;
+  const err = start.clone().addScaledVector(startT, -DS).sub(pos[lastI]);
   const endP = p.clone();
   const endT = new THREE.Vector3(0, 0, -1).applyQuaternion(q);
-  const startT = new THREE.Vector3(0, 0, -1).applyQuaternion(heading);
   const dist = endP.distanceTo(start);
-  if (dist > DS) {
+  if (err.length() < DS * 2) {
+    const K = Math.min(60, lastI);
+    for (let k = 0; k < K; k++) pos[lastI - k].addScaledVector(err, smooth(1 - k / K));
+  } else if (dist > DS) {
     const L = dist * 1.1;
     const h = (t: number) => {
       const t2 = t * t;

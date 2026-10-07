@@ -144,9 +144,22 @@ export class Sfx {
     this.ride.whineG.gain.setTargetAtTime(launching ? 0.09 * k : 0, t, 0.06);
   }
 
-  honk() {
-    this.tone(392, 0.28, 'square', 0.12);
-    this.tone(494, 0.28, 'square', 0.1);
+  /** A soft footstep on the gravel paths (heavier when running). */
+  footstep(run: boolean) {
+    this.noise(run ? 0.07 : 0.05, run ? 760 : 560, run ? 0.08 : 0.05, 1.3);
+    this.tone(run ? 95 : 80, 0.06, 'sine', run ? 0.05 : 0.03);
+  }
+
+  /** Cloth-and-gravel swish of a dodge-roll. */
+  swish() {
+    const n = this.noise(0.32, 700, 0.1, 1.1);
+    if (n) n.f.frequency.exponentialRampToValueAtTime(260, n.t + 0.3);
+  }
+
+  /** A friendly two-note whistle, to go with a wave. */
+  whistle() {
+    this.tone(1250, 0.16, 'sine', 0.1, 0, 1750);
+    this.tone(1750, 0.28, 'sine', 0.1, 0.2, 1150);
   }
 
   thunk(strength: number) {

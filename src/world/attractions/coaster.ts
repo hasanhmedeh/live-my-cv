@@ -244,8 +244,10 @@ export class Coaster implements Attraction {
     while (d.zone[count] === 'station') count++;
     const L = count * DS;
     const P0 = this.railCenter(0, new THREE.Vector3());
-    const T = d.tan[0].clone().setY(0).normalize();
-    const R = d.right[0].clone().setY(0).normalize();
+    // lay the station out along its straight (not the tangent at one sample, which the
+    // closing connector can bend slightly)
+    const T = this.railCenter(count - 1, new THREE.Vector3()).sub(P0).setY(0).normalize();
+    const R = new THREE.Vector3(-T.z, 0, T.x);
     const side = this.cfg.station.side;
     const out = R.clone().multiplyScalar(side); // toward the platform
     const rotY = Math.atan2(T.x, T.z);
@@ -529,7 +531,8 @@ export class Coaster implements Attraction {
     this.maxSpeed = Math.max(this.maxSpeed, Math.abs(this.state.v));
 
     const zone = zoneAt(this.d, this.state.s);
-    if (zone !== this.lastZone && zone && this.cfg.beats?.[zone] && this.state.v > 0) {
+    // (lastZone is null right after boarding, so the station beat only plays on arrival)
+    if (zone !== this.lastZone && zone && this.lastZone !== null && this.cfg.beats?.[zone] && this.state.v > 0) {
       const beat = this.cfg.beats[zone]!;
       const visit = this.zoneVisits.get(zone) ?? 0;
       this.zoneVisits.set(zone, visit + 1);

@@ -10,15 +10,32 @@ import { mulberry } from './random';
 import { detailNormalTexture, glowTexture, groundTexture, hdr, PALETTE, poolTexture, stripeTexture } from './textures';
 import { addWind } from './wind';
 import { FALCON_TRACK, nearTrack } from './rides';
+import { fogSun, installSunFog } from './fog';
 
 export { mulberry };
 
 const WORLD = 260;
-/** Direction the sunlight comes from (a little higher than the visible sun so shadows stay readable). */
-export const LIGHT_DIR = new THREE.Vector3(-0.92, 0.36, -0.2).normalize();
-/** The sun disc itself sits just above the horizon. */
-const SKY_SUN = new THREE.Vector3(-0.95, 0.05, -0.2).normalize();
 const FOG_DENSITY = 0.0026;
+/** A full 24-hour day lasts this many real seconds (10 minutes). */
+export const DAY_SECONDS = 600;
+/** The park opens in the late afternoon, so the first thing you see is golden hour → sunset. */
+const START_HOUR = 17;
+
+const col = (c: string) => new THREE.Color(c);
+// palette keyframes: [night, sunrise/sunset glow, full day]
+const HEMI_SKY = [col('#2c3866'), col('#9a8ee0'), col('#c9cfd6')];
+const HEMI_GROUND = [col('#18131f'), col('#4a3b30'), col('#5e5240')];
+const FOG = [col('#0d1426'), col('#584a70'), col('#a7bcd6')];
+const FOG_SUN = [col('#1c2850'), col('#f0a06a'), col('#fff2d6')];
+const SUN_WARM = col('#ffbe86');
+const SUN_NOON = col('#fff3e2');
+const MOON = col('#9eb6ff');
+const ENV_GROUND = [col('#0c1410'), col('#24402f'), col('#3d6a48')];
+
+/** night → glow → day blend of three colours. */
+function tri(out: THREE.Color, c: THREE.Color[], day: number, glow: number) {
+  return out.copy(c[0]).lerp(c[2], day).lerp(c[1], glow);
+}
 
 
 export class Environment {
@@ -26,13 +43,33 @@ export class Environment {
   hemi: THREE.HemisphereLight;
   grass: Grass;
   private sky: Sky;
-  private skyUniforms = { uSpace: { value: 0 }, uSkyExposure: { value: 0.8 } };
+  private skyUniforms = { uSpace: { value: 0 }, uSkyExposure: { value: 0.8 }, uNight: { value: 0 } };
   private stars: THREE.Points;
   private fireflies: THREE.Points;
   private fireflySeeds: Float32Array;
   private balloons: THREE.Group[] = [];
   private bulbs: THREE.InstancedMesh[] = [];
-  private envIntensity = 0.8;
+  /** In-game clock, 0–24. */
+  hours = START_HOUR;
+  /** 0 in daylight, 1 in full night. */
+  night = 0;
+  private space = 0;
+  private hourOffset = 0;
+  private haze = 1;
+  private sunDir = new THREE.Vector3();
+  private moonDir = new THREE.Vector3();
+  private lightDir = new THREE.Vector3(-0.92, 0.36, -0.2).normalize();
+  private moon: THREE.Group;
+  private lampMat!: THREE.MeshBasicMaterial;
+  private poolMat!: THREE.MeshBasicMaterial;
+  private pmrem: THREE.PMREMGenerator;
+  private envScene = new THREE.Scene();
+  private envGround: THREE.MeshBasicMaterial;
+  private cubeRT = new THREE.WebGLCubeRenderTarget(128, { type: THREE.HalfFloatType });
+  private cubeCam: THREE.CubeCamera;
+  private envRT: THREE.WebGLRenderTarget | null = null;
+  private lastBake = -1e9;
+  private tmp = new THREE.Color();
 
   constructor(private ctx: Ctx, q: Quality) {
     const { scene } = ctx;
@@ -46,14 +83,13 @@ export class Environment {
     u.rayleigh.value = 3.2;
     u.mieCoefficient.value = 0.004;
     u.mieDirectionalG.value = 0.82;
-    u.sunPosition.value.copy(SKY_SUN);
     u.cloudCoverage.value = q.clouds ? 0.32 : 0;
     u.cloudDensity.value = 0.55;
     u.cloudElevation.value = 0.55;
     this.sky.material.onBeforeCompile = (shader) => {
       Object.assign(shader.uniforms, this.skyUniforms);
       shader.fragmentShader = shader.fragmentShader
-        .replace('void main() {', 'uniform float uSpace;\nuniform float uSkyExposure;\nvoid main() {')
+        .replace('void main() {', 'uniform float uSpace;\nuniform float uSkyExposure;\nuniform float uNight;\nvoid main() {')
         .replace(
           'gl_FragColor = vec4( texColor, 1.0 );',
           `vec3 spaceCol = mix( vec3( 0.004, 0.002, 0.012 ), vec3( 0.02, 0.01, 0.05 ), smoothstep( -0.3, 0.6, direction.y ) );
@@ -61,28 +97,35 @@ export class Environment {
           // the sun disc is brighter than half-float buffers can hold: clamp it (and scrub NaNs)
           // so the bloom blur can never smear Inf/NaN across the screen
           skyCol = any( isnan( skyCol ) ) ? vec3( 0.0 ) : clamp( skyCol, 0.0, 5.0 );
+          // night: a deep blue dome, a touch lighter toward the zenith
+          vec3 nightCol = mix( vec3( 0.006, 0.008, 0.02 ), vec3( 0.016, 0.026, 0.065 ), smoothstep( -0.1, 0.6, direction.y ) );
+          skyCol = mix( skyCol, nightCol, uNight );
           gl_FragColor = vec4( mix( skyCol, spaceCol, uSpace ), 1.0 );`,
         );
     };
     scene.add(this.sky);
     if (import.meta.env.DEV && location.search.includes('hidesky')) this.sky.visible = false;
 
-    // Image-based lighting baked from the same sky: every material reflects the sunset.
-    const pmrem = new THREE.PMREMGenerator(ctx.renderer);
-    const envScene = new THREE.Scene();
+    // Image-based lighting from the same sky, re-baked as the day goes by (see bakeEnvironment)
+    this.pmrem = new THREE.PMREMGenerator(ctx.renderer);
     const envSky = new Sky();
     envSky.material = this.sky.material;
     envSky.scale.setScalar(1800);
-    envScene.add(envSky);
+    this.envScene.add(envSky);
     // a dark ground hemisphere so reflections don't show sky below the horizon
-    const envGround = new THREE.Mesh(
-      new THREE.SphereGeometry(900, 32, 16, 0, Math.PI * 2, Math.PI / 2, Math.PI / 2),
-      new THREE.MeshBasicMaterial({ color: '#24402f', side: THREE.BackSide }),
+    this.envGround = new THREE.MeshBasicMaterial({ color: '#24402f', side: THREE.BackSide });
+    this.envScene.add(new THREE.Mesh(new THREE.SphereGeometry(900, 32, 16, 0, Math.PI * 2, Math.PI / 2, Math.PI / 2), this.envGround));
+    this.cubeCam = new THREE.CubeCamera(1, 4000, this.cubeRT);
+
+    // the moon: a pale disc with a soft halo, opposite the sun
+    this.moon = new THREE.Group();
+    const moonDisc = new THREE.Mesh(new THREE.CircleGeometry(16, 32), new THREE.MeshBasicMaterial({ color: hdr('#eef2ff', 2.4), fog: false }));
+    const halo = new THREE.Sprite(
+      new THREE.SpriteMaterial({ map: glowTexture('#c8d6ff'), color: hdr('#9fb4ff', 0.6), transparent: true, depthWrite: false, fog: false, blending: THREE.AdditiveBlending }),
     );
-    envScene.add(envGround);
-    scene.environment = pmrem.fromScene(envScene, 0.02, 0.1, 4000).texture;
-    scene.environmentIntensity = this.envIntensity;
-    pmrem.dispose();
+    halo.scale.setScalar(150);
+    this.moon.add(halo, moonDisc);
+    scene.add(this.moon);
 
     // stars: invisible at dusk, take over in space
     const starGeo = new THREE.BufferGeometry();
@@ -102,7 +145,7 @@ export class Environment {
     scene.add(this.stars);
 
     scene.fog = new THREE.FogExp2('#584a70', FOG_DENSITY);
-    installSunsetFog(SKY_SUN, new THREE.Color('#f0a06a'));
+    installSunFog();
 
     // ---------- Lights ----------
     this.hemi = new THREE.HemisphereLight('#9a8ee0', '#4a3b30', 0.55);
@@ -314,10 +357,11 @@ export class Environment {
       new THREE.ConeGeometry(0.42, 0.35, 10).translate(0, 4.75, 0),
     ])!;
     const poles = new THREE.InstancedMesh(poleGeo, iron, spots.length);
-    const lamps = new THREE.InstancedMesh(new THREE.SphereGeometry(0.3, 16, 12), new THREE.MeshBasicMaterial({ color: hdr('#ffd59a', 7) }), spots.length);
+    this.lampMat = new THREE.MeshBasicMaterial({ color: hdr('#ffd59a', 7) });
+    const lamps = new THREE.InstancedMesh(new THREE.SphereGeometry(0.3, 16, 12), this.lampMat, spots.length);
     const pools = new THREE.InstancedMesh(
       new THREE.PlaneGeometry(8, 8).rotateX(-Math.PI / 2),
-      new THREE.MeshBasicMaterial({
+      (this.poolMat = new THREE.MeshBasicMaterial({
         map: poolTexture(),
         color: hdr('#ffb26b', 0.3),
         transparent: true,
@@ -325,7 +369,7 @@ export class Environment {
         blending: THREE.AdditiveBlending,
         polygonOffset: true,
         polygonOffsetFactor: -2,
-      }),
+      })),
       spots.length,
     );
     const m = new THREE.Matrix4();
@@ -460,31 +504,123 @@ export class Environment {
     });
   }
 
-  /** 0 = fairground at dusk, 1 = outer space. */
+  /** 0 = on the ground, 1 = outer space (the rocket ride). */
   setSpace(k: number) {
-    this.skyUniforms.uSpace.value = k;
-    (this.stars.material as THREE.PointsMaterial).opacity = THREE.MathUtils.smoothstep(k, 0.15, 0.8);
-    (this.ctx.scene.fog as THREE.FogExp2).density = FOG_DENSITY * (1 - k);
-    this.ctx.scene.environmentIntensity = this.envIntensity * (1 - k * 0.8);
-    this.hemi.intensity = 0.55 * (1 - k * 0.7);
+    this.space = k;
+  }
+
+  /** Thins the haze (1 = normal), e.g. high up on the giant wheel where you see over it. */
+  setHaze(k: number) {
+    this.haze = k;
   }
 
   /** Keep the shadow camera centred on what matters. */
   follow(target: THREE.Vector3) {
-    this.sun.position.copy(target).addScaledVector(LIGHT_DIR, 150);
+    this.sun.position.copy(target).addScaledVector(this.lightDir, 150);
     this.sun.target.position.copy(target);
+  }
+
+  /** Jump the clock to a given hour (debug / future time controls). */
+  setHour(hour: number, t: number) {
+    this.hourOffset = hour - START_HOUR - (t / DAY_SECONDS) * 24;
+    this.lastBake = -1e9;
+  }
+
+  /** Clock as "HH:MM". */
+  get clock() {
+    const m = Math.floor(this.hours * 60) % 1440;
+    return `${String(Math.floor(m / 60)).padStart(2, '0')}:${String(m % 60).padStart(2, '0')}`;
+  }
+
+  /**
+   * The day cycle: the sun rises in the east at 06:00, crosses high in the sky and sets in the
+   * west at 18:00; the moon takes over at night. Sky, sunlight, ambient light, fog, stars,
+   * reflections and the park's lights all follow it.
+   */
+  private applyTime(t: number) {
+    const smooth = THREE.MathUtils.smoothstep;
+    const lerp = THREE.MathUtils.lerp;
+    this.hours = (((START_HOUR + this.hourOffset + (t / DAY_SECONDS) * 24) % 24) + 24) % 24;
+    const a = ((this.hours - 6) / 24) * Math.PI * 2;
+    const sun = this.sunDir.set(Math.cos(a), Math.sin(a) * 0.9, -0.22).normalize();
+    const moon = this.moonDir.copy(sun).negate();
+    const day = smooth(sun.y, -0.1, 0.22);
+    const glow = smooth(sun.y, -0.2, 0) * (1 - smooth(sun.y, 0.06, 0.4)); // sunrise / sunset
+    this.night = 1 - smooth(sun.y, -0.24, -0.02);
+    const space = this.space;
+
+    // sky
+    const u = this.sky.material.uniforms;
+    u.sunPosition.value.copy(sun);
+    u.turbidity.value = lerp(2.4, 9, glow);
+    u.rayleigh.value = lerp(1.1, 3.2, glow);
+    this.skyUniforms.uSkyExposure.value = lerp(0.34, 0.8, glow);
+    this.skyUniforms.uNight.value = this.night;
+    this.skyUniforms.uSpace.value = space;
+    (this.stars.material as THREE.PointsMaterial).opacity = Math.max(this.night * 0.85, smooth(space, 0.15, 0.8));
+    this.stars.rotation.y = (this.hours / 24) * Math.PI * 2 * 0.25;
+    this.moon.position.copy(moon).multiplyScalar(780);
+    this.moon.lookAt(0, 0, 0);
+    this.moon.visible = moon.y > -0.05;
+
+    // direct light: the sun by day, the moon by night (one shadow-casting light)
+    const sunW = smooth(sun.y, -0.03, 0.1);
+    if (sunW > 0.001) {
+      this.lightDir.copy(sun).setY(Math.max(sun.y, 0.08)).normalize();
+      this.sun.color.copy(SUN_WARM).lerp(SUN_NOON, smooth(sun.y, 0.1, 0.5));
+      // a low sun grazes the ground; a high one hits it square on, so it needs far less intensity
+      this.sun.intensity = sunW * lerp(4.2, 1.6, smooth(sun.y, 0.08, 0.5));
+    } else {
+      this.lightDir.copy(moon).setY(Math.max(moon.y, 0.3)).normalize();
+      this.sun.color.copy(MOON);
+      // moonlight, already partly up during twilight so dusk never goes pitch black
+      this.sun.intensity = 0.85 * Math.max(this.night, 0.55);
+    }
+
+    // ambient + reflections
+    tri(this.hemi.color, HEMI_SKY, day, glow);
+    tri(this.hemi.groundColor, HEMI_GROUND, day, glow);
+    this.hemi.intensity = lerp(0.64, 0.5, day) * (1 - space * 0.7);
+    this.ctx.scene.environmentIntensity = (lerp(0.38, 0.45, day) + 0.35 * glow) * (1 - space * 0.8);
+    tri(this.envGround.color, ENV_GROUND, day, glow);
+
+    // fog: colour, sun-side tint and density
+    const fog = this.ctx.scene.fog as THREE.FogExp2;
+    tri(fog.color, FOG, day, glow);
+    tri(fogSun.uFogSunColor.value, FOG_SUN, day, glow);
+    fogSun.uFogSunDir.value.copy(sun.y > -0.05 ? sun : moon);
+    fog.density = FOG_DENSITY * lerp(1, 0.5, day) * this.haze * (1 - space);
+
+    // the park's own lights: dimmer by day, full glow at night
+    const lights = 1 - 0.6 * day;
+    this.lampMat.color.copy(this.tmp.set('#ffd59a')).multiplyScalar(7 * lights);
+    this.poolMat.opacity = lerp(0.15, 1, this.night);
+    (this.fireflies.material as THREE.PointsMaterial).opacity = this.night;
+    this.fireflies.visible = this.night > 0.02;
+  }
+
+  /** Re-renders the sky into the reflection map (every 1.5 s of game time). */
+  private bakeEnvironment(t: number) {
+    if (Math.abs(t - this.lastBake) < 1.5) return;
+    this.lastBake = t;
+    this.cubeCam.update(this.ctx.renderer, this.envScene);
+    this.envRT = this.pmrem.fromCubemap(this.cubeRT.texture, this.envRT);
+    this.ctx.scene.environment = this.envRT.texture;
   }
 
   update(t: number, focus: THREE.Vector3) {
     this.sky.material.uniforms.time.value = t;
-    this.grass.update(focus);
+    this.applyTime(t);
+    this.bakeEnvironment(t);
+    this.grass.update(focus);    this.grass.update(focus);
 
     for (let i = 0; i < this.balloons.length; i++) {
       const b = this.balloons[i];
       b.rotation.y = Math.sin(t * 0.3 + i) * 0.3;
       b.rotation.z = Math.sin(t * 0.7 + i * 2) * 0.03;
     }
-    for (const im of this.bulbs) (im.material as THREE.MeshBasicMaterial).color.setScalar(0.85 + Math.sin(t * 3) * 0.15);
+    const lights = 1 - 0.55 * (1 - this.night);
+    for (const im of this.bulbs) (im.material as THREE.MeshBasicMaterial).color.setScalar((0.85 + Math.sin(t * 3) * 0.15) * lights);
 
     // fireflies: lazy figure-of-eight drift + blinking (an "off" firefly hides below ground)
     const pos = this.fireflies.geometry.attributes.position as THREE.BufferAttribute;
@@ -500,26 +636,6 @@ export class Environment {
     }
     pos.needsUpdate = true;
   }
-}
-
-/**
- * Direction-aware fog: distant things fade to orange toward the sun and to dusky violet
- * away from it, matching the sky behind them (one dot product per pixel).
- */
-function installSunsetFog(sunDir: THREE.Vector3, sunColor: THREE.Color) {
-  const v3 = (v: { x: number; y: number; z: number } | THREE.Color) =>
-    'r' in v ? `vec3(${v.r.toFixed(4)}, ${v.g.toFixed(4)}, ${v.b.toFixed(4)})` : `vec3(${v.x.toFixed(4)}, ${v.y.toFixed(4)}, ${v.z.toFixed(4)})`;
-  const C = THREE.ShaderChunk;
-  if (C.fog_fragment.includes('vFogDir')) return;
-  C.fog_pars_vertex = C.fog_pars_vertex.replace('varying float vFogDepth;', 'varying float vFogDepth;\n\tvarying vec3 vFogDir;');
-  // world-space view direction: multiplying by viewMatrix on the right applies its inverse rotation
-  C.fog_vertex = C.fog_vertex.replace('vFogDepth = - mvPosition.z;', 'vFogDepth = - mvPosition.z;\n\tvFogDir = ( vec4( mvPosition.xyz, 0.0 ) * viewMatrix ).xyz;');
-  C.fog_pars_fragment = C.fog_pars_fragment.replace('varying float vFogDepth;', 'varying float vFogDepth;\n\tvarying vec3 vFogDir;');
-  C.fog_fragment = C.fog_fragment.replace(
-    'gl_FragColor.rgb = mix( gl_FragColor.rgb, fogColor, fogFactor );',
-    `float sunAmt = pow( max( dot( normalize( vFogDir ), ${v3(sunDir)} ), 0.0 ), 5.0 );
-	gl_FragColor.rgb = mix( gl_FragColor.rgb, mix( fogColor, ${v3(sunColor)}, sunAmt ), fogFactor );`,
-  );
 }
 
 /** A lumpy, softly shaded broadleaf crown made of a few merged blobs. */

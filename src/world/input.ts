@@ -18,7 +18,7 @@ export class Input {
     });
   }
 
-  on(evt: 'action' | 'reset' | 'honk' | 'escape' | 'camera' | 'any', fn: () => void) {
+  on(evt: 'action' | 'roll' | 'kick' | 'reset' | 'honk' | 'escape' | 'camera' | 'any', fn: () => void) {
     (this.handlers[evt] ??= []).push(fn);
   }
 
@@ -37,11 +37,13 @@ export class Input {
     }
     this.keys.add(e.code);
     this.emit('any');
-    if (e.code === 'KeyE' || e.code === 'Enter' || e.code === 'Space') {
+    if (e.code === 'KeyE' || e.code === 'Enter') {
       // Enter on a focused button should press the button, not the game.
       if (e.code === 'Enter' && target?.tagName === 'BUTTON') return;
       this.emit('action');
     }
+    if (e.code === 'Space') this.emit('roll');
+    if (e.code === 'KeyF') this.emit('kick');
     if (e.code === 'KeyR') this.emit('reset');
     if (e.code === 'KeyH') this.emit('honk');
     if (e.code === 'KeyC') this.emit('camera');

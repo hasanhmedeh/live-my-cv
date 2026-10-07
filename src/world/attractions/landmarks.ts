@@ -4,111 +4,6 @@ import { LAYOUT } from '../layout';
 import { textMesh } from '../letters';
 import { hdr, PALETTE, signMaterial, signTexture, stripeTexture } from '../textures';
 
-/** Ferris wheel — the best view in the park. */
-export class FerrisWheel implements Attraction {
-  private wheel = new THREE.Group();
-  private cabins: THREE.Group[] = [];
-  private bulbs: THREE.InstancedMesh;
-
-  constructor(ctx: Ctx) {
-    const R = 13;
-    const H = 16;
-    const root = new THREE.Group();
-    root.position.set(LAYOUT.ferris.x, 0, LAYOUT.ferris.z);
-
-    // A-frame legs
-    const legMat = std(PALETTE.cream, { metalness: 0.3, roughness: 0.5 });
-    for (const z of [-1.8, 1.8])
-      for (const x of [-1, 1]) {
-        const leg = new THREE.Mesh(new THREE.BoxGeometry(0.45, H * 1.08, 0.45), legMat);
-        leg.position.set(x * 3.6, H / 2, z);
-        leg.rotation.z = x * 0.22;
-        root.add(leg);
-      }
-    const hub = new THREE.Mesh(new THREE.CylinderGeometry(0.9, 0.9, 4.2, 20), std(PALETTE.candy));
-    hub.rotation.x = Math.PI / 2;
-    hub.position.y = H;
-    root.add(hub);
-
-    const rimMat = std(PALETTE.violet, { metalness: 0.3, roughness: 0.4 });
-    for (const z of [-1.4, 1.4]) {
-      const rim = new THREE.Mesh(new THREE.TorusGeometry(R, 0.18, 8, 96), rimMat);
-      rim.position.z = z;
-      this.wheel.add(rim);
-      const inner = new THREE.Mesh(new THREE.TorusGeometry(R * 0.55, 0.1, 6, 64), rimMat);
-      inner.position.z = z;
-      this.wheel.add(inner);
-    }
-    const n = 14;
-    const spokeGeo = new THREE.BoxGeometry(0.12, R, 0.12);
-    spokeGeo.translate(0, R / 2, 0);
-    const bulbCount = n * 2 * 8;
-    this.bulbs = new THREE.InstancedMesh(new THREE.SphereGeometry(0.14, 6, 5), new THREE.MeshBasicMaterial({ color: '#ffffff' }), bulbCount);
-    const colors = ['#ffd23d', '#ff5d7a', '#5ce1d6', '#ffffff'];
-    const m = new THREE.Matrix4();
-    let bi = 0;
-    for (let i = 0; i < n; i++) {
-      const a = (i / n) * Math.PI * 2;
-      for (const z of [-1.4, 1.4]) {
-        const s = new THREE.Mesh(spokeGeo, std(PALETTE.cream));
-        s.rotation.z = a;
-        s.position.z = z;
-        this.wheel.add(s);
-        for (let k = 1; k <= 8; k++) {
-          const r = (k / 8) * R;
-          m.makeTranslation(-Math.sin(a) * r, Math.cos(a) * r, z + (z > 0 ? 0.15 : -0.15));
-          this.bulbs.setMatrixAt(bi, m);
-          this.bulbs.setColorAt(bi++, hdr(colors[(i + k) % colors.length], 5));
-        }
-      }
-      // gondola
-      const cabin = new THREE.Group();
-      const col = [PALETTE.candy, PALETTE.mustard, PALETTE.teal, PALETTE.violet][i % 4];
-      const bucket = new THREE.Mesh(new THREE.CylinderGeometry(1.0, 0.8, 1.2, 12, 1, true), std(col, { side: THREE.DoubleSide }));
-      bucket.position.y = -1.6;
-      const floor = new THREE.Mesh(new THREE.CircleGeometry(0.8, 12), std(col));
-      floor.rotation.x = -Math.PI / 2;
-      floor.position.y = -2.2;
-      const roof = new THREE.Mesh(new THREE.ConeGeometry(1.15, 0.7, 12), std(PALETTE.cream));
-      roof.position.y = -0.1;
-      const hanger = new THREE.Mesh(new THREE.CylinderGeometry(0.05, 0.05, 1), std('#3a2f4a'));
-      hanger.position.y = -0.3;
-      cabin.add(bucket, floor, roof, hanger);
-      cabin.position.set(-Math.sin(a) * R, Math.cos(a) * R, 0);
-      this.wheel.add(cabin);
-      this.cabins.push(cabin);
-    }
-    this.wheel.add(this.bulbs);
-    this.wheel.position.y = H;
-    root.add(this.wheel);
-
-    const sign = new THREE.Mesh(
-      new THREE.PlaneGeometry(7, 2),
-      signMaterial(signTexture('FERRIS WHEEL', { sub: 'The best view in the park', border: PALETTE.violet })),
-    );
-    sign.position.set(0, 3, 3.2);
-    root.add(sign);
-
-    shadowed(root);
-    this.bulbs.castShadow = false;
-    ctx.scene.add(root);
-    staticBox(ctx, LAYOUT.ferris.x, 3, LAYOUT.ferris.z, 5, 3, 2.4);
-  }
-
-  panelHtml() {
-    return `<p class="eyebrow">Ferris Wheel</p><h2>The best view in the park</h2><p>Fourteen cabins turn slowly above the fair. From the top you can see both coasters, the rocket pad and the cliffs the Sky Falcon climbs.</p><ul>
-      <li>🎡 One full turn takes just under a minute</li>
-      <li>🌅 Best at sunset, when the bulbs come on</li>
-      <li>🦅 Look north to spot the Sky Falcon on the cliff</li>
-    </ul>`;
-  }
-
-  update(dt: number) {
-    this.wheel.rotation.z += dt * 0.12;
-    for (const c of this.cabins) c.rotation.z = -this.wheel.rotation.z;
-  }
-}
-
 /** Decorative merry-go-round in the central plaza. */
 export class Carousel implements Attraction {
   private spin = new THREE.Group();
@@ -226,13 +121,13 @@ export class Booth implements Attraction {
   }
 
   panelHtml() {
-    return `<p class="eyebrow">Ticket Booth · Park guide</p><h2>Welcome to the fair</h2><p>Every ride is free today. Drive up to a glowing ring and press <kbd>E</kbd> to play.</p><ul>
+    return `<p class="eyebrow">Ticket Booth · Park guide</p><h2>Welcome to the fair</h2><p>Every ride is free today. Walk up to a glowing ring and press <kbd>E</kbd> to play.</p><ul>
       <li>🎢 <strong>Thunder Loop</strong> — drive the coaster yourself: launch, loop and roll</li>
       <li>🦅 <strong>Sky Falcon</strong> — 4.25 km cliff coaster, 158 m drop at 90°, 250 km/h</li>
       <li>🚀 <strong>Rocket Ride</strong> — fire six stages all the way to orbit</li>
       <li>🥫 <strong>Crate Smash</strong> — ram the crates and rack up points</li>
       <li>🔔 <strong>High Striker</strong> — swing the hammer and ring the bell</li>
-      <li>🎡 <strong>Ferris Wheel</strong> — the best view in the park</li>
+      <li>🎡 <strong>Giant Wheel</strong> — 250 m, the tallest observation wheel on Earth</li>
     </ul>`;
   }
 

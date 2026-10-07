@@ -1,6 +1,7 @@
 import * as THREE from 'three';
 import type { Ctx } from './context';
 import { FALCON_TRACK, nearTrack } from './rides';
+import { withFogSun } from './fog';
 import { mulberry } from './random';
 import { hdr, PALETTE, signMaterial, signTexture } from './textures';
 
@@ -139,6 +140,7 @@ export class Mountain {
     geo.setAttribute('aW', new THREE.Float32BufferAttribute(w, 3));
     const mat = new THREE.MeshStandardMaterial({ roughness: 0.95, metalness: 0, color: '#ffffff' });
     mat.onBeforeCompile = (shader) => {
+      withFogSun(shader);
       shader.vertexShader = shader.vertexShader
         .replace('#include <common>', '#include <common>\nattribute vec3 aW;\nvarying vec3 vW;\nvarying vec3 vWorld;\nvarying vec3 vWN;')
         .replace(

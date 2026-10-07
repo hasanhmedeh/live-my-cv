@@ -1,6 +1,6 @@
 # The Funfair — a 3D theme park in the browser
 
-Drive a car around a low-poly funfair at dusk:
+Walk around a low-poly funfair at dusk as a fully animated visitor:
 
 | Attraction | What it is |
 | --- | --- |
@@ -10,10 +10,10 @@ Drive a car around a low-poly funfair at dusk:
 | 🚀 Rocket Ride | Countdown, lift-off, stage separation: fire six stages up to orbit |
 | 🥫 Crate Smash | 22 physics crates worth 10, 25 or 50 points; ram them for a high score |
 | 🔔 High Striker | Timing mini-game: swing the hammer and ring the bell |
-| 🎡 Ferris Wheel | The best view in the park |
+| 🎡 Giant Wheel | A full-size tribute to Ain Dubai, the tallest observation wheel on Earth: 250 m tall, 48 capsules, 192 cable spokes, four 126 m legs. Ride it from inside a capsule (time-lapse of the real 38-minute turn) |
 | 🎟️ Ticket Booth | Park guide |
 
-Stack: **Vite + TypeScript + Three.js + cannon-es + postprocessing + N8AO**. No 3D model files — everything is built procedurally, and all sound is synthesized with WebAudio.
+Stack: **Vite + TypeScript + Three.js + cannon-es + postprocessing + N8AO**. The world is built procedurally and all sound is synthesized with WebAudio; the one model file is the visitor, "Casual Character" by [Quaternius](https://quaternius.com) (CC0, from [Poly Pizza](https://poly.pizza/m/kZ3DmIoGip)).
 
 ## The coaster
 
@@ -36,11 +36,11 @@ A tribute to Falcon's Flight, the record-breaking cliff coaster at Six Flags Qid
 
 ## Graphics
 
-- **Physically based sunset sky** (Preetham scattering with drifting clouds). The same sky is baked into an environment map, so every glossy surface reflects it: clearcoat paint on the car, rocket and letters, chrome, gilded lettering and metallic coaster rails.
+- **Physically based sunset sky** (Preetham scattering with drifting clouds). The same sky is baked into an environment map, so every glossy surface reflects it: clearcoat paint on the rocket and letters, chrome, gilded lettering and metallic coaster rails.
 - **HDR pipeline**: scene → N8AO ambient occlusion (half-res) → bloom + ACES filmic tone mapping + vignette (one merged pass) → SMAA. Marquee bulbs, lamps, string lights and engine flames render above 1.0, so they glow through the bloom.
 - **Atmosphere**: fog that blends to orange toward the sun and violet away from it, layered horizon hills, stars that fade in as the rocket reaches space, and fireflies.
-- **Living ground**: tens of thousands of instanced grass blades that sway in the wind and part around the car. A tiling detail normal map makes the sand and soil catch the low sun. Trees sway too, with soft volumetric foliage shading.
-- **Real lights where they matter**: headlight spotlight on the car, an engine light under the rocket, plus soft light pools under every lamp.
+- **Living ground**: tens of thousands of instanced grass blades that sway in the wind and part around the visitor. A tiling detail normal map makes the sand and soil catch the low sun. Trees sway too, with soft volumetric foliage shading.
+- **Real lights where they matter**: an engine light under the rocket, plus soft light pools under every lamp.
 
 ### Performance
 
@@ -57,7 +57,7 @@ npm run build      # type-check + production build into dist/
 npm run preview    # serve the production build
 ```
 
-Controls: `WASD`/arrows drive · `Shift` boost · `E`/`Enter`/`Space` interact · `R` back to entrance · `H` honk · `Esc` exit a ride. Touch devices get a joystick + action button. Mouse wheel zooms.
+Controls: `WASD`/arrows walk · `Shift` run · `Space` dodge-roll · `F` kick · `E`/`Enter` interact · `H` wave · `R` back to entrance · `Esc` exit a ride. Touch devices get a joystick + action button. Mouse wheel zooms.
 
 ## Deploy to Vercel
 
@@ -83,7 +83,9 @@ vite.config.ts          site URL, sitemap and robots.txt
 src/main.ts             intro card, lazy-loads the 3D world
 src/data/fair.ts        rocket stages and striker tiers
 src/world/Game.ts       renderer, physics, loop, camera modes, interactions
-src/world/car.ts        sports car (arcade physics, spinning/steering wheels, suspension)
+src/world/player.ts     the visitor: rigged glTF, idle/walk/run blending, roll, kick, wave, physics
+public/models/visitor.glb  "Casual Character" by Quaternius (CC0, via Poly Pizza)
+src/world/subdivide.ts  rounds off the faceted model at load: welds, one Loop subdivision, smooth normals, blended skin weights
 src/world/environment.ts sky, lights, ground, trees, lamps, tents, balloons
 src/world/attractions/  coaster, rocket, crates, striker, ferris/carousel/booth/arch
 ```

@@ -12,7 +12,7 @@ export interface Ctx {
   sfx: Sfx;
   ui: UI;
   mobile: boolean;
-  mats: { ground: CANNON.Material; car: CANNON.Material; prop: CANNON.Material };
+  mats: { ground: CANNON.Material; player: CANNON.Material; prop: CANNON.Material };
   quality: Quality;
   /** Meshes that mirror a physics body every frame. */
   dynamics: { mesh: THREE.Object3D; body: CANNON.Body }[];

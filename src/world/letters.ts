@@ -20,7 +20,7 @@ export function textMesh(text: string, size: number, depth: number, material: TH
   return mesh;
 }
 
-/** Big physical letters spelling a word — drive into them to knock them over. */
+/** Big physical letters spelling a word — run into them to knock them over. */
 export function physicsWord(ctx: Ctx, word: string, origin: THREE.Vector3, size: number, colors: string[], rotY = 0) {
   const depth = size * 0.32;
   const gap = size * 0.12;
