@@ -14,10 +14,13 @@ import { RidesService, type BoardResult, type FinishResult, type RideStats } fro
 export class RidesController {
   constructor(private readonly rides: RidesService) {}
 
-  /** Spends the attraction's tickets and opens a round, or answers 402 when the balance is short. */
+  /**
+   * Spends the attraction's tickets and opens a round, or answers 402 when the balance is short, and
+   * 503 (code park_closed or ride_closed) while the park or the attraction is closed.
+   */
   @Post(':ride/board')
   board(@CurrentUser() user: User, @Param('ride', ParseRidePipe) ride: Attraction): Promise<BoardResult> {
-    return this.rides.board(user.id, ride);
+    return this.rides.board(user, ride);
   }
 
   @Post('rounds/:id/finish')

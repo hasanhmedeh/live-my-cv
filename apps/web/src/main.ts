@@ -1,6 +1,6 @@
 import './styles.css';
 import { authDialog, type AuthMode } from './account/auth-dialog';
-import { session } from './account/session';
+import { everyHours, session } from './account/session';
 
 // The 3D fair is code-split and loaded after first paint, while the intro card shows progress.
 
@@ -11,21 +11,38 @@ const progressBar = document.getElementById('progress-bar')!;
 const guestRow = document.getElementById('intro-guest')!;
 const memberRow = document.getElementById('intro-member')!;
 const logoutBtn = document.getElementById('intro-logout') as HTMLButtonElement;
+const closedCard = document.getElementById('intro-closed')!;
 
 let worldReady = false;
 let closed = false;
 
 // ---------- Account ----------
-// Who's visiting is checked alongside the world build; it never holds up the loading.
+// Who's visiting, and whether the gates are open, are checked alongside the world build; neither
+// holds up the loading.
 void session.refresh();
+void session.loadPark(true);
 
-/** The card follows the session: guests are offered an account, members are greeted. */
+/**
+ * The card follows the session: guests are offered an account, members are greeted. While the park
+ * is closed it shows the sign (visitors can still walk in and look around; staff can still ride).
+ */
 function renderAccount() {
   const user = session.user;
   guestRow.hidden = closed || !session.known || !!user;
   memberRow.hidden = closed || !user;
   if (user) document.getElementById('intro-username')!.textContent = user.username;
-  if (worldReady) enterLabel.textContent = session.known && !user ? 'Continue as guest 🎪' : 'Enter the fair 🎪';
+  document.getElementById('intro-guest-text')!.textContent =
+    `Walk in as a guest, or sign up for free tickets: ${session.packSize} ${everyHours(session.cooldownHours)}, for every ride and game.`;
+
+  const parkClosed = !session.parkOpen;
+  closedCard.hidden = closed || !parkClosed;
+  document.getElementById('intro-closed-message')!.textContent = parkClosed
+    ? (session.park?.message ?? 'The rides and the Ticket Booth are paused for now. Come back soon!')
+    : '';
+  document.getElementById('intro-closed-staff')!.hidden = !session.isStaff;
+
+  if (worldReady)
+    enterLabel.textContent = parkClosed && !session.isStaff ? 'Look around 🎪' : session.known && !user ? 'Continue as guest 🎪' : 'Enter the fair 🎪';
 }
 session.onChange(renderAccount);
 

@@ -256,6 +256,37 @@ kbd {
 .intro-account-actions .btn-cream {
   box-shadow: inset 0 0 0 2px var(--mustard);
 }
+/* The park is closed: the sign on the intro card (the way in stays open, to look around) */
+.intro-closed {
+  margin: 0 auto 18px;
+  max-width: 44ch;
+  padding: 14px 16px;
+  border-radius: 14px;
+  background: rgba(255, 77, 109, 0.1);
+  box-shadow: inset 0 0 0 2px var(--candy);
+  color: var(--text);
+}
+.intro-closed p {
+  margin: 0;
+}
+.intro-closed-sign {
+  font: 400 1.3rem/1.2 var(--display);
+  color: var(--candy-dark);
+}
+.intro-closed-title {
+  font-weight: 700;
+}
+.intro-closed-message {
+  margin-top: 4px !important;
+  color: var(--muted);
+  overflow-wrap: anywhere;
+}
+.intro-closed-staff {
+  margin-top: 8px !important;
+  font-size: 0.85rem;
+  font-weight: 700;
+  color: var(--violet);
+}
 .intro-progress {
   height: 6px;
   margin: 22px auto 0;
@@ -610,6 +641,22 @@ kbd {
 .account-list b {
   font-variant-numeric: tabular-nums;
 }
+/* Staff only: the way into The Ringmaster's Office */
+.account-staff {
+  display: block;
+  margin: 10px 0 0;
+  padding: 8px 10px;
+  border-radius: 10px;
+  background: rgba(123, 92, 214, 0.12);
+  color: var(--violet);
+  font-weight: 700;
+  font-size: 0.9rem;
+  text-decoration: none;
+}
+.account-staff:hover,
+.account-staff:focus-visible {
+  background: rgba(123, 92, 214, 0.22);
+}
 .account-tickets {
   margin: 0 0 4px;
   font-size: 0.9rem;
@@ -741,6 +788,44 @@ kbd {
   font: 400 1.1rem/1 var(--display);
   box-shadow: var(--shadow);
   cursor: pointer;
+}
+/* The park is closed: a strip under the top of the screen, dismissable */
+.park-banner {
+  position: absolute;
+  top: calc(max(16px, env(safe-area-inset-top)) + 48px);
+  left: 50%;
+  transform: translateX(-50%);
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  width: max-content;
+  max-width: calc(100vw - 32px);
+  padding: 8px 8px 8px 16px;
+  border-radius: 14px;
+  background: var(--paper);
+  color: var(--text);
+  font-size: 0.9rem;
+  box-shadow: var(--shadow), 0 0 0 3px var(--candy);
+  z-index: 5;
+}
+.park-banner p {
+  margin: 0;
+  overflow-wrap: anywhere;
+}
+.park-banner-close {
+  flex: none;
+  width: 32px;
+  height: 32px;
+  border: 0;
+  border-radius: 50%;
+  background: rgba(34, 22, 63, 0.08);
+  color: var(--text);
+  font: inherit;
+  cursor: pointer;
+}
+.park-banner-close:hover,
+.park-banner-close:focus-visible {
+  background: rgba(34, 22, 63, 0.16);
 }
 
 .countdown {
@@ -934,6 +1019,9 @@ kbd {
   font-size: 0.85em;
   font-weight: 700;
   color: var(--violet);
+}
+.panel .cost-closed {
+  color: var(--candy-dark);
 }
 .panel .ticket-wallet {
   display: flex;

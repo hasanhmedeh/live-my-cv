@@ -1,7 +1,8 @@
 // Accounts, tickets and ride rounds for The Funfair.
 // After editing: `pnpm db:migrate --name <change>` to write a migration, then `pnpm db:generate`.
-// Ticket prices (attraction_prices) and the pack size, purchase cooldown and open/closed switch
-// (park_settings) are rows, edited in The Ringmaster's Office (/ringmaster) or Prisma Studio.
+// Ticket prices and each attraction's open/maintenance switch (attraction_settings), and the pack
+// size, purchase cooldown and park-wide open/closed switch (park_settings) are rows, edited in The
+// Ringmaster's Office (/ringmaster) or Prisma Studio.
 
 generator client {
   provider            = "prisma-client"
@@ -63,6 +64,7 @@ model User {
   rounds          RideRound[]
   adminActions    AdminAction[]
 
+  @@index([createdAt])
   @@map("users")
 }
 
@@ -81,19 +83,26 @@ model TicketPurchase {
   createdAt    DateTime @default(now()) @map("created_at")
 
   @@index([userId, createdAt])
+  @@index([createdAt])
   @@map("ticket_purchases")
 }
 
-/// What one round of each attraction costs, in tickets. The migration that created this table
-/// seeds every attraction; edit a row (e.g. with `pnpm studio:prod`) to change a price without a
-/// deploy. Rounds keep what they cost at the time in ride_rounds.tickets_spent.
-model AttractionPrice {
-  attraction Attraction @id
+/// Each attraction's price and whether it is running. The migrations seed every attraction; edit a
+/// row (in The Ringmaster's Office, or e.g. with `pnpm studio:prod`) to change a price or close a
+/// ride for maintenance without a deploy. Rounds keep what they cost at the time in
+/// ride_rounds.tickets_spent. An attraction without a row costs its default (rides/attractions.ts).
+model AttractionSettings {
+  attraction    Attraction @id
   /// Tickets per round, at least 1 (a CHECK constraint in the migration).
-  tickets    Int
-  updatedAt  DateTime   @default(now()) @updatedAt @map("updated_at")
+  tickets       Int
+  /// False while it is closed for maintenance: the game shows it under maintenance and boarding
+  /// stops (staff can still board, to test it).
+  open          Boolean    @default(true)
+  /// Shown to visitors while it is closed, e.g. "New brakes going in, back tomorrow".
+  closedMessage String?    @map("closed_message")
+  updatedAt     DateTime   @default(now()) @updatedAt @map("updated_at")
 
-  @@map("attraction_prices")
+  @@map("attraction_settings")
 }
 
 /// The park's switches, in a single row (id 1, enforced by a CHECK in the migration). Edit it, e.g.
@@ -132,6 +141,7 @@ model RideRound {
 
   @@index([userId, ride])
   @@index([userId, endedAt])
+  @@index([startedAt])
   @@map("ride_rounds")
 }
 
@@ -143,8 +153,8 @@ model AdminAction {
   actor     User?    @relation(fields: [actorId], references: [id], onDelete: SetNull)
   /// The actor's username at the time, or "cli" for the staff scripts.
   actorName String   @map("actor_name")
-  /// What happened: park.open, park.close, settings.update, price.update, user.tickets, user.role,
-  /// user.cooldown or user.delete.
+  /// What happened: park.open, park.close, settings.update, attraction.open, attraction.close,
+  /// price.update, attraction.update, user.tickets, user.role, user.cooldown or user.delete.
   action    String
   /// What it happened to: an attraction id or a user's email. Null for the park's settings.
   target    String?

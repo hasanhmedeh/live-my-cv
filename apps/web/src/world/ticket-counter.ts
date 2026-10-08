@@ -1,7 +1,7 @@
 // The Ticket Booth's counter: what a guest is told, a member's wallet with the free pack (or the
 // countdown to the next one), the price list, their rounds and their latest purchases.
 import { ATTRACTION_IDS, type AttractionId } from '../account/api';
-import { formatWait, session } from '../account/session';
+import { everyHours, formatWait, session } from '../account/session';
 import { MAP_PLACES } from './minimap';
 import { escapeHtml } from './ui';
 
@@ -9,6 +9,9 @@ const plural = (n: number, one: string, many: string) => `${n} ${n === 1 ? one :
 
 /** "1 ticket", "5 tickets". */
 export const ticketsText = (n: number) => plural(n, 'ticket', 'tickets');
+
+/** "a pack of 20 at the Ticket Booth every 5 hours", with the park's live rules. */
+export const packText = () => `a pack of ${session.packSize} at the Ticket Booth ${everyHours(session.cooldownHours)}`;
 
 /** Sign up / log in buttons for a card; with a `ride`, signing in boards it straight after. */
 export function accountButtons(ride?: AttractionId) {
@@ -25,14 +28,15 @@ export function waitHtml(ms: number, id = '') {
   const attrs = `class="ticket-wait"${id ? ` id="${id}"` : ''}`;
   return ms > 0
     ? `<p ${attrs}>Your next free pack is ready in <b data-countdown>${formatWait(ms)}</b>.</p>`
-    : `<p ${attrs}>Your free pack of 20 is ready at the Ticket Booth.</p>`;
+    : `<p ${attrs}>Your free pack of ${session.packSize} is ready at the Ticket Booth.</p>`;
 }
 
 /** Every attraction and what a round costs (the server's prices once they're in). */
 function priceListHtml() {
   const rows = ATTRACTION_IDS.map((id) => {
     const p = MAP_PLACES.find((m) => m.id === id)!;
-    return `<li><span>${p.icon} ${escapeHtml(p.label)}</span><b>${ticketsText(session.cost(id))}</b></li>`;
+    const price = session.maintenance(id) === undefined ? ticketsText(session.cost(id)) : '🚧 Under maintenance';
+    return `<li><span>${p.icon} ${escapeHtml(p.label)}</span><b>${price}</b></li>`;
   }).join('');
   return `<h3>Price list · one round each</h3><ul class="ticket-list">${rows}</ul>`;
 }
@@ -59,7 +63,7 @@ function walletHtml(state: CounterState) {
       : '';
   return `<div class="ticket-wallet"><span>Your tickets</span><b>🎟️ ${t.balance}</b></div><p class="panel-actions">${button}</p>${
     wait > 0 ? waitHtml(wait, 'ticket-wait') : ''
-  }${note}<p class="sub">Tickets are free for now: one pack of ${t.packSize} every ${t.cooldownHours} hours, and leftover tickets carry over.</p>`;
+  }${note}<p class="sub">Tickets are free for now: one pack of ${t.packSize} ${everyHours(t.cooldownHours)}, and leftover tickets carry over.</p>`;
 }
 
 /** The member's rounds so far and their latest purchases. */
@@ -95,7 +99,7 @@ export interface CounterState {
 /** Everything under the booth card's title (redrawn in place as the wallet changes). */
 export function boothBodyHtml(state: CounterState) {
   if (!session.user)
-    return `<p class="booth-account">🎟️ Every ride and game costs tickets, and tickets need a free account. Sign up (it's free) and pick up <strong>20 free tickets</strong> right here, every 5 hours.</p>${accountButtons()}${priceListHtml()}${legalLinksHtml()}`;
+    return `<p class="booth-account">🎟️ Every ride and game costs tickets, and tickets need a free account. Sign up (it's free) and pick up <strong>${session.packSize} free tickets</strong> right here, ${everyHours(session.cooldownHours)}.</p>${accountButtons()}${priceListHtml()}${legalLinksHtml()}`;
   return `${walletHtml(state)}${priceListHtml()}${historyHtml()}${legalLinksHtml()}`;
 }
 

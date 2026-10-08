@@ -13,14 +13,14 @@ export class TicketsController {
   constructor(private readonly tickets: TicketsService) {}
 
   @Get()
-  status(@CurrentUser() user: User): TicketStatus {
+  status(@CurrentUser() user: User): Promise<TicketStatus> {
     return this.tickets.status(user);
   }
 
-  /** One pack, added to the balance. 409 with nextPurchaseAt during the cooldown. */
+  /** One pack, added to the balance. 409 with nextPurchaseAt during the cooldown, 503 park_closed while the park is closed. */
   @Post('purchase')
   purchase(@CurrentUser() user: User): Promise<PurchaseResult> {
-    return this.tickets.purchase(user.id);
+    return this.tickets.purchase(user);
   }
 
   @Get('purchases')

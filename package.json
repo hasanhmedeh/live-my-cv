@@ -4,12 +4,18 @@
   "private": true,
   "description": "A 3D funfair in the browser, with accounts",
   "packageManager": "pnpm@12.5.1",
+  "engines": {
+    "node": "^22.22.3 || ^24.15.0 || >=26.0.0"
+  },
   "scripts": {
     "dev": "turbo run dev",
     "build": "turbo run build",
     "typecheck": "turbo run typecheck",
     "studio:dev": "pnpm --filter @funfair/api studio:dev",
-    "studio:prod": "pnpm --filter @funfair/api studio:prod"
+    "studio:prod": "pnpm --filter @funfair/api studio:prod",
+    "staff:appoint": "pnpm --filter @funfair/api staff:appoint",
+    "staff:dismiss": "pnpm --filter @funfair/api staff:dismiss",
+    "staff:list": "pnpm --filter @funfair/api staff:list"
   },
   "devDependencies": {
     "turbo": "^2.11.7"

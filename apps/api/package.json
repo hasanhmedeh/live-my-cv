@@ -17,7 +17,10 @@
     "db:deploy": "prisma migrate deploy",
     "db:migrate": "prisma migrate dev",
     "studio:dev": "node scripts/studio.mjs dev",
-    "studio:prod": "node scripts/studio.mjs prod"
+    "studio:prod": "node scripts/studio.mjs prod",
+    "staff:appoint": "node scripts/staff.mjs appoint",
+    "staff:dismiss": "node scripts/staff.mjs dismiss",
+    "staff:list": "node scripts/staff.mjs list"
   },
   "dependencies": {
     "@nestjs/common": "^12.1.2",

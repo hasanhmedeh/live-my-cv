@@ -1,15 +1,16 @@
 import { Attraction } from '../generated/prisma/client.js';
 
 /**
- * The ticket rules, in one place. The web client reads them from GET /api/tickets rather than
- * keeping its own copy.
+ * The ticket rules' defaults. The live values are rows (attraction_settings, park_settings), read
+ * through ParkService and edited in The Ringmaster's Office; these only fill in for a missing row.
+ * The web client reads the live ones from GET /api/park and GET /api/tickets.
  */
 
 /** Every attraction id, in the order of the Attraction enum in prisma/schema.prisma. */
 export const ATTRACTIONS = Object.values(Attraction);
 
-/** Tickets one round costs. Typed against the enum, so a new attraction can't be left without a price. */
-export const TICKET_COSTS: Readonly<Record<Attraction, number>> = {
+/** Tickets one round costs when an attraction has no settings row. Typed against the enum, so a new attraction can't be left without one. */
+export const DEFAULT_TICKET_COSTS: Readonly<Record<Attraction, number>> = {
   coaster: 1,
   falcon: 5,
   rocket: 1,
@@ -22,12 +23,16 @@ export const TICKET_COSTS: Readonly<Record<Attraction, number>> = {
   striker: 1,
 };
 
-/** Tickets in one pack. A purchase adds a pack to whatever is left. */
-export const PACK_SIZE = 20;
+/** Tickets in one pack, and hours between two purchases, when park_settings has no row. */
+export const DEFAULT_PACK_SIZE = 20;
+export const DEFAULT_COOLDOWN_HOURS = 5;
 
-/** Hours between two purchases, counted from the last one. */
-export const COOLDOWN_HOURS = 5;
-export const COOLDOWN_MS = COOLDOWN_HOURS * 60 * 60 * 1000;
+/** The limits the migrations' CHECK constraints enforce, so a bad value is a 400 rather than a 500. */
+export const PACK_SIZE_RANGE = { min: 1, max: 1000 } as const;
+export const COOLDOWN_HOURS_RANGE = { min: 0, max: 168 } as const;
+export const TICKETS_RANGE = { min: 1, max: 1000 } as const;
+/** The longest closed sign, for the park and for an attraction. */
+export const CLOSED_MESSAGE_MAX = 200;
 
 /** What purchases are recorded as while tickets are free. */
 export const PACK_PRICE_CENTS = 0;

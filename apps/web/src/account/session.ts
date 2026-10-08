@@ -7,6 +7,7 @@ import {
   PACK_SIZE,
   ParkClosedError,
   PurchaseCooldownError,
+  RideClosedError,
   type AttractionId,
   type FinishedRound,
   type Park,
@@ -68,6 +69,15 @@ class Session {
     return this._park?.open ?? true;
   }
 
+  /**
+   * The sign on an attraction closed for maintenance (null for the default wording), or undefined
+   * while it is running.
+   */
+  maintenance(ride: AttractionId): string | null | undefined {
+    const m = this._park?.maintenance;
+    return m && ride in m ? (m[ride] ?? null) : undefined;
+  }
+
   /** Tickets in one pack (the live rule once known). */
   get packSize() {
     return this._tickets?.packSize ?? this._park?.packSize ?? PACK_SIZE;
@@ -108,7 +118,7 @@ class Session {
     return this._tickets?.costs?.[ride] ?? this._park?.costs?.[ride] ?? DEFAULT_COSTS[ride];
   }
 
-  /** Calls `fn` whenever the park opens, closes or its closed sign changes. Returns an unsubscribe. */
+  /** Calls `fn` whenever the park or an attraction opens or closes, or a closed sign changes. Returns an unsubscribe. */
   onPark(fn: (park: Park | null) => void) {
     this.parkListeners.add(fn);
     return () => void this.parkListeners.delete(fn);
@@ -144,7 +154,17 @@ class Session {
 
   /** A board or a purchase was turned away at the gate: the park closed since we last looked. */
   noteParkClosed(err: ParkClosedError) {
-    this.setPark({ ...(this._park ?? { costs: {}, packSize: this.packSize, cooldownHours: this.cooldownHours }), open: false, message: err.message });
+    this.setPark({ ...this.parkOrDefaults(), open: false, message: err.message });
+  }
+
+  /** A board was turned away: the attraction went under maintenance since we last looked. */
+  noteRideClosed(ride: AttractionId, err: RideClosedError) {
+    const park = this.parkOrDefaults();
+    this.setPark({ ...park, maintenance: { ...park.maintenance, [ride]: err.message } });
+  }
+
+  private parkOrDefaults(): Park {
+    return this._park ?? { open: true, message: null, costs: {}, packSize: this.packSize, cooldownHours: this.cooldownHours, maintenance: {} };
   }
 
   /** Re-checks the gates every minute while the visitor is in the fair (and when the tab comes back). */
@@ -169,7 +189,8 @@ class Session {
         cooldownHours: park.cooldownHours,
       };
     if (JSON.stringify(before) === JSON.stringify(park)) return;
-    if (before?.open !== park.open || before?.message !== park.message) for (const fn of this.parkListeners) fn(park);
+    if (before?.open !== park.open || before?.message !== park.message || JSON.stringify(before?.maintenance) !== JSON.stringify(park.maintenance))
+      for (const fn of this.parkListeners) fn(park);
     this.emit();
   }
 
@@ -317,6 +338,7 @@ class Session {
       return res;
     } catch (err) {
       if (err instanceof ParkClosedError) this.noteParkClosed(err);
+      if (err instanceof RideClosedError) this.noteRideClosed(ride, err);
       if (err instanceof NotEnoughTicketsError && err.balance !== null && this._tickets) {
         this._tickets = { ...this._tickets, balance: err.balance };
         this.emit();
@@ -392,7 +414,14 @@ function normalisePark(raw: Park): Park {
   }
   const open = raw?.open !== false;
   const message = !open && typeof raw?.message === 'string' && raw.message.trim() ? raw.message.trim() : null;
-  return { open, message, costs, packSize: num(raw?.packSize, PACK_SIZE), cooldownHours: num(raw?.cooldownHours, COOLDOWN_HOURS) };
+  const maintenance: Park['maintenance'] = {};
+  const closed = raw?.maintenance && typeof raw.maintenance === 'object' ? raw.maintenance : {};
+  for (const id of Object.keys(DEFAULT_COSTS) as AttractionId[]) {
+    if (!(id in closed)) continue;
+    const sign = closed[id];
+    maintenance[id] = typeof sign === 'string' && sign.trim() ? sign.trim() : null;
+  }
+  return { open, message, costs, packSize: num(raw?.packSize, PACK_SIZE), cooldownHours: num(raw?.cooldownHours, COOLDOWN_HOURS), maintenance };
 }
 
 /** "03:12:45" for a wait of that long (the booth's countdown to the next pack). */

@@ -24,10 +24,28 @@ Stack: **Vite + TypeScript + Three.js + cannon-es + postprocessing + N8AO** for 
 Anyone can walk in as a guest and explore the park, knock over the letters and visit the Ticket Booth. **Every attraction needs tickets, and tickets need a free account.**
 
 - **Ticket counter:** the 🎟️ Ticket Booth sells packs of **20 tickets**, free for now. A pack is added to whatever you have left. You can buy **once every 5 hours**, counted from your last purchase (skipped windows don't stack up). The counter shows your balance, a countdown to the next pack, prices and your purchase history.
-- **Prices:** every ride and game costs **1 ticket**; the **Giant Wheel** and **Sky Falcon** cost **5**.
+- **Prices:** every ride and game costs **1 ticket**; the **Giant Wheel** and **Sky Falcon** cost **5**. Prices, the pack size and the cooldown are database rows, changed in The Ringmaster's Office without a deploy.
 - **One round per ticket:** boarding spends the tickets, the attraction runs one round and ends on its own (leaving early still uses the ticket), and a results screen shows that round's statistics with personal bests. Riding again costs another ticket.
 - **Saved per user:** every purchase and every round, with its statistics. Players can download all their data or delete their account from the account menu in the HUD.
 - **Terms & privacy:** signing up requires accepting the [Terms of Service](apps/web/terms.html) and [Privacy Policy](apps/web/privacy.html) (served at `/terms` and `/privacy`). Fill in the highlighted placeholders before launch.
+
+## The Ringmaster's Office (staff)
+
+The fair's back office lives at **`/ringmaster`**. Staff log in with their normal fair account; their account card in the game links to it.
+
+- **📊 Overview:** members, active players, rounds, completion rate, tickets handed out, spent and still in wallets. Charts of rounds, players and signups per day, and rounds by hour. Per-attraction numbers (rounds, players, finish rate, average round length), top players and park records. Look back over 7, 30 or 90 days (UTC).
+- **🎢 Attractions:** set each one's price, or switch it to **under maintenance** with an optional sign. Players see a red ring, an "Under maintenance" label and the sign, and can't board. Staff still can, to test it.
+- **🚧 Park gates:** close the whole park with a sign on the gate (visitors can still walk around, but nobody can board or pick up tickets). Set the pack size and the hours between packs.
+- **👥 Members:** search, set a balance, reset the pack cooldown, make someone staff or a player again, delete an account.
+- **🎟️ Ledger / 📜 Logbook:** every round and pack; every change made by staff, with before and after.
+
+Changes reach players within a minute (the game re-checks the gates every 60 s). To appoint the first member of staff, sign up in the fair, then:
+
+```bash
+pnpm staff:appoint you@example.com           # local database (apps/api/.env)
+pnpm staff:appoint you@example.com --prod    # production (apps/api/.env.production, like studio:prod)
+pnpm staff:list                              # who is staff; staff:dismiss <email> undoes it
+```
 
 The rules are enforced on the server, not just in the page: the balance, the 5-hour cooldown and ticket spending are atomic database updates, so double clicks or parallel requests can't buy twice or overspend. Round statistics are reported by the browser, so they're for fun, not for anything valuable. The session is an httpOnly cookie, so the page never sees the token. If the API is down, the fair still opens for guests.
 
@@ -87,6 +105,7 @@ pnpm --filter @funfair/api db:migrate       # after editing prisma/schema.prisma
 pnpm --filter @funfair/api db:generate      # regenerate the Prisma client (pnpm dev/build/typecheck do this for you)
 pnpm studio:dev                             # Prisma Studio on the local database (apps/api/.env), port 5555
 pnpm studio:prod                            # Prisma Studio on production (apps/api/.env.production), port 5556
+pnpm staff:appoint <email> [--prod]         # make an account staff (opens /ringmaster); staff:dismiss, staff:list
 pnpm --filter @funfair/web preview          # serve the web production build
 ```
 
@@ -101,14 +120,17 @@ package.json     root scripts: pnpm dev | build | typecheck
 
 ```
 apps/api/
-  prisma/schema.prisma      users, ticket_purchases, ride_rounds and the attraction enum; migrations/ next to it
+  prisma/schema.prisma      users, ticket_purchases, ride_rounds, attraction_settings, park_settings, admin_actions; migrations/ next to it
   prisma.config.ts          Prisma CLI config: loads apps/api/.env
   scripts/init-env.mjs      creates .env on the first `pnpm dev`
+  scripts/staff.mjs         pnpm staff:appoint | dismiss | list
   src/main.ts               /api prefix, cookies, validation, CORS
   src/config/env.ts         validates the environment at startup
   src/auth/                 signup (terms), login, logout, me, data export, account deletion; scrypt passwords, JWT session cookie, rate limits
-  src/tickets/              ticket balance, 20-ticket packs, 5-hour cooldown, purchase history
-  src/rides/                attractions + costs, boarding (spends tickets), rounds and their stats
+  src/park/                 the live rules (prices, open/closed, maintenance, pack rules) and GET /api/park
+  src/tickets/              ticket balance, packs, cooldown, purchase history
+  src/rides/                attractions + default costs, boarding (spends tickets), rounds and their stats
+  src/ringmaster/           The Ringmaster's Office API: analytics, attractions, park gates, members, ledger, logbook (staff only)
   src/health/               GET /api/health
   src/generated/prisma/     the generated client (not committed)
 ```
@@ -126,15 +148,17 @@ Every route is under `/api`. The session is an httpOnly, `SameSite=Lax` cookie n
 | `GET` | `/api/auth/me/export` | ✔ | **200** JSON download of everything stored about the user (profile, tickets, purchases, rounds) |
 | `DELETE` | `/api/auth/me` | ✔ | Body `{ password }` → **204**, deletes the account and all its data. **401** `Wrong password` |
 | `GET` | `/api/tickets` | ✔ | **200** `{ balance, packSize, cooldownHours, lastPurchaseAt, nextPurchaseAt, canBuy, costs }` |
-| `POST` | `/api/tickets/purchase` | ✔ | **201** `{ balance, purchase, nextPurchaseAt, canBuy }`. **409** with `nextPurchaseAt` during the cooldown |
+| `POST` | `/api/tickets/purchase` | ✔ | **201** `{ balance, purchase, nextPurchaseAt, canBuy }`. **409** with `nextPurchaseAt` during the cooldown, **503** `code: 'park_closed'` while the park is closed |
 | `GET` | `/api/tickets/purchases` | ✔ | **200** `{ purchases }`, newest first (`?limit=`, default 50) |
-| `POST` | `/api/rides/:ride/board` | ✔ | Spends the tickets and opens a round: **201** `{ round: { id, ride, ticketsSpent, startedAt }, balance }`. **402** `{ needed, balance }` when short, **401** for guests, **400** for an unknown attraction |
+| `POST` | `/api/rides/:ride/board` | ✔ | Spends the tickets and opens a round: **201** `{ round: { id, ride, ticketsSpent, startedAt }, balance }`. **402** `{ needed, balance }` when short, **503** `code: 'park_closed'` or `'ride_closed'` while the park or the attraction is closed (not for staff), **401** for guests, **400** for an unknown attraction |
 | `POST` | `/api/rides/rounds/:id/finish` | ✔ | Body `{ completed, stats }` (up to 16 numeric stats) → **200** `{ round, history: { rounds, best } }`, where `best` is the min/max of each stat over earlier completed rounds. **409** if already finished, **404** if not yours |
 | `GET` | `/api/rides/stats` | ✔ | **200** `{ totalRounds, ticketsSpent, byRide }`, with every attraction listed |
 | `GET` | `/api/rides/history` | ✔ | **200** `{ rounds }`, newest first (`?limit=`, default 20) |
+| `GET` | `/api/park` | | **200** `{ open, message, costs, packSize, cooldownHours, maintenance }`, where `maintenance` maps each closed attraction to its sign |
 | `GET` | `/api/health` | | **200** `{ ok: true, db: 'up' }`, or **503** if the database is unreachable |
+| | `/api/ringmaster/*` | staff | The office: `GET overview?days=7\|30\|90`, `GET`/`PATCH park`, `GET attractions`, `PATCH attractions/:ride` `{ tickets?, open?, closedMessage? }`, `GET users?q=&limit=&offset=`, `GET`/`PATCH`/`DELETE users/:id`, `GET purchases`, `GET rounds?ride=`, `GET actions`. **401** for guests, **403** for players |
 
-`user` is `{ id, email, username, createdAt }`. Attraction ids are `coaster`, `falcon`, `rocket`, `ferris`, `flip`, `ship`, `speedway`, `drone`, `crates` and `striker`; costs, pack size and cooldown live in `apps/api/src/rides/attractions.ts`. Signup, login and account deletion are each limited to 10 requests a minute per IP (**429**, with `Retry-After`).
+`user` is `{ id, email, username, role, createdAt }` (`role` is `player` or `admin`, i.e. staff). Attraction ids are `coaster`, `falcon`, `rocket`, `ferris`, `flip`, `ship`, `speedway`, `drone`, `crates` and `striker`. Prices, maintenance, the pack size and the cooldown are rows in `attraction_settings` and `park_settings`; the defaults for a missing row live in `apps/api/src/rides/attractions.ts`. Signup, login and account deletion are each limited to 10 requests a minute per IP (**429**, with `Retry-After`).
 
 ## The coaster
 

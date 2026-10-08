@@ -47,6 +47,8 @@ export interface Park {
   costs: Partial<Record<AttractionId, number>>;
   packSize: number;
   cooldownHours: number;
+  /** Attractions closed for maintenance, each with its sign (null for the default wording). Open ones are left out. */
+  maintenance: Partial<Record<AttractionId, string | null>>;
 }
 
 /** The member's ticket wallet. `nextPurchaseAt` is null when a pack can be bought right now. */
@@ -115,20 +117,67 @@ export interface ParkSettings {
   updatedAt: string | null;
 }
 
-export interface Overview {
-  users: { total: number; admins: number; newToday: number; new7d: number };
-  tickets: { purchases: number; purchasesToday: number; ticketsSold: number; ticketsSpent: number; inCirculation: number };
-  rounds: { total: number; today: number; completed: number; open: number };
-  byRide: Partial<Record<AttractionId, { rounds: number; completed: number; ticketsSpent: number; price: number | null }>>;
-  park: ParkSettings;
-  /** The last 14 days (UTC), oldest first, today included and zero-filled. */
-  daily: { date: string; signups: number; purchases: number; rounds: number }[];
+/** Days the overview can look back over. */
+export const OVERVIEW_DAYS = [7, 30, 90] as const;
+export type OverviewDays = (typeof OVERVIEW_DAYS)[number];
+
+export interface RideAnalytics {
+  rounds: number;
+  roundsInRange: number;
+  completed: number;
+  abandoned: number;
+  ticketsSpent: number;
+  ticketsSpentInRange: number;
+  /** Members who ever played it. */
+  players: number;
+  /** Average length of a completed round, in seconds. */
+  avgSeconds: number | null;
+  price: number;
+  open: boolean;
 }
 
-export interface AttractionPrice {
+export interface StatRecord {
+  value: number;
+  username: string;
+  at: string | null;
+}
+
+/** GET /ringmaster/overview: the numbers across every member. Days are UTC days. */
+export interface Overview {
+  generatedAt: string;
+  days: OverviewDays;
+  /** First day of the range, YYYY-MM-DD. */
+  since: string;
+  users: { total: number; admins: number; newToday: number; newInRange: number; activeToday: number; activeInRange: number };
+  tickets: {
+    purchases: number;
+    purchasesToday: number;
+    purchasesInRange: number;
+    ticketsSold: number;
+    ticketsSoldInRange: number;
+    ticketsSpent: number;
+    ticketsSpentInRange: number;
+    inCirculation: number;
+  };
+  rounds: { total: number; today: number; inRange: number; completed: number; abandoned: number; open: number };
+  byRide: Record<AttractionId, RideAnalytics>;
+  /** One row per day of the range, oldest first, today included and zero-filled. */
+  daily: { date: string; signups: number; purchases: number; ticketsSold: number; rounds: number; players: number; ticketsSpent: number }[];
+  /** Rounds started in the range per hour of the day (UTC), 0 to 23. */
+  hours: number[];
+  topPlayers: { id: string; username: string; rounds: number; ticketsSpent: number; favourite: AttractionId | null }[];
+  /** Per attraction and stat key, the highest and lowest value ever reported. */
+  records: Partial<Record<AttractionId, Record<string, { max: StatRecord; min: StatRecord }>>>;
+  park: ParkSettings;
+}
+
+/** An attraction's settings: its price, and whether it is running. */
+export interface AttractionSettings {
   attraction: AttractionId;
-  /** Null when the attraction has no price yet (it can't be boarded then). */
-  tickets: number | null;
+  tickets: number;
+  open: boolean;
+  /** The sign while it is closed (null for the default wording). */
+  closedMessage: string | null;
   updatedAt: string | null;
 }
 
@@ -154,12 +203,12 @@ export interface AdminUserDetail {
 }
 
 export interface AdminPurchase extends Purchase {
-  provider?: string;
-  user: { id: string; username: string; email: string } | null;
+  provider: string;
+  user: { id: string; username: string; email: string };
 }
 
 export interface AdminRound extends Round {
-  user: { id: string; username: string } | null;
+  user: { id: string; username: string };
 }
 
 export interface AdminAction {
@@ -243,7 +292,23 @@ export class ParkClosedError extends ApiError {
   }
 }
 
-const isParkClosed = (status: number, data: unknown) => status === 503 && (data as { code?: unknown } | null)?.code === 'park_closed';
+/** 503 with code 'ride_closed': the attraction is closed for maintenance (staff excepted). */
+export class RideClosedError extends ApiError {
+  readonly ride: AttractionId | null;
+
+  constructor(message: string, data: unknown) {
+    super(503, message, data);
+    this.name = 'RideClosedError';
+    const ride = (data as { ride?: unknown } | null)?.ride;
+    this.ride = typeof ride === 'string' && isAttraction(ride) ? ride : null;
+  }
+
+  override get unavailable() {
+    return false;
+  }
+}
+
+const closedCode = (status: number, data: unknown) => (status === 503 ? (data as { code?: unknown } | null)?.code : undefined);
 
 /** The server's own words, as they are (the closed sign is written by staff). */
 const rawMessage = (data: unknown) => {
@@ -277,7 +342,9 @@ async function request<T>(method: 'GET' | 'POST' | 'PUT' | 'PATCH' | 'DELETE', p
   if (res.status === 204) return undefined as T;
   const data: unknown = await res.json().catch(() => null);
   if (!res.ok) {
-    if (isParkClosed(res.status, data)) throw new ParkClosedError(rawMessage(data) ?? 'The park is closed right now.', data);
+    const code = closedCode(res.status, data);
+    if (code === 'park_closed') throw new ParkClosedError(rawMessage(data) ?? 'The park is closed right now.', data);
+    if (code === 'ride_closed') throw new RideClosedError(rawMessage(data) ?? 'Under maintenance. Back soon!', data);
     const message = messageOf(data, res.status);
     throw res.status === 402 ? new NotEnoughTicketsError(message, data) : new ApiError(res.status, message, data);
   }
@@ -309,7 +376,7 @@ export const api = {
   stats: () => request<RideStats>('GET', '/rides/stats'),
   history: (limit = 20) => request<{ rounds: Round[] }>('GET', `/rides/history?limit=${limit}`),
 
-  /** Open or closed, the prices and the pack rules. No account needed. */
+  /** Open or closed, what is under maintenance, the prices and the pack rules. No account needed. */
   park: () => request<Park>('GET', '/park'),
 };
 
@@ -323,11 +390,12 @@ const query = (params: Record<string, string | number | undefined | null>) => {
 
 /** The Ringmaster's Office: staff only (a guest gets a 401, a player a 403). The server logs every change. */
 export const ringmaster = {
-  overview: () => request<Overview>('GET', '/ringmaster/overview'),
+  overview: (days: OverviewDays) => request<Overview>('GET', `/ringmaster/overview${query({ days })}`),
   park: () => request<ParkSettings>('GET', '/ringmaster/park'),
   updatePark: (body: Partial<Pick<ParkSettings, 'open' | 'closedMessage' | 'packSize' | 'cooldownHours'>>) => request<ParkSettings>('PATCH', '/ringmaster/park', body),
-  prices: () => request<{ prices: AttractionPrice[] }>('GET', '/ringmaster/prices'),
-  setPrice: (attraction: AttractionId, tickets: number) => request<AttractionPrice>('PUT', `/ringmaster/prices/${attraction}`, { tickets }),
+  attractions: () => request<{ attractions: AttractionSettings[] }>('GET', '/ringmaster/attractions'),
+  updateAttraction: (attraction: AttractionId, body: Partial<Pick<AttractionSettings, 'tickets' | 'open' | 'closedMessage'>>) =>
+    request<AttractionSettings>('PATCH', `/ringmaster/attractions/${attraction}`, body),
   users: (p: Page & { q?: string }) =>
     request<{ users: AdminUser[]; total: number }>('GET', `/ringmaster/users${query({ q: p.q?.trim(), limit: p.limit, offset: p.offset })}`),
   user: (id: string) => request<AdminUserDetail>('GET', `/ringmaster/users/${encodeURIComponent(id)}`),

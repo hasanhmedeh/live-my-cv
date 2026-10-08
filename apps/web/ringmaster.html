@@ -1,0 +1,89 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
+    <title>The Ringmaster's Office · The Funfair</title>
+    <meta name="description" content="The Funfair's back office, for staff." />
+    <meta name="robots" content="noindex, nofollow" />
+    <meta name="theme-color" content="#1d1238" />
+    <meta name="color-scheme" content="dark light" />
+
+    <link rel="icon" href="/favicon.svg" type="image/svg+xml" />
+    <link rel="preconnect" href="https://fonts.googleapis.com" />
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+    <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=DM+Sans:opsz,wght@9..40,400;9..40,500;9..40,700&family=Lilita+One&display=swap" />
+    <link rel="stylesheet" href="/src/ringmaster/ringmaster.css" />
+  </head>
+  <body>
+    <a class="skip" href="#main">Skip to the office</a>
+
+    <header class="bar">
+      <div class="bar-inner">
+        <a class="brand" href="/ringmaster"><span aria-hidden="true">🎩</span> The Ringmaster's Office</a>
+        <div class="bar-side">
+          <span class="whoami" id="whoami" hidden></span>
+          <a class="bar-link" href="/">← Back to the fair</a>
+          <button type="button" class="bar-link" id="logout" hidden>Log out</button>
+        </div>
+      </div>
+      <nav class="tabs" id="tabs" aria-label="Office sections" hidden>
+        <a href="#overview" data-tab="overview">📊 Overview</a>
+        <a href="#attractions" data-tab="attractions">🎢 Attractions</a>
+        <a href="#gates" data-tab="gates">🚧 Park gates</a>
+        <a href="#members" data-tab="members">👥 Members</a>
+        <a href="#ledger" data-tab="ledger">🎟️ Ledger</a>
+        <a href="#logbook" data-tab="logbook">📜 Logbook</a>
+      </nav>
+    </header>
+
+    <main id="main" tabindex="-1">
+      <!-- Shown until we know who's here -->
+      <section class="gate" id="gate-loading">
+        <p class="gate-sign" aria-hidden="true">🎩</p>
+        <p>Knocking on the office door…</p>
+      </section>
+
+      <!-- Staff sign in here -->
+      <section class="gate" id="gate-login" hidden>
+        <p class="gate-sign" aria-hidden="true">🎩</p>
+        <h1>The Ringmaster's Office</h1>
+        <p class="muted">Staff only. Log in with your fair account.</p>
+        <form id="login-form" class="login" novalidate>
+          <label>Email <input type="email" name="email" autocomplete="email" required /></label>
+          <label>Password <input type="password" name="password" autocomplete="current-password" required /></label>
+          <p class="form-error" id="login-error" role="alert"></p>
+          <button type="submit" class="btn btn-primary">Open the office</button>
+        </form>
+      </section>
+
+      <!-- A player found the door -->
+      <section class="gate" id="gate-denied" hidden>
+        <p class="gate-sign" aria-hidden="true">🚫</p>
+        <h1>Staff only</h1>
+        <p class="muted" id="denied-text">This door is for the people who run the fair.</p>
+        <p><a class="btn btn-primary" href="/">Back to the fair 🎪</a></p>
+      </section>
+
+      <!-- The server is away -->
+      <section class="gate" id="gate-offline" hidden>
+        <p class="gate-sign" aria-hidden="true">🔌</p>
+        <h1>Can't reach the office</h1>
+        <p class="muted" id="offline-text"></p>
+        <p><button type="button" class="btn btn-primary" id="retry">Try again</button></p>
+      </section>
+
+      <section class="view" id="view-overview" data-view="overview" hidden aria-labelledby="h-overview"></section>
+      <section class="view" id="view-attractions" data-view="attractions" hidden aria-labelledby="h-attractions"></section>
+      <section class="view" id="view-gates" data-view="gates" hidden aria-labelledby="h-gates"></section>
+      <section class="view" id="view-members" data-view="members" hidden aria-labelledby="h-members"></section>
+      <section class="view" id="view-ledger" data-view="ledger" hidden aria-labelledby="h-ledger"></section>
+      <section class="view" id="view-logbook" data-view="logbook" hidden aria-labelledby="h-logbook"></section>
+    </main>
+
+    <div class="toast" id="toast" role="status" aria-live="polite" hidden></div>
+    <div class="tip" id="tip" role="tooltip" hidden></div>
+
+    <script type="module" src="/src/ringmaster/main.ts"></script>
+  </body>
+</html>

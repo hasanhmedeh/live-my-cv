@@ -45,9 +45,25 @@ function seo(): Plugin {
       this.emitFile({
         type: 'asset',
         fileName: 'robots.txt',
-        source: `User-agent: *\nAllow: /\n\nSitemap: ${SITE_URL}/sitemap.xml\n`,
+        source: `User-agent: *\nAllow: /\nDisallow: /ringmaster\n\nSitemap: ${SITE_URL}/sitemap.xml\n`,
       });
     },
+  };
+}
+
+/**
+ * The Ringmaster's Office answers at /ringmaster in dev too, as it does on Vercel (where cleanUrls
+ * in vercel.json serves ringmaster.html).
+ */
+function cleanUrls(): Plugin {
+  const rewrite = (req: { url?: string }, _res: unknown, next: () => void) => {
+    if (req.url && /^\/ringmaster\/?(?=[?#]|$)/.test(req.url)) req.url = req.url.replace(/^\/ringmaster\/?/, '/ringmaster.html');
+    next();
+  };
+  return {
+    name: 'clean-urls',
+    configureServer: (server) => void server.middlewares.use(rewrite),
+    configurePreviewServer: (server) => void server.middlewares.use(rewrite),
   };
 }
 
@@ -62,16 +78,17 @@ const proxy = {
 };
 
 export default defineConfig({
-  plugins: [seo()],
+  plugins: [seo(), cleanUrls()],
   // `open` launches the browser on `pnpm dev` (BROWSER=none skips it)
   server: { allowedHosts: tunnelHosts, open: true, proxy },
   preview: { allowedHosts: tunnelHosts, proxy },
   build: {
     target: 'es2020',
     chunkSizeWarningLimit: 1300,
-    // The game plus the legal pages (served as /terms and /privacy thanks to cleanUrls in vercel.json)
+    // The game, the legal pages and The Ringmaster's Office (served as /terms, /privacy and
+    // /ringmaster thanks to cleanUrls in vercel.json)
     rolldownOptions: {
-      input: { index: page('./index.html'), terms: page('./terms.html'), privacy: page('./privacy.html') },
+      input: { index: page('./index.html'), terms: page('./terms.html'), privacy: page('./privacy.html'), ringmaster: page('./ringmaster.html') },
     },
   },
 });

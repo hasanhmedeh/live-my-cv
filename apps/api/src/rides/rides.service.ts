@@ -1,7 +1,8 @@
 import { ConflictException, HttpException, HttpStatus, Injectable, NotFoundException } from '@nestjs/common';
-import { Prisma, type Attraction } from '../generated/prisma/client.js';
+import { Prisma, type Attraction, type User } from '../generated/prisma/client.js';
+import { ParkService } from '../park/park.service.js';
 import { PrismaService } from '../prisma/prisma.service.js';
-import { ATTRACTIONS, TICKET_COSTS } from './attractions.js';
+import { ATTRACTIONS } from './attractions.js';
 import type { FinishRoundDto } from './dto/finish-round.dto.js';
 import { toRoundJson, type RoundJson } from './round-json.js';
 import type { StatBests, Stats } from './stats.js';
@@ -54,16 +55,24 @@ interface LastRow {
 
 @Injectable()
 export class RidesService {
-  constructor(private readonly prisma: PrismaService) {}
+  constructor(
+    private readonly prisma: PrismaService,
+    private readonly park: ParkService,
+  ) {}
 
   /**
-   * Pays for one round and opens it. The balance check and the decrement are one conditional UPDATE,
+   * Pays for one round and opens it, at the attraction's current price. A closed park or an
+   * attraction under maintenance turns players away with a 503 (staff board anyway, to test it). The balance check and the decrement are one conditional UPDATE,
    * so concurrent boardings can't spend the same tickets twice; it also locks the user's row, which
    * queues a user's boardings one behind the other. Any round still open is closed as abandoned:
    * a visitor plays one thing at a time.
    */
-  async board(userId: string, ride: Attraction): Promise<BoardResult> {
-    const cost = TICKET_COSTS[ride];
+  async board(user: User, ride: Attraction): Promise<BoardResult> {
+    const [park, attraction] = await Promise.all([this.park.rules(), this.park.attraction(ride)]);
+    this.park.assertParkOpen(park, user);
+    this.park.assertAttractionOpen(attraction, user);
+    const userId = user.id;
+    const cost = attraction.tickets;
     const now = new Date();
     const result = await this.prisma.$transaction(async (tx) => {
       const { count } = await tx.user.updateMany({

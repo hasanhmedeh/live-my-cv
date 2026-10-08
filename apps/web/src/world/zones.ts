@@ -9,6 +9,7 @@ interface Marker {
   fill: THREE.Mesh;
   label: THREE.Sprite;
   baseY: number;
+  closed: boolean;
 }
 
 /** Glowing ground rings: step onto one to get the "Press E" prompt. */
@@ -34,7 +35,24 @@ export class Zones {
       const label = makeSprite(floatingTextTexture(z.title, z.action), 7);
       label.position.set(z.x, 3.4, z.z);
       ctx.scene.add(ring, fill, label);
-      this.markers.push({ id, ring, fill, label, baseY: 3.4 });
+      this.markers.push({ id, ring, fill, label, baseY: 3.4, closed: false });
+    }
+  }
+
+  /** Attractions closed for maintenance get a red ring and an "Under maintenance" label. */
+  setClosed(closed: ReadonlySet<ZoneId>) {
+    for (const m of this.markers) {
+      const now = closed.has(m.id);
+      if (now === m.closed) continue;
+      m.closed = now;
+      const z = ZONES[m.id];
+      const color = now ? PALETTE.candy : PALETTE.mustard;
+      (m.ring.material as THREE.MeshBasicMaterial).color.copy(hdr(color, 2.4));
+      (m.fill.material as THREE.MeshBasicMaterial).color.set(color);
+      const mat = m.label.material as THREE.SpriteMaterial;
+      mat.map?.dispose();
+      mat.map = now ? floatingTextTexture(z.title, '🚧 Under maintenance') : floatingTextTexture(z.title, z.action);
+      mat.needsUpdate = true;
     }
   }
 

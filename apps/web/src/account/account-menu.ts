@@ -18,6 +18,7 @@ export class AccountMenu {
   private ticketsEl = this.panel.querySelector<HTMLElement>('.account-tickets')!;
   private ridesEl = this.panel.querySelector<HTMLElement>('.account-rides')!;
   private listEl = this.panel.querySelector<HTMLElement>('.account-list')!;
+  private staffLink = this.panel.querySelector<HTMLAnchorElement>('.account-staff')!;
   private noteEl = this.panel.querySelector<HTMLElement>('.account-note')!;
   private logoutBtn = this.panel.querySelector<HTMLButtonElement>('[data-account-logout]')!;
   private exportBtn = this.panel.querySelector<HTMLButtonElement>('[data-account-export]')!;
@@ -100,6 +101,7 @@ export class AccountMenu {
       this.chip.setAttribute('aria-controls', 'account-panel');
       this.chip.setAttribute('aria-expanded', String(!this.panel.hidden));
       this.nameEl.textContent = user.username;
+      this.staffLink.hidden = !session.isStaff;
       this.renderTickets();
       this.renderStats();
     } else {

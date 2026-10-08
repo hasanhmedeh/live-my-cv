@@ -36,13 +36,13 @@ import { Drone } from './attractions/drone';
 import { SkyFlip } from './attractions/sky-flip';
 import { Ship } from './attractions/ship';
 import { Speedway } from './attractions/speedway';
-import { ApiError, isAttraction, NotEnoughTicketsError, PurchaseCooldownError, type AttractionId } from '../account/api';
-import { formatWait, session } from '../account/session';
+import { ApiError, ATTRACTION_IDS, isAttraction, NotEnoughTicketsError, ParkClosedError, PurchaseCooldownError, RideClosedError, type AttractionId } from '../account/api';
+import { everyHours, formatWait, session } from '../account/session';
 import { authDialog, type AuthMode } from '../account/auth-dialog';
 import { AccountMenu } from '../account/account-menu';
 import { results, type ResultsChoice, type RoundResult } from '../account/results';
 import { cleanStats } from '../account/stats';
-import { accountButtons, boothBodyHtml, boothPanelHtml, legalLinksHtml, ticketsText, waitHtml, type CounterState } from './ticket-counter';
+import { accountButtons, boothBodyHtml, boothPanelHtml, legalLinksHtml, packText, ticketsText, waitHtml, type CounterState } from './ticket-counter';
 
 /** The clock slider / pause / local-time panel. Off for now: the park stays at 16:00. */
 const TIME_CONTROLS = false;
@@ -52,6 +52,17 @@ const CROWD_SIZE = { high: 64, medium: 44, low: 26, lowest: 12 } as const;
 type Mode = 'drive' | 'coaster' | 'rocket' | 'striker' | 'wheel' | 'drone' | 'flip' | 'ship' | 'race';
 
 const nextFrame = () => new Promise<void>((r) => requestAnimationFrame(() => r()));
+
+/** What the "Press E" prompt offers at an attraction: its price, or why it can't be played right now. */
+function zoneAction(id: AttractionId) {
+  const z = ZONES[id];
+  const price = `${session.cost(id)} 🎟️`;
+  const closed = !session.parkOpen || session.maintenance(id) !== undefined;
+  if (closed && session.isStaff) return `🎩 Staff test · ${price}`;
+  if (!session.parkOpen) return '🚧 The park is closed';
+  if (closed) return '🚧 Under maintenance';
+  return `${session.user ? z.action : 'Sign up for tickets'} · ${price}`;
+}
 
 /** Something with a round to report (see account/stats.ts). */
 interface Measured {
@@ -122,6 +133,9 @@ export class Game {
   private adaptive!: AdaptiveResolution;
   private focus = new THREE.Vector3();
   private timeControl: TimeControl | null = null;
+  /** The "park is closed" strip; once dismissed it stays away until the park opens again. */
+  private parkBanner = document.getElementById('park-banner')!;
+  private parkBannerDismissed = false;
 
   constructor(private container: HTMLElement) {}
 
@@ -469,6 +483,12 @@ export class Game {
     setInterval(() => this.tickCountdowns(), 1000);
     this.sessionUser = session.user?.id ?? null;
     session.onChange(() => this.onSessionChange());
+    // the gates: a closed park gets its banner, an attraction under maintenance its red ring
+    session.onPark(() => this.onParkChange());
+    this.parkBanner.querySelector('.park-banner-close')!.addEventListener('click', () => {
+      this.parkBannerDismissed = true;
+      this.parkBanner.hidden = true;
+    });
     this.minimap = new Minimap(document.getElementById('minimap')!);
     if (TIME_CONTROLS) this.timeControl = new TimeControl(this.env);
     else document.getElementById('clock')?.remove();
@@ -519,11 +539,14 @@ export class Game {
   enter() {
     this.sfx.unlock();
     this.ui.hud.hidden = false;
+    session.watchPark();
+    this.onParkChange();
     const user = session.user;
-    const cost = (id: AttractionId) => `<span class="cost">${session.cost(id)} 🎟️</span>`;
+    const cost = (id: AttractionId) =>
+      session.maintenance(id) === undefined ? `<span class="cost">${session.cost(id)} 🎟️</span>` : '<span class="cost cost-closed">🚧 Under maintenance</span>';
     this.ui.panel(
       'welcome',
-      `<p class="eyebrow">${user ? `Welcome back, ${escapeHtml(user.username)}` : 'Welcome to the fair'}</p><h2>Step right up! 🎪</h2><p>Walk around the park and try everything. Every ride and game takes tickets (prices below). Each payment buys one round, then you're back on your feet.</p><p class="booth-account">🎟️ Tickets are free: pick up <strong>a pack of 20 at the Ticket Booth every 5 hours</strong>${
+      `<p class="eyebrow">${user ? `Welcome back, ${escapeHtml(user.username)}` : 'Welcome to the fair'}</p><h2>Step right up! 🎪</h2><p>Walk around the park and try everything. Every ride and game takes tickets (prices below). Each payment buys one round, then you're back on your feet.</p><p class="booth-account">🎟️ Tickets are free: pick up <strong>${packText()}</strong>${
         user ? '' : ' with a free account'
       }. Leftover tickets carry over.</p><h3>🎢 Rides</h3><ul>
         <li>🎢 <strong>Thunder Loop</strong> — drive the coaster yourself: launch, loop and roll ${cost('coaster')}</li>
@@ -581,6 +604,9 @@ export class Game {
   private board(ride: AttractionId) {
     // one round at a time, and none while one is starting (the visitor is frozen then)
     if (this.mode !== 'drive' || this.boarding || this.round || this.leaving || !this.player.enabled) return;
+    // staff ride through closed gates: that's how they test an attraction before it reopens
+    if (!session.isStaff && !session.parkOpen) return this.showClosed(ride);
+    if (!session.isStaff && session.maintenance(ride) !== undefined) return this.showMaintenance(ride);
     if (!session.user) return this.showGate(ride);
     const cost = session.cost(ride);
     const balance = session.balance;
@@ -674,6 +700,9 @@ export class Game {
       void session.loadTickets();
       return this.showShort(ride, err.needed ?? session.cost(ride), err.balance ?? session.balance ?? 0);
     }
+    // closed since we last looked (the session has noted it)
+    if (err instanceof ParkClosedError) return this.showClosed(ride);
+    if (err instanceof RideClosedError) return this.showMaintenance(ride);
     const z = ZONES[ride];
     const closed = !(err instanceof ApiError) || err.unavailable;
     this.sfx.beep();
@@ -687,6 +716,54 @@ export class Game {
     );
   }
 
+  /** The whole park is closed: the sign on the gate. */
+  private showClosed(ride: AttractionId) {
+    const z = ZONES[ride];
+    this.player.interact();
+    this.sfx.beep();
+    this.panelZone = ride;
+    const sign = session.park?.message ?? "The park is closed right now. Come back soon: you're welcome to look around meanwhile.";
+    this.ui.panel(
+      `closed-${ride}-${Date.now()}`,
+      `<p class="eyebrow">${z.title} · Park closed</p><h2>🚧 The park is closed</h2><p>${escapeHtml(sign)}</p><p class="sub">No tickets are spent while the park is closed.</p>`,
+      { accent: PALETTE.candy },
+    );
+  }
+
+  /** The attraction is closed for maintenance: its sign. */
+  private showMaintenance(ride: AttractionId) {
+    const z = ZONES[ride];
+    this.player.interact();
+    this.sfx.beep();
+    this.panelZone = ride;
+    const sign = session.maintenance(ride) ?? `Our crew is giving ${z.title} some care. It will be back soon: try another attraction meanwhile!`;
+    this.ui.panel(
+      `maintenance-${ride}-${Date.now()}`,
+      `<p class="eyebrow">${z.title} · Under maintenance</p><h2>🚧 Under maintenance</h2><p>${escapeHtml(sign)}</p><p class="sub">No tickets were spent.</p>`,
+      { accent: PALETTE.candy },
+    );
+  }
+
+  /** The gates changed (or were first heard of): the banner, the rings, and an open sign that no longer applies. */
+  private onParkChange() {
+    const open = session.parkOpen;
+    if (open) this.parkBannerDismissed = false;
+    this.parkBanner.querySelector('.park-banner-text')!.textContent = open
+      ? ''
+      : (session.park?.message ?? (session.isStaff ? 'Staff can still ride, to test.' : 'Look around as much as you like; the rides and the Ticket Booth are paused.'));
+    this.parkBanner.hidden = open || this.parkBannerDismissed || this.ui.hud.hidden;
+    this.zones?.setClosed(new Set(ATTRACTION_IDS.filter((id) => session.maintenance(id) !== undefined)));
+    // a maintenance or closed sign that's open while the gate reopens is stale
+    const key = this.ui.panelOpenKey;
+    if (this.mode === 'drive' && (key.startsWith('maintenance-') || key.startsWith('closed-'))) {
+      const ride = this.panelZone;
+      if (ride && isAttraction(ride) && open && session.maintenance(ride) === undefined) {
+        this.ui.hidePanel();
+        this.panelZone = null;
+      }
+    }
+  }
+
   /** The members-only card a guest gets at an attraction. */
   private showGate(ride: AttractionId, expired = false) {
     const z = ZONES[ride];
@@ -697,7 +774,7 @@ export class Game {
       `gate-${ride}-${Date.now()}`,
       `<p class="eyebrow">${z.title} · ${ticketsText(session.cost(ride))}</p><h2>🎟️ Members only</h2><p>${
         expired ? "Your session ran out, so you're back to being a guest. " : ''
-      }Every ride and game costs tickets, and tickets come with a free account: pick up 20 at the Ticket Booth every 5 hours. Visiting the booth is always free.</p>${accountButtons(ride)}`,
+      }Every ride and game costs tickets, and tickets come with a free account: pick up ${packText()}. Visiting the booth is always free.</p>${accountButtons(ride)}`,
       { accent: PALETTE.mustard },
     );
   }
@@ -723,7 +800,11 @@ export class Game {
   /** Opens the sign-up / log-in dialog. From an attraction's gate, it boards that one once they're in. */
   private async signIn(mode: AuthMode, ride: AttractionId | null) {
     const title = ride && ZONES[ride].title;
-    const lead = title && (mode === 'signup' ? `Sign up to play ${title}: a free account comes with free tickets, 20 every 5 hours.` : `Log in to play ${title}.`);
+    const lead =
+      title &&
+      (mode === 'signup'
+        ? `Sign up to play ${title}: a free account comes with free tickets, ${session.packSize} ${everyHours(session.cooldownHours)}.`
+        : `Log in to play ${title}.`);
     const user = await authDialog.open(mode, lead || undefined);
     if (!user || !ride) return;
     // the wallet decides what happens next (a brand-new account has to visit the booth first)
@@ -1204,7 +1285,7 @@ export class Game {
               ? 'Smash them!'
               : 'Finish your Crate Smash round first'
             : isAttraction(zone)
-              ? `${session.user ? z.action : 'Sign up for tickets'} · ${session.cost(zone)} 🎟️`
+              ? zoneAction(zone)
               : z.action;
       this.ui.prompt(`${zone}:${action}`, z.title, action);
       if (zone === 'crates' && this.panelZone !== 'crates' && !this.cratesDismissed) this.showZonePanel('crates');
