@@ -88,17 +88,31 @@ kbd {
   outline-offset: 3px;
 }
 .btn-primary {
+  --lift: 5px;
+  position: relative;
   background: var(--candy);
   color: #fff;
-  box-shadow: 0 5px 0 var(--candy-dark);
+  box-shadow: 0 var(--lift) 0 var(--candy-dark);
 }
 .btn-primary:hover:not(:disabled) {
+  --lift: 7px;
   transform: translateY(-2px);
-  box-shadow: 0 7px 0 var(--candy-dark);
 }
 .btn-primary:active:not(:disabled) {
+  --lift: 2px;
   transform: translateY(3px);
-  box-shadow: 0 2px 0 var(--candy-dark);
+}
+/* the focus ring hugs the face and the 3D base below it, not just the face */
+.btn-primary:focus-visible {
+  outline: none;
+}
+.btn-primary:focus-visible::after {
+  content: '';
+  position: absolute;
+  inset: -6px -6px calc(-6px - var(--lift));
+  border: 3px solid var(--mustard);
+  border-radius: 999px;
+  pointer-events: none;
 }
 .btn-primary:disabled {
   opacity: 0.75;
@@ -611,81 +625,223 @@ kbd {
   overflow: hidden;
   text-overflow: ellipsis;
 }
-.account-panel {
-  width: min(280px, calc(100% - 32px));
+/* the account card: a big modal over the dimmed park, about 80% of the screen */
+.account-backdrop {
+  position: absolute;
+  inset: 0;
+  z-index: 20;
+  background: rgba(18, 8, 40, 0.55);
+  -webkit-backdrop-filter: blur(3px);
+  backdrop-filter: blur(3px);
+  animation: account-fade 0.2s ease-out;
+}
+.account-backdrop[hidden] {
+  display: none;
+}
+@keyframes account-fade {
+  from {
+    opacity: 0;
+  }
+}
+.time-panel.account-panel {
+  inset: 0;
+  z-index: 21;
+  display: flex;
+  flex-direction: column;
+  width: min(1100px, 80%);
+  height: 80%;
+  max-height: none;
+  margin: auto;
+  padding: 0;
+  overflow: hidden;
   border-top-color: var(--mustard);
+}
+.time-panel.account-panel[hidden] {
+  display: none;
 }
 .account-panel:focus {
   outline: none;
 }
+.account-head {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 16px;
+  padding: 22px 28px 18px;
+  background: linear-gradient(120deg, rgba(255, 194, 61, 0.24), rgba(123, 92, 214, 0.12));
+  border-bottom: 1px solid rgba(34, 22, 63, 0.08);
+}
+.account-id {
+  min-width: 0;
+}
 .account-name {
-  margin: 6px 0 2px;
-  font: 400 1.4rem/1.15 var(--display);
+  margin: 6px 0 4px;
+  font: 400 2rem/1.1 var(--display);
   color: var(--ink);
   overflow-wrap: anywhere;
 }
+.account-tickets {
+  margin: 0;
+  font-size: 0.95rem;
+  font-variant-numeric: tabular-nums;
+}
+.account-close {
+  flex: none;
+  width: 40px;
+  height: 40px;
+  border: 0;
+  border-radius: 50%;
+  background: rgba(34, 22, 63, 0.08);
+  color: var(--text);
+  font: 700 1.05rem/1 var(--body);
+  cursor: pointer;
+  transition: background 0.2s;
+}
+.account-close:hover {
+  background: rgba(34, 22, 63, 0.16);
+}
+.account-close:focus-visible {
+  outline: 3px solid var(--mustard);
+  outline-offset: 2px;
+}
+/* souvenirs on the left; rounds and orders stacked on the right */
+.account-body {
+  flex: 1;
+  min-height: 0;
+  overflow-y: auto;
+  overscroll-behavior: contain;
+  display: grid;
+  grid-template-columns: minmax(0, 3fr) minmax(0, 2fr);
+  grid-template-rows: auto 1fr;
+  align-items: start;
+  gap: 22px 28px;
+  padding: 22px 28px;
+}
+.account-section {
+  min-width: 0;
+}
+.account-section-wear {
+  grid-row: span 2;
+}
 .account-rides {
   margin: 0;
-  font-size: 0.9rem;
-  color: var(--muted);
+  font: 700 0.95rem/1.35 var(--body);
+  color: var(--ink);
 }
 .account-list {
   display: grid;
-  gap: 2px;
-  margin: 10px 0 0;
+  gap: 4px;
+  margin: 12px 0 0;
   padding: 0;
   list-style: none;
-  font-size: 0.85rem;
+  font-size: 0.9rem;
 }
 .account-list li {
   display: flex;
+  align-items: center;
   justify-content: space-between;
   gap: 12px;
-  padding: 4px 10px;
-  border-radius: 8px;
+  padding: 8px 12px;
+  border-radius: 10px;
   background: rgba(34, 22, 63, 0.05);
 }
 .account-list b {
+  flex: none;
   font-variant-numeric: tabular-nums;
 }
-.account-orders-head {
-  margin-top: 12px;
+/* each attraction's bar is its share of the favourite's rounds */
+.account-ride-list li {
+  background: linear-gradient(90deg, rgba(123, 92, 214, 0.2) calc(var(--share, 0) * 100%), rgba(34, 22, 63, 0.05) 0);
 }
-.account-orders li span {
+.account-order-icon {
+  flex: none;
+  font-size: 1.3rem;
+  line-height: 1;
+}
+.account-order-text {
+  flex: 1;
   min-width: 0;
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
 }
 .account-orders small {
+  display: block;
+  font-size: 0.75rem;
   color: var(--muted);
 }
-/* the souvenirs: worn or in the bag, with a button to change it */
-.account-wear-head {
-  margin-top: 12px;
+.account-orders .account-orders-more {
+  justify-content: center;
+  background: none;
+  color: var(--muted);
+  font-size: 0.8rem;
+}
+/* the souvenirs: a grid of cards, worn or in the bag, each with a button to change it */
+.account-wear {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(140px, 1fr));
+  gap: 10px;
+  margin: 12px 0 0;
+  padding: 0;
+  list-style: none;
 }
 .account-wear li {
+  display: flex;
+  flex-direction: column;
   align-items: center;
+  gap: 2px;
+  padding: 16px 10px 12px;
+  border-radius: 14px;
+  background: rgba(34, 22, 63, 0.05);
+  box-shadow: inset 0 0 0 2px transparent;
+  text-align: center;
+  transition:
+    background 0.2s,
+    box-shadow 0.2s;
 }
 .account-wear li.is-worn {
   background: rgba(46, 196, 182, 0.14);
+  box-shadow: inset 0 0 0 2px var(--teal);
+}
+.account-wear-icon {
+  margin-bottom: 4px;
+  font-size: 2.4rem;
+  line-height: 1.1;
+}
+.account-wear-name {
+  font-weight: 700;
+  font-size: 0.9rem;
+  overflow-wrap: anywhere;
 }
 .account-wear small {
+  font-size: 0.75rem;
   color: var(--muted);
 }
+.account-wear li.is-worn small {
+  color: #13796f;
+  font-weight: 700;
+}
 .account-wear-btn {
-  flex: none;
-  padding: 6px 12px;
+  width: 100%;
+  margin-top: 8px;
+  padding: 8px 12px;
   border: 0;
   border-radius: 999px;
   background: var(--candy);
   color: #fff;
-  font: 700 0.78rem/1 var(--body);
+  font: 700 0.8rem/1 var(--body);
   cursor: pointer;
+  transition: background 0.2s;
+}
+.account-wear-btn:hover {
+  background: var(--candy-dark);
 }
 .account-wear li.is-worn .account-wear-btn {
   background: rgba(34, 22, 63, 0.1);
   color: var(--text);
+}
+.account-wear li.is-worn .account-wear-btn:hover {
+  background: rgba(34, 22, 63, 0.18);
 }
 .account-wear-btn:focus-visible {
   outline: 3px solid var(--mustard);
@@ -695,40 +851,53 @@ kbd {
   opacity: 0.6;
   cursor: progress;
 }
-.account-orders .account-orders-more {
-  justify-content: center;
-  background: none;
-  color: var(--muted);
-  font-size: 0.8rem;
+.account-foot {
+  padding: 14px 28px 16px;
+  border-top: 1px solid rgba(34, 22, 63, 0.08);
+  background: rgba(34, 22, 63, 0.025);
+}
+.account-foot-row {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px 16px;
+}
+.account-foot-actions {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+.account-foot-actions .time-btn {
+  flex: none;
+  padding: 10px 22px;
 }
 /* Staff only: the way into The Ringmaster's Office */
 .account-staff {
-  display: block;
-  margin: 10px 0 0;
-  padding: 8px 10px;
-  border-radius: 10px;
+  display: inline-block;
+  padding: 9px 14px;
+  border-radius: 999px;
   background: rgba(123, 92, 214, 0.12);
   color: var(--violet);
   font-weight: 700;
-  font-size: 0.9rem;
+  font-size: 0.85rem;
   text-decoration: none;
+}
+.account-staff[hidden] {
+  display: none;
 }
 .account-staff:hover,
 .account-staff:focus-visible {
   background: rgba(123, 92, 214, 0.22);
 }
-.account-tickets {
-  margin: 0 0 4px;
-  font-size: 0.9rem;
-  font-variant-numeric: tabular-nums;
-}
 .account-note {
-  margin: 10px 0 0;
+  margin: 0 0 10px;
   font-size: 0.85rem;
   color: var(--muted);
 }
 .account-delete {
-  margin-top: 12px;
+  max-width: 460px;
+  margin: 0 0 12px;
   padding: 12px;
   border-radius: 12px;
   background: rgba(255, 77, 109, 0.08);
@@ -779,7 +948,7 @@ kbd {
   cursor: progress;
 }
 .account-footer {
-  margin: 12px 0 0;
+  margin: 0;
   font-size: 0.78rem;
   color: var(--muted);
 }
@@ -787,6 +956,44 @@ kbd {
 .account-footer .link-btn {
   color: var(--violet);
   font-weight: 700;
+}
+/* phones: nearly the whole screen, one column */
+@media (max-width: 720px) {
+  .time-panel.account-panel {
+    width: calc(100% - 24px);
+    height: calc(100% - max(12px, env(safe-area-inset-top)) - max(12px, env(safe-area-inset-bottom)));
+  }
+  .account-head {
+    padding: 16px 16px 14px;
+  }
+  .account-name {
+    font-size: 1.6rem;
+  }
+  .account-body {
+    grid-template-columns: minmax(0, 1fr);
+    gap: 18px;
+    padding: 16px;
+  }
+  .account-section-wear {
+    grid-row: auto;
+  }
+  .account-wear {
+    grid-template-columns: repeat(auto-fill, minmax(116px, 1fr));
+    gap: 8px;
+  }
+  .account-foot {
+    padding: 12px 16px max(12px, env(safe-area-inset-bottom));
+  }
+  .account-foot-row {
+    flex-direction: column-reverse;
+    align-items: stretch;
+  }
+  .account-foot-actions .time-btn {
+    flex: 1;
+  }
+  .account-footer {
+    text-align: center;
+  }
 }
 .hud-help {
   position: absolute;
@@ -2695,6 +2902,123 @@ kbd {
 .auth-check a {
   color: var(--violet);
   font-weight: 700;
+}
+/* Gender: a native select (the system picker on phones), dressed like the text fields */
+.auth-select {
+  position: relative;
+}
+.auth-select select {
+  width: 100%;
+  padding: 11px 44px 11px 14px;
+  border: 2px solid rgba(34, 22, 63, 0.16);
+  border-radius: 12px;
+  background: #fff;
+  color: var(--text);
+  font: 500 1rem/1.3 var(--body);
+  appearance: none;
+  -webkit-appearance: none;
+  cursor: pointer;
+  transition: border-color 0.2s, box-shadow 0.2s, background 0.2s;
+}
+/* the "Choose one…" placeholder reads as a hint until something is picked */
+.auth-select select:has(option[value='']:checked) {
+  color: var(--muted);
+}
+.auth-select select option {
+  color: var(--text);
+}
+.auth-select select:hover:not(:disabled) {
+  border-color: rgba(123, 92, 214, 0.5);
+}
+.auth-select select:focus {
+  outline: none;
+  border-color: var(--violet);
+  box-shadow: 0 0 0 3px rgba(123, 92, 214, 0.25);
+}
+.auth-select select[aria-invalid='true'] {
+  border-color: var(--candy);
+}
+.auth-select select[aria-invalid='true']:focus {
+  box-shadow: 0 0 0 3px rgba(255, 77, 109, 0.25);
+}
+.auth-select select:disabled {
+  background: var(--cream);
+  cursor: default;
+}
+.auth-select-chevron {
+  position: absolute;
+  top: 50%;
+  right: 12px;
+  width: 30px;
+  height: 30px;
+  padding: 6px;
+  transform: translateY(-50%);
+  border-radius: 8px;
+  background: rgba(123, 92, 214, 0.1);
+  color: var(--violet);
+  pointer-events: none;
+  transition: transform 0.2s, background 0.2s;
+}
+.auth-select select:focus + .auth-select-chevron {
+  background: var(--violet);
+  color: #fff;
+}
+/* Continue with Google: white, with Google's own G (their branding guidelines) */
+.auth-google {
+  margin-bottom: 4px;
+}
+.auth-google-btn {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 12px;
+  width: 100%;
+  min-height: 48px;
+  padding: 10px 16px;
+  border: 2px solid rgba(34, 22, 63, 0.16);
+  border-radius: 999px;
+  background: #fff;
+  color: #1f1f1f;
+  font: 700 1rem/1 var(--body);
+  cursor: pointer;
+  transition: border-color 0.2s, box-shadow 0.2s, transform 0.15s;
+}
+.auth-google-btn:hover:not(:disabled) {
+  border-color: rgba(34, 22, 63, 0.3);
+  box-shadow: 0 4px 14px rgba(34, 22, 63, 0.12);
+}
+.auth-google-btn:active:not(:disabled) {
+  transform: translateY(1px);
+}
+.auth-google-btn:disabled {
+  opacity: 0.6;
+  cursor: default;
+}
+.auth-google-btn svg {
+  flex: none;
+}
+.auth-google-note {
+  margin: 8px 0 0;
+  text-align: center;
+  font-size: 0.85rem;
+  color: var(--muted);
+}
+.auth-or {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  margin: 14px 0;
+  font: 700 0.72rem/1 var(--body);
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+  color: var(--muted);
+}
+.auth-or::before,
+.auth-or::after {
+  content: '';
+  flex: 1;
+  height: 1px;
+  background: rgba(34, 22, 63, 0.14);
 }
 /* ---------- A round's results ---------- */
 .results {

@@ -1,4 +1,4 @@
-import { Body, Controller, Delete, Get, HttpCode, HttpStatus, Post, Res, UseGuards } from '@nestjs/common';
+import { Body, Controller, Delete, Get, HttpCode, HttpStatus, Patch, Post, Res, UseGuards } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import type { Response } from 'express';
 import type { Env } from '../config/env.js';
@@ -10,6 +10,7 @@ import { CurrentUser } from './current-user.decorator.js';
 import { DeleteAccountDto } from './dto/delete-account.dto.js';
 import { LoginDto } from './dto/login.dto.js';
 import { SignupDto } from './dto/signup.dto.js';
+import { UpdateProfileDto } from './dto/update-profile.dto.js';
 import { SESSION_COOKIE, SESSION_TTL_SECONDS, sessionCookieOptions } from './session.js';
 import { SessionGuard } from './session.guard.js';
 import { toUserJson, type UserJson } from './user-json.js';
@@ -55,7 +56,17 @@ export class AuthController {
     return { user: toUserJson(user) };
   }
 
-  /** Deletes the account and everything attached to it, then signs out. Needs the password again. */
+  /** Fills in what the account is missing (gender, the Terms), asked after logging in. */
+  @Patch('me')
+  @UseGuards(SessionGuard)
+  async updateProfile(@CurrentUser() user: User, @Body() body: UpdateProfileDto): Promise<{ user: UserJson }> {
+    return { user: toUserJson(await this.auth.updateProfile(user, body)) };
+  }
+
+  /**
+   * Deletes the account and everything attached to it, then signs out. Needs the password again
+   * (or, for an account made with Google, the username typed out).
+   */
   @Delete('me')
   @HttpCode(HttpStatus.NO_CONTENT)
   @UseGuards(AuthThrottlerGuard, SessionGuard)
@@ -64,7 +75,7 @@ export class AuthController {
     @Body() body: DeleteAccountDto,
     @Res({ passthrough: true }) res: Response,
   ): Promise<void> {
-    await this.account.delete(user, body.password);
+    await this.account.delete(user, body);
     res.clearCookie(SESSION_COOKIE, sessionCookieOptions(this.production));
   }
 

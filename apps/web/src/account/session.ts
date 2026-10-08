@@ -13,6 +13,7 @@ import {
   type AccountNews,
   type AttractionId,
   type FinishedRound,
+  type Gender,
   type Park,
   type Purchase,
   type RideStats,
@@ -512,13 +513,33 @@ class Session {
   }
 
   /** Signing up means accepting the Terms and the Privacy Policy (the dialog's checkbox). */
-  async signup(body: { email: string; username: string; password: string }) {
+  async signup(body: { email: string; username: string; password: string; gender: Gender }) {
     const { user } = await api.signup({ ...body, acceptTerms: true });
     this.set(user);
     return user;
   }
 
-  async login(body: { email: string; password: string }) {
+  /** Finishes signing up with Google: what Google doesn't tell us. Accepting the Terms, as above. */
+  async googleSignup(body: { username: string; gender: Gender }) {
+    const { user } = await api.googleSignup({ ...body, acceptTerms: true });
+    this.set(user);
+    return user;
+  }
+
+  /** Fills in what the member's account is missing (asked after logging in). */
+  async updateProfile(body: { gender?: Gender; acceptTerms?: true }) {
+    try {
+      const { user } = await api.updateProfile(body);
+      this.set(user);
+      return user;
+    } catch (err) {
+      if (err instanceof ApiError && err.status === 401) this.expire();
+      throw err;
+    }
+  }
+
+  /** `login` is the email address or the username. */
+  async login(body: { login: string; password: string }) {
     const { user } = await api.login(body);
     this.set(user);
     return user;
@@ -656,9 +677,12 @@ class Session {
   }
 
 
-  /** Deletes the account for good, then carries on as a guest. Throws an ApiError (401 = wrong password). */
-  async deleteAccount(password: string) {
-    await api.deleteAccount(password);
+  /**
+   * Deletes the account for good, then carries on as a guest. Confirmed with the password, or for an
+   * account made with Google, the username. Throws an ApiError (401 = wrong password).
+   */
+  async deleteAccount(confirmation: { password: string } | { confirm: string }) {
+    await api.deleteAccount(confirmation);
     this.set(null);
   }
 

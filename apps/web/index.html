@@ -104,35 +104,53 @@
         <p class="gfx-note">Lower settings run smoother on older devices. Changing reloads the park.</p>
       </div>
 
-      <div id="account-panel" class="time-panel account-panel" role="dialog" aria-label="Your account" tabindex="-1" hidden>
-        <p class="time-title">Your account</p>
-        <p class="account-name"></p>
-        <p class="account-tickets"></p>
-        <p class="account-rides" aria-live="polite"></p>
-        <ul class="account-list" aria-label="Completed rounds per attraction" hidden></ul>
-        <p class="account-rides account-orders-head" aria-live="polite"></p>
-        <ul class="account-list account-orders" aria-label="Your latest orders at the shop" hidden></ul>
-        <p class="account-rides account-wear-head" aria-live="polite"></p>
-        <ul class="account-list account-wear" aria-label="Your souvenirs: put them on or take them off" hidden></ul>
-        <a class="account-staff" href="/ringmaster" target="_blank" rel="noopener" hidden>🎩 Ringmaster's Office <span aria-hidden="true">↗</span><span class="visually-hidden"> (opens in a new tab)</span></a>
-        <div class="time-actions">
-          <button type="button" class="time-btn" data-account-logout>Log out</button>
-        </div>
-        <p class="account-note" role="status" hidden></p>
-        <form class="account-delete" hidden novalidate>
-          <p><strong>Delete your account?</strong> Your tickets, purchases and ride history go with it, for good.</p>
-          <label for="account-delete-password">Your password, to confirm</label>
-          <input id="account-delete-password" type="password" autocomplete="current-password" required aria-describedby="account-delete-error" />
-          <p class="account-delete-error" id="account-delete-error" role="alert"></p>
-          <div class="time-actions">
-            <button type="button" class="time-btn" data-account-delete-cancel>Keep it</button>
-            <button type="submit" class="time-btn time-btn-danger">Delete for good</button>
+      <div class="account-backdrop" hidden></div>
+      <div id="account-panel" class="time-panel account-panel" role="dialog" aria-modal="true" aria-labelledby="account-title" tabindex="-1" hidden>
+        <header class="account-head">
+          <div class="account-id">
+            <p class="time-title" id="account-title">Your account</p>
+            <p class="account-name"></p>
+            <p class="account-tickets"></p>
           </div>
-        </form>
-        <p class="account-footer">
-          <button type="button" class="link-btn" data-account-delete>Delete account</button> ·
-          <a href="/terms.html" target="_blank" rel="noopener">Terms</a> · <a href="/privacy.html" target="_blank" rel="noopener">Privacy</a>
-        </p>
+          <button type="button" class="account-close" data-account-close aria-label="Close your account">✕</button>
+        </header>
+        <div class="account-body">
+          <section class="account-section account-section-wear" aria-labelledby="account-wear-head">
+            <h3 class="account-rides account-wear-head" id="account-wear-head" aria-live="polite"></h3>
+            <ul class="account-wear" aria-label="Your souvenirs: put them on or take them off" hidden></ul>
+          </section>
+          <section class="account-section" aria-labelledby="account-rides-head">
+            <h3 class="account-rides" id="account-rides-head" aria-live="polite"></h3>
+            <ul class="account-list account-ride-list" aria-label="Completed rounds per attraction" hidden></ul>
+          </section>
+          <section class="account-section" aria-labelledby="account-orders-head">
+            <h3 class="account-rides account-orders-head" id="account-orders-head" aria-live="polite"></h3>
+            <ul class="account-list account-orders" aria-label="Your latest orders at the shop" hidden></ul>
+          </section>
+        </div>
+        <footer class="account-foot">
+          <p class="account-note" role="status" hidden></p>
+          <form class="account-delete" hidden novalidate>
+            <p><strong>Delete your account?</strong> Your tickets, purchases and ride history go with it, for good.</p>
+            <label for="account-delete-password">Your password, to confirm</label>
+            <input id="account-delete-password" type="password" autocomplete="current-password" required aria-describedby="account-delete-error" />
+            <p class="account-delete-error" id="account-delete-error" role="alert"></p>
+            <div class="time-actions">
+              <button type="button" class="time-btn" data-account-delete-cancel>Keep it</button>
+              <button type="submit" class="time-btn time-btn-danger">Delete for good</button>
+            </div>
+          </form>
+          <div class="account-foot-row">
+            <p class="account-footer">
+              <button type="button" class="link-btn" data-account-delete>Delete account</button> ·
+              <a href="/terms.html" target="_blank" rel="noopener">Terms</a> · <a href="/privacy.html" target="_blank" rel="noopener">Privacy</a>
+            </p>
+            <div class="account-foot-actions">
+              <a class="account-staff" href="/ringmaster" target="_blank" rel="noopener" hidden>🎩 Ringmaster's Office <span aria-hidden="true">↗</span><span class="visually-hidden"> (opens in a new tab)</span></a>
+              <button type="button" class="time-btn" data-account-logout>Log out</button>
+            </div>
+          </div>
+        </footer>
       </div>
 
       <div id="time-panel" class="time-panel" role="dialog" aria-label="Park time" hidden>
@@ -296,31 +314,60 @@
         <p class="auth-kicker" id="auth-kicker">Free account</p>
         <h2 id="auth-title">Join the fair</h2>
         <p class="auth-lead" id="auth-lead"></p>
-        <div class="auth-modes" role="group" aria-label="I want to">
+        <div class="auth-modes" role="group" aria-label="I want to" data-group="modes">
           <button type="button" data-auth-mode="signup" aria-pressed="true">Sign up</button>
           <button type="button" data-auth-mode="login" aria-pressed="false">Log in</button>
         </div>
-        <div class="auth-field">
+        <div class="auth-google" data-group="google" hidden>
+          <button type="button" class="auth-google-btn">
+            <svg viewBox="0 0 48 48" width="20" height="20" aria-hidden="true" focusable="false">
+              <path fill="#EA4335" d="M24 9.5c3.54 0 6.71 1.22 9.21 3.6l6.85-6.85C35.9 2.38 30.47 0 24 0 14.62 0 6.51 5.38 2.56 13.22l7.98 6.19C12.43 13.72 17.74 9.5 24 9.5z" />
+              <path fill="#4285F4" d="M46.98 24.55c0-1.57-.15-3.09-.38-4.55H24v9.02h12.94c-.58 2.96-2.26 5.48-4.78 7.18l7.73 6c4.51-4.18 7.09-10.36 7.09-17.65z" />
+              <path fill="#FBBC05" d="M10.53 28.59c-.48-1.45-.76-2.99-.76-4.59s.27-3.14.76-4.59l-7.98-6.19C.92 16.46 0 20.12 0 24c0 3.88.92 7.54 2.56 10.78l7.97-6.19z" />
+              <path fill="#34A853" d="M24 48c6.48 0 11.93-2.13 15.89-5.81l-7.73-6c-2.15 1.45-4.92 2.3-8.16 2.3-6.26 0-11.57-4.22-13.47-9.91l-7.98 6.19C6.51 42.62 14.62 48 24 48z" />
+            </svg>
+            <span>Continue with Google</span>
+          </button>
+          <p class="auth-google-note" role="status" hidden></p>
+          <p class="auth-or"><span>or with your email</span></p>
+        </div>
+        <div class="auth-field" data-group="email">
           <label for="auth-email">Email</label>
           <input id="auth-email" name="email" type="email" autocomplete="email" inputmode="email" autocapitalize="off" spellcheck="false" maxlength="254" required aria-describedby="auth-email-error" />
           <p class="auth-field-error" id="auth-email-error" hidden></p>
         </div>
-        <div class="auth-field" data-signup-only>
+        <div class="auth-field" data-group="username">
           <label for="auth-username">Username</label>
           <input id="auth-username" name="username" type="text" autocomplete="username" autocapitalize="off" spellcheck="false" maxlength="20" required aria-describedby="auth-username-hint auth-username-error" />
           <p class="auth-hint" id="auth-username-hint">3–20 letters, numbers or underscores</p>
           <p class="auth-field-error" id="auth-username-error" hidden></p>
         </div>
-        <div class="auth-field">
+        <div class="auth-field" data-group="password">
           <label for="auth-password">Password</label>
           <div class="auth-password">
             <input id="auth-password" name="password" type="password" autocomplete="new-password" required aria-describedby="auth-password-hint auth-password-error" />
             <button type="button" class="auth-reveal" aria-pressed="false" aria-controls="auth-password">Show</button>
           </div>
-          <p class="auth-hint" id="auth-password-hint" data-signup-only>At least 8 characters</p>
+          <p class="auth-hint" id="auth-password-hint">At least 8 characters</p>
           <p class="auth-field-error" id="auth-password-error" hidden></p>
         </div>
-        <div class="auth-field" data-signup-only>
+        <div class="auth-field" data-group="gender">
+          <label for="auth-gender">Gender</label>
+          <div class="auth-select">
+            <select id="auth-gender" name="gender" required aria-describedby="auth-gender-error">
+              <option value="" disabled selected>Choose one…</option>
+              <option value="female">Female</option>
+              <option value="male">Male</option>
+              <option value="other">Other</option>
+              <option value="prefer_not_to_say">Prefer not to say</option>
+            </select>
+            <svg class="auth-select-chevron" viewBox="0 0 20 20" width="18" height="18" aria-hidden="true" focusable="false">
+              <path d="M5 7.5l5 5 5-5" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" />
+            </svg>
+          </div>
+          <p class="auth-field-error" id="auth-gender-error" hidden></p>
+        </div>
+        <div class="auth-field" data-group="terms">
           <label class="auth-check">
             <input id="auth-terms" name="acceptTerms" type="checkbox" required aria-describedby="auth-terms-error" />
             <span>I am 15 or older (or have a parent's permission) and I accept the <a href="/terms.html" target="_blank" rel="noopener">Terms of Service</a> and <a href="/privacy.html" target="_blank" rel="noopener">Privacy Policy</a>.</span>

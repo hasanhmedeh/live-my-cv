@@ -939,12 +939,14 @@ export class Game {
   /** Opens the sign-up / log-in dialog. From an attraction's gate, it boards that one once they're in. */
   private async signIn(mode: AuthMode, ride: AttractionId | null) {
     const title = ride && ZONES[ride].title;
-    const lead =
-      title &&
-      (mode === 'signup'
-        ? `Sign up to play ${title}: a free account comes with free tickets, ${session.packSize} ${everyHours(session.cooldownHours)}.`
-        : `Log in to play ${title}.`);
-    const user = await authDialog.open(mode, lead || undefined);
+    // a function, so the dialog keeps the pack rules live while it's open
+    const lead = title
+      ? () =>
+          mode === 'signup'
+            ? `Sign up to play ${title}: a free account comes with free tickets, ${session.packSize} ${everyHours(session.cooldownHours)}.`
+            : `Log in to play ${title}.`
+      : undefined;
+    const user = await authDialog.open(mode, lead);
     if (!user || !ride) return;
     // the wallet decides what happens next (a brand-new account has to visit the booth first)
     await session.loadTickets();

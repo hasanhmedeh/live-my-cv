@@ -1,5 +1,6 @@
 import './styles.css';
 import { authDialog, type AuthMode } from './account/auth-dialog';
+import type { GoogleOutcome } from './account/api';
 import { everyHours, session } from './account/session';
 
 // The 3D fair is code-split and loaded after first paint, while the intro card shows progress.
@@ -71,6 +72,23 @@ for (const b of intro.querySelectorAll<HTMLButtonElement>('[data-auth]'))
     // the button that opened the dialog is gone now: hand the focus to the way in
     if (user) (worldReady ? enterBtn : memberRow.querySelector('button'))?.focus({ preventScroll: true });
   });
+
+// Back from Google (where the popup couldn't open, the whole page went there): carry on in the
+// dialog (a new account picks a username; anything missing from an account is asked for).
+{
+  const params = new URLSearchParams(window.location.search);
+  const google = params.get('google');
+  if (google) {
+    params.delete('google');
+    const message = params.get('message') ?? '';
+    params.delete('message');
+    const rest = params.toString();
+    history.replaceState(history.state, '', `${window.location.pathname}${rest ? `?${rest}` : ''}${window.location.hash}`);
+    const outcome: GoogleOutcome =
+      google === 'login' || google === 'signup' || google === 'cancelled' ? { google } : { google: 'error', message };
+    void authDialog.resume(outcome);
+  }
+}
 
 logoutBtn.addEventListener('click', async () => {
   logoutBtn.disabled = true;

@@ -41,6 +41,16 @@ enum Role {
   @@map("role")
 }
 
+/// What a member said they are, at signup (or when asked after logging in).
+enum Gender {
+  female
+  male
+  other
+  prefer_not_to_say
+
+  @@map("gender")
+}
+
 model User {
   id              String           @id @default(cuid())
   email           String           @unique
@@ -48,7 +58,12 @@ model User {
   username        String
   /// Lowercased username, so "Hasan" and "hasan" can't both exist.
   usernameKey     String           @unique @map("username_key")
-  passwordHash    String           @map("password_hash")
+  /// Null for accounts made with Google, which sign in there.
+  passwordHash    String?          @map("password_hash")
+  /// The Google account's id ("sub"), once the member has continued with Google.
+  googleId        String?          @unique @map("google_id")
+  /// Null for accounts created before signup asked for it: they're asked after logging in.
+  gender          Gender?
   /// Tickets left to spend. Never negative (a CHECK constraint backs that up).
   ticketBalance   Int              @default(0) @map("ticket_balance")
   /// When the last pack was bought. The next one is allowed park_settings.cooldown_hours later.

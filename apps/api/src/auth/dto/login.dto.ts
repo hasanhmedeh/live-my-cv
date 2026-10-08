@@ -1,11 +1,14 @@
 import { Transform } from 'class-transformer';
-import { IsEmail, IsNotEmpty, IsString, MaxLength } from 'class-validator';
-import { normalizeEmail } from './normalize.js';
+import { IsNotEmpty, IsString, MaxLength } from 'class-validator';
+import { trim } from './normalize.js';
 
 export class LoginDto {
-  @Transform(normalizeEmail)
-  @IsEmail({}, { message: 'email must be a valid email address' })
-  email: string;
+  /** The email address or the username (told apart by the @). */
+  @Transform(trim)
+  @IsString()
+  @IsNotEmpty({ message: 'Enter your email or username' })
+  @MaxLength(254)
+  login: string;
 
   @IsString()
   @IsNotEmpty()

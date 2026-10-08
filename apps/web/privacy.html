@@ -44,7 +44,7 @@
       <article aria-labelledby="page-title">
         <p class="kicker">The Funfair · Your data</p>
         <h1 id="page-title">Privacy Policy</h1>
-        <p class="meta">Version 2026-10-08 · Last updated and effective <time datetime="2026-10-08">8 October 2026</time></p>
+        <p class="meta">Version 2026-10-09 · Last updated and effective <time datetime="2026-10-09">9 October 2026</time></p>
 
         <p class="lead">
           This policy explains what personal data The Funfair collects when you play, why we need it, who else handles it, how long we keep
@@ -55,8 +55,8 @@
           <p class="card-title">The short version</p>
           <ul>
             <li>As a guest, we store nothing about you on our servers. A few game settings stay in your own browser.</li>
-            <li>With an account, we keep your email, username, a scrambled (hashed) form of your password, your tickets and the rounds you play with their statistics.</li>
-            <li>We use one cookie, only to keep you logged in. No advertising, no analytics, no tracking, no third-party cookies, and we never sell your data.</li>
+            <li>With an account, we keep your email, username, gender, a scrambled (hashed) form of your password (or, if you continue with Google, your Google account ID instead), your tickets and the rounds you play with their statistics.</li>
+            <li>We use one cookie to keep you logged in, and two short-lived ones only while you continue with Google. No advertising, no analytics, no tracking, no third-party cookies, and we never sell your data.</li>
             <li>You can <strong>delete your account</strong> at any time from the account menu in the game, and ask for <strong>a copy of your data</strong> by emailing <a href="mailto:hassanhmedeh@gmail.com">hassanhmedeh@gmail.com</a>.</li>
           </ul>
         </div>
@@ -102,11 +102,21 @@
             <li><strong>Email address</strong>: to log you in and, if needed, to contact you about your account.</li>
             <li><strong>Username</strong>: 3 to 20 letters, numbers or underscores, shown in the game.</li>
             <li>
-              <strong>Password</strong>: we never store your password itself. We store only a salted hash made with scrypt, a one-way
+              <strong>Gender</strong>: female, male, other, or “prefer not to say”, as you choose at sign-up (accounts made before we asked
+              are asked once, after logging in). It is not shown to other players.
+            </li>
+            <li>
+              <strong>Password</strong> (if you sign up with your email): we never store your password itself. We store only a salted hash made with scrypt, a one-way
               function designed to be slow to crack, which lets us check your password when you log in without being able to read it.
             </li>
+            <li>
+              <strong>Google account ID</strong> (if you continue with Google): when you choose “Continue with Google”, Google tells us your
+              account’s ID, your email address (and that Google has verified it) and your name. We keep the ID, to recognise you next time,
+              and the email address as your account’s email. Your name is only used to suggest a username and is not stored. We never receive
+              your Google password, and we ask for nothing else from your Google account. An account made this way has no password with us.
+            </li>
             <li><strong>Account dates</strong>: when the account was created and last updated.</li>
-            <li><strong>Terms acceptance</strong>: the date and time you accepted the Terms of Service and this Privacy Policy, and which version (for example <code>2026-10-08</code>). At sign-up you also confirm you are 15 or older, or have a parent’s or guardian’s permission.</li>
+            <li><strong>Terms acceptance</strong>: the date and time you accepted the Terms of Service and this Privacy Policy, and which version (for example <code>2026-10-09</code>). At sign-up you also confirm you are 15 or older, or have a parent’s or guardian’s permission.</li>
             <li>An internal <strong>account ID</strong> that links your data together.</li>
           </ul>
 
@@ -183,7 +193,7 @@
 
         <section id="cookies" aria-labelledby="cookies-title">
           <h2 id="cookies-title"><span class="num">3.</span>Cookies</h2>
-          <p>We use exactly <strong>one cookie</strong>, and only once you sign up or log in:</p>
+          <p>We use <strong>one cookie</strong> once you sign up or log in, and two short-lived ones only while you continue with Google:</p>
           <div class="table-wrap">
             <table class="stack">
               <thead>
@@ -196,11 +206,23 @@
                   <td data-label="Type">First-party, strictly necessary. <code>HttpOnly</code> (page scripts cannot read it), <code>SameSite=Lax</code>, and <code>Secure</code> (HTTPS only) in production.</td>
                   <td data-label="Lasts">30 days from when you last signed up or logged in, or until you log out or delete your account.</td>
                 </tr>
+                <tr>
+                  <td data-label="Name"><code>funfair_google_state</code></td>
+                  <td data-label="Purpose">Only when you choose “Continue with Google”: a random one-time code that checks the answer coming back from Google is the one you asked for (protection against forged sign-ins).</td>
+                  <td data-label="Type">First-party, strictly necessary. <code>HttpOnly</code>, <code>SameSite=Lax</code>, <code>Secure</code> in production.</td>
+                  <td data-label="Lasts">10 minutes, and removed as soon as you are back from Google.</td>
+                </tr>
+                <tr>
+                  <td data-label="Name"><code>funfair_google_signup</code></td>
+                  <td data-label="Purpose">Only when you continue with a Google account that has no account here yet: holds its ID, email and name (signed) while you pick a username to finish signing up.</td>
+                  <td data-label="Type">First-party, strictly necessary. <code>HttpOnly</code>, <code>SameSite=Lax</code>, <code>Secure</code> in production.</td>
+                  <td data-label="Lasts">30 minutes, and removed as soon as you finish signing up.</td>
+                </tr>
               </tbody>
             </table>
           </div>
           <p>
-            Because this cookie is strictly necessary to provide the account you asked for, it does not need your consent under the EU
+            Because these cookies are strictly necessary to provide the account and the sign-in you asked for, it does not need your consent under the EU
             ePrivacy rules (article 5(3) of Directive 2002/58/EC), which is why we do not show a cookie banner. We set
             <strong>no other cookies</strong>: no advertising, analytics, social media or other third-party cookies.
           </p>
@@ -247,7 +269,7 @@
               <tbody>
                 <tr>
                   <td data-label="Purpose">Creating your account, logging you in and keeping you logged in</td>
-                  <td data-label="Data used">Email, username, password hash, account ID, session cookie</td>
+                  <td data-label="Data used">Email, username, gender, password hash or Google account ID, account ID, session and sign-in cookies</td>
                   <td data-label="Legal basis">(b) performance of our contract with you (the Terms of Service)</td>
                 </tr>
                 <tr>
@@ -335,6 +357,12 @@
               target ads, and no Google cookies are set. See
               <a href="https://developers.google.com/fonts/faq/privacy" rel="noopener">Google Fonts’ privacy FAQ</a> and
               <a href="https://policies.google.com/privacy" rel="noopener">Google’s Privacy Policy</a>.
+            </li>
+            <li>
+              <strong>Sign in with Google</strong> (Google Ireland Ltd. / Google LLC), only if you choose “Continue with Google”: you sign in
+              on Google’s own pages, under <a href="https://policies.google.com/privacy" rel="noopener">Google’s Privacy Policy</a>, and Google
+              then sends us your Google account ID, email address and name (see section 2.1). Google learns that you used it to sign in to
+              The Funfair.
             </li>
           </ul>
           <p>
@@ -501,7 +529,7 @@
     </main>
 
     <footer>
-      <p>The Funfair · Privacy Policy, version 2026-10-08</p>
+      <p>The Funfair · Privacy Policy, version 2026-10-09</p>
       <p><a href="/">Back to the fair</a> · <a href="/terms.html">Terms of Service</a> · <a href="mailto:hassanhmedeh@gmail.com">Contact</a></p>
     </footer>
   </body>

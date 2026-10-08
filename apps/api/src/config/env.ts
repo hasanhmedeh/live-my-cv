@@ -13,6 +13,15 @@ export interface Env {
   NODE_ENV: 'development' | 'production' | 'test';
   /** Express "trust proxy" value, so req.ip (and rate limiting) sees the visitor behind a proxy. */
   TRUST_PROXY: boolean | number | string;
+  /** "Continue with Google", or null while it isn't set up (the button stays hidden). */
+  GOOGLE: GoogleConfig | null;
+}
+
+export interface GoogleConfig {
+  clientId: string;
+  clientSecret: string;
+  /** Where Google sends people back. Null: worked out from each request (https://<host>/api/auth/google/callback). */
+  redirectUri: string | null;
 }
 
 const NODE_ENVS = ['development', 'production', 'test'] as const;
@@ -63,6 +72,13 @@ export function validateEnv(raw: Record<string, unknown>): Env {
   const nodeEnv = str('NODE_ENV') || 'development';
   if (!(NODE_ENVS as readonly string[]).includes(nodeEnv)) problems.push(`NODE_ENV must be one of ${NODE_ENVS.join(', ')}.`);
 
+  const googleId = str('GOOGLE_CLIENT_ID');
+  const googleSecret = str('GOOGLE_CLIENT_SECRET');
+  const googleRedirect = str('GOOGLE_REDIRECT_URI');
+  if (!!googleId !== !!googleSecret) problems.push('GOOGLE_CLIENT_ID and GOOGLE_CLIENT_SECRET go together: set both, or neither.');
+  if (googleRedirect && !/^https?:\/\/[^/]+\/.*\/auth\/google\/callback$/.test(googleRedirect))
+    problems.push('GOOGLE_REDIRECT_URI must be a full URL ending in /api/auth/google/callback.');
+
   if (problems.length > 0) throw new EnvError(problems);
 
   return {
@@ -73,6 +89,7 @@ export function validateEnv(raw: Record<string, unknown>): Env {
     WEB_ORIGIN: webOrigin,
     NODE_ENV: nodeEnv as Env['NODE_ENV'],
     TRUST_PROXY: parseTrustProxy(str('TRUST_PROXY') || 'loopback'),
+    GOOGLE: googleId && googleSecret ? { clientId: googleId, clientSecret: googleSecret, redirectUri: googleRedirect || null } : null,
   };
 }
 

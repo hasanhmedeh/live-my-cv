@@ -6,6 +6,8 @@ import { AccountService } from './account.service.js';
 import { AuthController } from './auth.controller.js';
 import { AuthThrottlerGuard } from './auth-throttler.guard.js';
 import { AuthService } from './auth.service.js';
+import { GoogleController } from './google.controller.js';
+import { GoogleService } from './google.service.js';
 import { SESSION_TTL_SECONDS } from './session.js';
 import { SessionGuard } from './session.guard.js';
 
@@ -20,10 +22,10 @@ import { SessionGuard } from './session.guard.js';
       }),
     }),
   ],
-  controllers: [AuthController],
+  controllers: [AuthController, GoogleController],
   // AuthThrottlerGuard is a provider (one instance, one set of counters) applied per route with
-  // @UseGuards: signup, login and account deletion, each asking for a password.
-  providers: [AuthService, AccountService, SessionGuard, AuthThrottlerGuard],
+  // @UseGuards: signup (both kinds), login and account deletion.
+  providers: [AuthService, AccountService, GoogleService, SessionGuard, AuthThrottlerGuard],
   exports: [AuthService, SessionGuard],
 })
 export class AuthModule {}

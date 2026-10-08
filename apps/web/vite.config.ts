@@ -72,9 +72,10 @@ function cleanUrls(): Plugin {
 const tunnelHosts = ['.ngrok-free.app', '.ngrok-free.dev', '.ngrok.app', '.ngrok.io'];
 
 // The accounts API (apps/api) runs beside the dev server; proxying it keeps the browser on one
-// origin, so the session cookie just works.
+// origin, so the session cookie just works. `xfwd` passes the browser's host along (X-Forwarded-Host),
+// so "Continue with Google" sends people back here rather than to the API's own port.
 const proxy = {
-  '/api': { target: 'http://localhost:3000', changeOrigin: true },
+  '/api': { target: 'http://localhost:3000', changeOrigin: true, xfwd: true },
 };
 
 export default defineConfig({

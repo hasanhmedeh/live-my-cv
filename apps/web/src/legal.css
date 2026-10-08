@@ -151,6 +151,11 @@ summary:focus-visible {
   font-size: 0.95rem;
 }
 
+/* the links sit side by side, so the prose lists' spacing doesn't apply */
+.bar nav li + li {
+  margin-top: 0;
+}
+
 .bar nav a {
   color: var(--text);
   text-decoration: none;

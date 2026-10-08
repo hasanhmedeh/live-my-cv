@@ -10,16 +10,17 @@ const orderDate = (iso: string) => new Date(iso).toLocaleString(undefined, { day
 
 /**
  * The HUD account chip. Guests get a shortcut to sign up; members see their tickets on the chip
- * and open a small card with their rounds, their latest orders at the shop, the souvenirs they wear, the way to delete the account
- * and a log-out button (it shares the graphics panel's look and behaviour).
+ * and open a big centred card (over a dimmed park) with the souvenirs they wear, their rounds, their latest orders at the shop,
+ * the way to delete the account and a log-out button.
  */
 export class AccountMenu {
   private chip = document.getElementById('account-chip') as HTMLButtonElement;
   private panel = document.getElementById('account-panel')!;
+  private backdrop = document.querySelector<HTMLElement>('.account-backdrop')!;
   private nameEl = this.panel.querySelector<HTMLElement>('.account-name')!;
   private ticketsEl = this.panel.querySelector<HTMLElement>('.account-tickets')!;
-  private ridesEl = this.panel.querySelector<HTMLElement>('.account-rides')!;
-  private listEl = this.panel.querySelector<HTMLElement>('.account-list')!;
+  private ridesEl = this.panel.querySelector<HTMLElement>('#account-rides-head')!;
+  private listEl = this.panel.querySelector<HTMLElement>('.account-ride-list')!;
   private ordersHead = this.panel.querySelector<HTMLElement>('.account-orders-head')!;
   private ordersEl = this.panel.querySelector<HTMLElement>('.account-orders')!;
   private wearHead = this.panel.querySelector<HTMLElement>('.account-wear-head')!;
@@ -32,6 +33,7 @@ export class AccountMenu {
   private deleteLink = this.panel.querySelector<HTMLButtonElement>('[data-account-delete]')!;
   private deleteForm = this.panel.querySelector<HTMLFormElement>('.account-delete')!;
   private deleteInput = this.deleteForm.querySelector<HTMLInputElement>('input')!;
+  private deleteLabel = this.deleteForm.querySelector<HTMLLabelElement>('label')!;
   private deleteError = this.deleteForm.querySelector<HTMLElement>('.account-delete-error')!;
   private deleteBtn = this.deleteForm.querySelector<HTMLButtonElement>('[type="submit"]')!;
   private statsFailed = false;
@@ -47,11 +49,12 @@ export class AccountMenu {
     });
     this.panel.addEventListener('click', (e) => e.stopPropagation());
     document.addEventListener('click', () => this.toggle(false));
+    this.panel.querySelector('[data-account-close]')!.addEventListener('click', () => this.close());
     window.addEventListener('keydown', (e) => {
-      if (e.key !== 'Escape' || this.panel.hidden || this.busy) return;
-      const inside = this.panel.contains(document.activeElement);
-      this.toggle(false);
-      if (inside) this.chip.focus({ preventScroll: true });
+      if (this.panel.hidden) return;
+      if (e.key === 'Tab') this.trapFocus(e);
+      if (e.key !== 'Escape' || this.busy) return;
+      this.close();
     });
     this.logoutBtn.addEventListener('click', async () => {
       this.logoutBtn.disabled = true;
@@ -83,6 +86,7 @@ export class AccountMenu {
     if (this.busy && !open) return;
     if (open === !this.panel.hidden) return;
     this.panel.hidden = !open;
+    this.backdrop.hidden = !open;
     if (session.user) this.chip.setAttribute('aria-expanded', String(open));
     if (!open) {
       this.askDelete(false, false);
@@ -112,6 +116,31 @@ export class AccountMenu {
     });
   }
 
+  /** Closes the card and hands the focus back to the chip if it was inside. */
+  private close() {
+    const inside = this.panel.contains(document.activeElement);
+    this.toggle(false);
+    if (inside && this.panel.hidden) this.chip.focus({ preventScroll: true });
+  }
+
+  /** Tab and Shift+Tab cycle inside the card while it's open (it's modal). */
+  private trapFocus(e: KeyboardEvent) {
+    const focusable = [...this.panel.querySelectorAll<HTMLElement>('button, a[href], input, [tabindex]:not([tabindex="-1"])')].filter(
+      (el) => !el.hasAttribute('disabled') && el.offsetParent !== null,
+    );
+    if (!focusable.length) return;
+    const first = focusable[0];
+    const last = focusable[focusable.length - 1];
+    const active = document.activeElement;
+    if (e.shiftKey && (active === first || active === this.panel || !this.panel.contains(active))) {
+      e.preventDefault();
+      last.focus();
+    } else if (!e.shiftKey && (active === last || !this.panel.contains(active))) {
+      e.preventDefault();
+      first.focus();
+    }
+  }
+
   private render() {
     const user = session.user;
     if (user) {
@@ -120,7 +149,7 @@ export class AccountMenu {
       this.chip.innerHTML = `👤 <span>${escapeHtml(user.username)}${balance === null ? '' : ' · '}</span>${balance === null ? '' : `🎟️ ${balance}`}`;
       this.chip.title = `Signed in as ${user.username}${balance === null ? '' : ` · ${plural(balance, 'ticket', 'tickets')}`}`;
       this.chip.setAttribute('aria-label', `Your account: ${user.username}${balance === null ? '' : `, ${plural(balance, 'ticket', 'tickets')}`}`);
-      this.chip.setAttribute('aria-haspopup', 'true');
+      this.chip.setAttribute('aria-haspopup', 'dialog');
       this.chip.setAttribute('aria-controls', 'account-panel');
       this.chip.setAttribute('aria-expanded', String(!this.panel.hidden));
       this.nameEl.textContent = user.username;
@@ -166,7 +195,11 @@ export class AccountMenu {
         : 'Counting your rounds…';
     const byRide = stats?.byRide;
     const rows = byRide ? ATTRACTION_IDS.filter((id) => byRide[id]?.rounds > 0).sort((a, b) => byRide[b].rounds - byRide[a].rounds) : [];
-    this.listEl.innerHTML = rows.map((id) => `<li><span>${escapeHtml(ZONES[id].title)}</span><b>${byRide![id].rounds}</b></li>`).join('');
+    // each bar is that attraction's share of the favourite's rounds
+    const top = rows.length ? byRide![rows[0]].rounds : 1;
+    this.listEl.innerHTML = rows
+      .map((id) => `<li style="--share:${(byRide![id].rounds / top).toFixed(3)}"><span>${escapeHtml(ZONES[id].title)}</span><b>${byRide![id].rounds}</b></li>`)
+      .join('');
     this.listEl.hidden = !rows.length;
   }
 
@@ -187,8 +220,7 @@ export class AccountMenu {
       rows
         .map((order) => {
           const item = catalog?.find((i) => i.id === order.item);
-          const name = item ? `${item.icon} ${item.name}` : order.item;
-          return `<li><span>${escapeHtml(name)} <small>${escapeHtml(orderDate(order.createdAt))}</small></span><b>${order.ticketsSpent} 🎟️</b></li>`;
+          return `<li><span class="account-order-icon" aria-hidden="true">${escapeHtml(item?.icon ?? '🛍️')}</span><span class="account-order-text">${escapeHtml(item?.name ?? order.item)} <small>${escapeHtml(orderDate(order.createdAt))}</small></span><b>${order.ticketsSpent} 🎟️</b></li>`;
         })
         .join('') + (o && o.total > rows.length ? `<li class="account-orders-more">and ${plural(o.total - rows.length, 'more', 'more')}</li>` : '');
     this.ordersEl.hidden = !rows.length;
@@ -210,10 +242,9 @@ export class AccountMenu {
     this.wearEl.innerHTML = owned
       .map((s) => {
         const item = catalog?.find((i) => i.id === s.item);
-        const name = item ? `${item.icon} ${item.name}` : s.item;
         const busy = this.changing === s.item;
         const label = busy ? (s.equipped ? 'Taking off…' : 'Putting on…') : s.equipped ? 'Take off' : 'Put on';
-        return `<li class="${s.equipped ? 'is-worn' : ''}"><span>${escapeHtml(name)} <small>${s.equipped ? 'wearing' : 'in your bag'}</small></span><button type="button" class="account-wear-btn" data-wear="${escapeHtml(s.item)}" data-on="${s.equipped ? 0 : 1}" aria-label="${escapeHtml(`${label}: ${item?.name ?? s.item}`)}" ${busy ? 'aria-busy="true" disabled' : ''}>${label}</button></li>`;
+        return `<li class="${s.equipped ? 'is-worn' : ''}"><span class="account-wear-icon" aria-hidden="true">${escapeHtml(item?.icon ?? '🎁')}</span><span class="account-wear-name">${escapeHtml(item?.name ?? s.item)}</span><small>${s.equipped ? '✓ Wearing' : 'In your bag'}</small><button type="button" class="account-wear-btn" data-wear="${escapeHtml(s.item)}" data-on="${s.equipped ? 0 : 1}" aria-label="${escapeHtml(`${label}: ${item?.name ?? s.item}`)}" ${busy ? 'aria-busy="true" disabled' : ''}>${label}</button></li>`;
       })
       .join('');
     this.wearEl.hidden = !owned.length;
@@ -241,9 +272,19 @@ export class AccountMenu {
     this.noteEl.hidden = !text;
   }
 
+  /** An account made with Google has no password: it types its username to confirm instead. */
+  private get confirmsByName() {
+    return session.user?.hasPassword === false;
+  }
+
   /** Shows (or hides) the "are you sure? enter your password" step. */
   private askDelete(show: boolean, focus = true) {
     if (this.busy) return;
+    const byName = this.confirmsByName;
+    this.deleteLabel.textContent = byName ? `Type your username (${session.user?.username ?? ''}), to confirm` : 'Your password, to confirm';
+    this.deleteInput.type = byName ? 'text' : 'password';
+    this.deleteInput.autocomplete = byName ? 'off' : 'current-password';
+    this.deleteInput.spellcheck = false;
     this.deleteForm.hidden = !show;
     this.deleteLink.setAttribute('aria-expanded', String(show));
     this.deleteForm.reset();
@@ -256,20 +297,28 @@ export class AccountMenu {
 
   private async deleteAccount() {
     if (this.busy) return;
-    const password = this.deleteInput.value;
-    if (!password) {
-      this.deleteError.textContent = 'Enter your password to confirm.';
+    const value = this.deleteInput.value;
+    const name = session.user?.username ?? '';
+    const byName = this.confirmsByName;
+    const problem = byName
+      ? value.trim().toLowerCase() !== name.toLowerCase()
+        ? 'Type your username exactly to confirm.'
+        : ''
+      : !value
+        ? 'Enter your password to confirm.'
+        : '';
+    if (problem) {
+      this.deleteError.textContent = problem;
       this.deleteInput.setAttribute('aria-invalid', 'true');
       this.deleteInput.focus();
       return;
     }
-    const name = session.user?.username ?? '';
     this.busy = true;
     this.deleteBtn.disabled = true;
     this.deleteBtn.textContent = 'Deleting…';
     this.deleteInput.readOnly = true;
     try {
-      await session.deleteAccount(password);
+      await session.deleteAccount(byName ? { confirm: value.trim() } : { password: value });
       this.busy = false;
       // the session is a guest's now, which closes this card
       this.chip.focus({ preventScroll: true });

@@ -1,8 +1,11 @@
 // The members: search them, and look after one (tickets, cooldown, staff role, deletion, what they bought).
-import { api, ApiError, ATTRACTION_IDS, ringmaster, type AdminUser, type AdminUserDetail, type ShopItem, type User } from '../account/api';
+import { api, ApiError, ATTRACTION_IDS, GENDERS, ringmaster, type AdminUser, type AdminUserDetail, type Gender, type ShopItem, type User } from '../account/api';
 import { formatStat, statLabel } from '../account/stats';
 import { ask } from './dialog';
 import { busy, esc, num, onApiError, pagerHtml, plural, rideLabel, toast, when } from './util';
+
+/** "Female", or "gender not given" for an account made before signup asked. */
+const genderLabel = (g: Gender | null | undefined) => GENDERS.find((x) => x.id === g)?.label ?? 'gender not given';
 
 const LIMIT = 25;
 
@@ -141,7 +144,7 @@ export class MembersView {
     this.el.innerHTML = `<p><a href="#members">← All members</a></p>
       <div class="member-detail">
         <div class="view-head"><div><h2 id="h-members">${esc(u.username)} ${staff ? '<span class="pill pill-staff">🎩 Staff</span>' : ''}</h2>
-          <p class="muted">${esc(u.email)} · joined ${esc(when(u.createdAt))} · ${plural(u.rounds, 'round', 'rounds')} · ${plural(u.purchases, 'pack', 'packs')} · ${plural(shopOrdersTotal, 'shop order', 'shop orders')}</p></div></div>
+          <p class="muted">${esc(u.email)}${u.google ? ' (Google)' : ''} · ${esc(genderLabel(u.gender))} · joined ${esc(when(u.createdAt))} · ${plural(u.rounds, 'round', 'rounds')} · ${plural(u.purchases, 'pack', 'packs')} · ${plural(shopOrdersTotal, 'shop order', 'shop orders')}</p></div></div>
         <div class="member-actions">
           <div class="member-action"><h4>🎟️ Tickets</h4><p class="hint">They have <strong>${num(u.ticketBalance)}</strong>. Set a new balance:</p>
             <div class="inline"><input type="number" min="0" max="100000" step="1" inputmode="numeric" value="${u.ticketBalance}" aria-label="New ticket balance" data-balance />

@@ -285,17 +285,17 @@ setApiErrorHandler((err) => {
 loginForm.addEventListener('submit', async (e) => {
   e.preventDefault();
   const data = new FormData(loginForm);
-  const email = String(data.get('email') ?? '').trim();
+  const login = String(data.get('login') ?? '').trim();
   const password = String(data.get('password') ?? '');
-  if (!email || !password) {
-    loginError.textContent = 'Enter your email and password.';
+  if (!login || !password) {
+    loginError.textContent = 'Enter your email or username, and your password.';
     return;
   }
   const button = loginForm.querySelector<HTMLButtonElement>('[type="submit"]')!;
   button.disabled = true;
   loginError.textContent = '';
   try {
-    const { user } = await api.login({ email, password });
+    const { user } = await api.login({ login, password });
     loginForm.reset();
     setUser(user);
     if (user.role !== 'admin') return deny(user);
@@ -303,7 +303,13 @@ loginForm.addEventListener('submit', async (e) => {
     route();
     $('main').focus();
   } catch (err) {
-    loginError.textContent = err instanceof ApiError && err.status === 401 ? 'That email and password don’t match.' : errorText(err);
+    // an account made with Google has no password: it logs in at the fair, and the office shares that session
+    const google = err instanceof ApiError && /google/i.test(err.message);
+    loginError.textContent = google
+      ? 'This account signs in with Google: continue with Google in the fair, then come back here.'
+      : err instanceof ApiError && err.status === 401
+        ? 'Those details don’t match.'
+        : errorText(err);
   } finally {
     button.disabled = false;
   }

@@ -1,5 +1,5 @@
 import { BadRequestException, ConflictException, Injectable, NotFoundException } from '@nestjs/common';
-import { Prisma, SuggestionStatus, type Attraction, type Role, type Suggestion, type User } from '../generated/prisma/client.js';
+import { Prisma, SuggestionStatus, type Attraction, type Gender, type Role, type Suggestion, type User } from '../generated/prisma/client.js';
 import { ParkService, toAttractionRules, type AttractionRules, type ParkRules } from '../park/park.service.js';
 import { accountNews, announce } from '../live/announce.js';
 import { shopItem, SHOP_ITEMS, type ShopItem, type ShopItemJson } from '../shop/catalog.js';
@@ -51,6 +51,11 @@ export interface AdminUserJson {
   lastPurchaseAt: string | null;
   createdAt: string;
   termsAcceptedAt: string | null;
+  gender: Gender | null;
+  /** Linked to a Google account. */
+  google: boolean;
+  /** False for an account made with Google (no password). */
+  hasPassword: boolean;
   rounds: number;
   purchases: number;
 }
@@ -511,6 +516,9 @@ function toAdminUserJson(user: UserWithCounts): AdminUserJson {
     lastPurchaseAt: user.lastPurchaseAt?.toISOString() ?? null,
     createdAt: user.createdAt.toISOString(),
     termsAcceptedAt: user.termsAcceptedAt?.toISOString() ?? null,
+    gender: user.gender,
+    google: user.googleId !== null,
+    hasPassword: user.passwordHash !== null,
     rounds: user._count.rounds,
     purchases: user._count.purchases,
   };

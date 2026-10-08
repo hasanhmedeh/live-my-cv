@@ -27,6 +27,15 @@ export const COOLDOWN_HOURS = 5;
 /** Staff (`admin`) can open the Ringmaster's Office and can still ride while the park is closed. */
 export type Role = 'player' | 'admin';
 
+/** What a member said they are, at signup. */
+export type Gender = 'female' | 'male' | 'other' | 'prefer_not_to_say';
+export const GENDERS: { id: Gender; label: string }[] = [
+  { id: 'female', label: 'Female' },
+  { id: 'male', label: 'Male' },
+  { id: 'other', label: 'Other' },
+  { id: 'prefer_not_to_say', label: 'Prefer not to say' },
+];
+
 export interface User {
   id: string;
   email: string;
@@ -34,9 +43,25 @@ export interface User {
   createdAt: string;
   /** Missing from an older server: a player. */
   role?: Role;
+  /** Null for an account made before signup asked: the game asks after logging in. */
+  gender?: Gender | null;
+  /** False for an account made with Google (it confirms with its username instead). Missing from an older server: true. */
+  hasPassword?: boolean;
+  /** Linked to a Google account. */
+  google?: boolean;
+  /** Null for an account that never accepted the Terms: the game asks after logging in. */
   termsAcceptedAt?: string | null;
-  termsVersion?: string | null;
 }
+
+/** What the member still has to tell us (asked after logging in): nothing, once it's all there. */
+export function missingInfo(user: User): { gender: boolean; terms: boolean } | null {
+  const gender = user.gender === null;
+  const terms = user.termsAcceptedAt === null;
+  return gender || terms ? { gender, terms } : null;
+}
+
+/** "Continue with Google": the result of a trip there (see apps/api/src/auth/google.controller.ts). */
+export type GoogleOutcome = { google: 'login' | 'signup' | 'cancelled' } | { google: 'error'; message: string };
 
 /** GET /park: whether the gates are open, and the rules every visitor sees (guests too). */
 export interface Park {
@@ -271,6 +296,9 @@ export interface AdminUser {
   lastPurchaseAt: string | null;
   createdAt: string;
   termsAcceptedAt: string | null;
+  gender?: Gender | null;
+  google?: boolean;
+  hasPassword?: boolean;
   rounds: number;
   purchases: number;
 }
@@ -333,6 +361,9 @@ const BASE = (import.meta.env.VITE_API_URL ?? '/api').replace(/\/+$/, '');
 
 /** GET /live: the park's (and the member's own account's) live updates, as Server-Sent Events. */
 export const LIVE_URL = `${BASE}/live`;
+
+/** Where "Continue with Google" starts (a page to go to, not a fetch). `popup` answers with a page that tells the game and closes. */
+export const googleStartUrl = (popup: boolean) => `${BASE}/auth/google${popup ? '?popup=1' : ''}`;
 
 /** A member's own account, as GET /live tells it: their wallet and role, or that it was deleted. */
 export type AccountNews = { balance: number; role: Role; lastPurchaseAt: string | null } | { deleted: true };
@@ -504,12 +535,23 @@ async function request<T>(method: 'GET' | 'POST' | 'PUT' | 'PATCH' | 'DELETE', p
 
 export const api = {
   me: () => request<{ user: User }>('GET', '/auth/me'),
-  signup: (body: { email: string; username: string; password: string; acceptTerms: true }) => request<{ user: User }>('POST', '/auth/signup', body),
-  login: (body: { email: string; password: string }) => request<{ user: User }>('POST', '/auth/login', body),
+  signup: (body: { email: string; username: string; password: string; gender: Gender; acceptTerms: true }) => request<{ user: User }>('POST', '/auth/signup', body),
+  /** `login` is the email address or the username. */
+  login: (body: { login: string; password: string }) => request<{ user: User }>('POST', '/auth/login', body),
   logout: () => request<void>('POST', '/auth/logout'),
-  /** Everything the fair keeps about the member, as one JSON document. */
-  /** Deletes the account and all its purchases and rounds. A wrong password is a 401. */
-  deleteAccount: (password: string) => request<void>('DELETE', '/auth/me', { password }),
+  /** Fills in what the account is missing (asked after logging in). */
+  updateProfile: (body: { gender?: Gender; acceptTerms?: true }) => request<{ user: User }>('PATCH', '/auth/me', body),
+  /**
+   * Deletes the account and all its purchases and rounds: with the password (a wrong one is a 401),
+   * or, for an account made with Google, the username typed out (`confirm`).
+   */
+  deleteAccount: (body: { password: string } | { confirm: string }) => request<void>('DELETE', '/auth/me', body),
+
+  /** Whether "Continue with Google" is set up on the server. */
+  googleEnabled: () => request<{ enabled: boolean }>('GET', '/auth/google/enabled'),
+  /** The Google account waiting to finish signing up, and a free username to offer it. A 401 once it has expired. */
+  googlePending: () => request<{ email: string; name: string | null; username: string }>('GET', '/auth/google/pending'),
+  googleSignup: (body: { username: string; gender: Gender; acceptTerms: true }) => request<{ user: User }>('POST', '/auth/google/signup', body),
 
   tickets: () => request<Tickets>('GET', '/tickets'),
   purchase: () =>

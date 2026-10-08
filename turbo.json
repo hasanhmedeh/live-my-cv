@@ -26,7 +26,7 @@
       "dependsOn": ["db:generate", "db:deploy"],
       "cache": false,
       "persistent": true,
-      "passThroughEnv": ["BROWSER", "DATABASE_URL", "JWT_SECRET", "PORT", "WEB_ORIGIN", "NODE_ENV", "TRUST_PROXY"]
+      "passThroughEnv": ["BROWSER", "DATABASE_URL", "JWT_SECRET", "PORT", "WEB_ORIGIN", "NODE_ENV", "TRUST_PROXY", "GOOGLE_CLIENT_ID", "GOOGLE_CLIENT_SECRET", "GOOGLE_REDIRECT_URI"]
     }
   }
 }

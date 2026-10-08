@@ -1,6 +1,13 @@
 import { Transform } from 'class-transformer';
-import { Equals, IsEmail, IsString, Length, Matches, MaxLength } from 'class-validator';
+import { Equals, IsEmail, IsEnum, IsString, Length, Matches, MaxLength } from 'class-validator';
+import { Gender } from '../../generated/prisma/client.js';
 import { normalizeEmail, trim } from './normalize.js';
+
+/** The username rules, shared with finishing a Google signup. */
+export const USERNAME_RULE = /^[a-zA-Z0-9_]+$/;
+export const USERNAME_MESSAGE = 'username may only contain letters, numbers and underscores';
+export const GENDER_MESSAGE = 'Pick one of the options for gender';
+export const TERMS_MESSAGE = 'You must accept the Terms of Service and Privacy Policy';
 
 export class SignupDto {
   @Transform(normalizeEmail)
@@ -11,14 +18,17 @@ export class SignupDto {
   @Transform(trim)
   @IsString()
   @Length(3, 20)
-  @Matches(/^[a-zA-Z0-9_]+$/, { message: 'username may only contain letters, numbers and underscores' })
+  @Matches(USERNAME_RULE, { message: USERNAME_MESSAGE })
   username: string;
 
   @IsString()
   @Length(8, 72)
   password: string;
 
+  @IsEnum(Gender, { message: GENDER_MESSAGE })
+  gender: Gender;
+
   /** The signup form's checkbox for the Terms of Service and Privacy Policy (and the age rule in them). Must be literally true. */
-  @Equals(true, { message: 'You must accept the Terms of Service and Privacy Policy' })
+  @Equals(true, { message: TERMS_MESSAGE })
   acceptTerms: true;
 }
