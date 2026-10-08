@@ -1,0 +1,94 @@
+// Accounts, tickets and ride rounds for The Funfair.
+// After editing: `pnpm db:migrate --name <change>` to write a migration, then `pnpm db:generate`.
+// Ticket prices, the pack size and the purchase cooldown live in src/rides/attractions.ts.
+
+generator client {
+  provider            = "prisma-client"
+  output              = "../src/generated/prisma"
+  moduleFormat        = "esm"
+  importFileExtension = "js"
+}
+
+// The connection URL lives in prisma.config.ts (read from DATABASE_URL).
+datasource db {
+  provider = "postgresql"
+}
+
+/// Everything that takes a ticket: the rides and the games. Mirrors the zone ids in apps/web/src/world/layout.ts.
+enum Attraction {
+  coaster
+  falcon
+  rocket
+  ferris
+  flip
+  ship
+  speedway
+  drone
+  crates
+  striker
+
+  @@map("attraction")
+}
+
+model User {
+  id              String           @id @default(cuid())
+  email           String           @unique
+  /// Display spelling, as typed at signup.
+  username        String
+  /// Lowercased username, so "Hasan" and "hasan" can't both exist.
+  usernameKey     String           @unique @map("username_key")
+  passwordHash    String           @map("password_hash")
+  /// Tickets left to spend. Never negative (a CHECK constraint backs that up).
+  ticketBalance   Int              @default(0) @map("ticket_balance")
+  /// When the last pack was bought. The next one is allowed COOLDOWN_HOURS later.
+  lastPurchaseAt  DateTime?        @map("last_purchase_at")
+  /// When the user accepted the Terms of Service and Privacy Policy, and which version.
+  /// Null for accounts created before signup asked for it.
+  termsAcceptedAt DateTime?        @map("terms_accepted_at")
+  termsVersion    String?          @map("terms_version")
+  createdAt       DateTime         @default(now()) @map("created_at")
+  updatedAt       DateTime         @updatedAt @map("updated_at")
+  purchases       TicketPurchase[]
+  rounds          RideRound[]
+
+  @@map("users")
+}
+
+/// One pack of tickets bought. Free for now (price 0, provider "free"), but recorded like a sale
+/// so real payments can slot in later.
+model TicketPurchase {
+  id           String   @id @default(cuid())
+  userId       String   @map("user_id")
+  user         User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  quantity     Int
+  priceCents   Int      @map("price_cents")
+  currency     String
+  provider     String
+  /// The user's ticket balance right after this purchase.
+  balanceAfter Int      @map("balance_after")
+  createdAt    DateTime @default(now()) @map("created_at")
+
+  @@index([userId, createdAt])
+  @@map("ticket_purchases")
+}
+
+/// One paid go on one attraction: tickets are spent when it starts. It is open until the game
+/// reports the result (endedAt, completed, stats), or until the user boards something else,
+/// which closes it as abandoned (completed false, no stats).
+model RideRound {
+  id           String     @id @default(cuid())
+  userId       String     @map("user_id")
+  user         User       @relation(fields: [userId], references: [id], onDelete: Cascade)
+  ride         Attraction
+  ticketsSpent Int        @map("tickets_spent")
+  startedAt    DateTime   @default(now()) @map("started_at")
+  endedAt      DateTime?  @map("ended_at")
+  completed    Boolean    @default(false)
+  /// What the game measured, e.g. { "topSpeedKmh": 92.4, "maxG": 3.1 }: a flat object of numbers,
+  /// client-reported, so informational only.
+  stats        Json?
+
+  @@index([userId, ride])
+  @@index([userId, endedAt])
+  @@map("ride_rounds")
+}

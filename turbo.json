@@ -1,0 +1,32 @@
+{
+  "$schema": "https://turborepo.com/schema.json",
+  "globalPassThroughEnv": ["CHECKPOINT_DISABLE", "PRISMA_HIDE_UPDATE_MESSAGE"],
+  "tasks": {
+    "env:init": {
+      "cache": false,
+      "passThroughEnv": ["DATABASE_URL"]
+    },
+    "db:generate": {
+      "cache": false
+    },
+    "db:deploy": {
+      "dependsOn": ["env:init"],
+      "cache": false,
+      "passThroughEnv": ["DATABASE_URL"]
+    },
+    "build": {
+      "dependsOn": ["^build", "db:generate"],
+      "outputs": ["dist/**"],
+      "env": ["SITE_URL", "VERCEL_PROJECT_PRODUCTION_URL", "VITE_*"]
+    },
+    "typecheck": {
+      "dependsOn": ["db:generate"]
+    },
+    "dev": {
+      "dependsOn": ["db:generate", "db:deploy"],
+      "cache": false,
+      "persistent": true,
+      "passThroughEnv": ["BROWSER", "DATABASE_URL", "JWT_SECRET", "PORT", "WEB_ORIGIN", "NODE_ENV", "TRUST_PROXY"]
+    }
+  }
+}
