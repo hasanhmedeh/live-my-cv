@@ -9,7 +9,8 @@ import type { Env } from './config/env.js';
 /** Builds the configured app; main.ts listens on a port, serverless.ts hands requests to it. */
 export async function createApp() {
   // The adapter is passed explicitly (rather than loaded by name) so bundlers trace it.
-  const app = await NestFactory.create<NestExpressApplication>(AppModule, new ExpressAdapter());
+  // abortOnError: false makes a failed start throw (handled by the callers) instead of exiting.
+  const app = await NestFactory.create<NestExpressApplication>(AppModule, new ExpressAdapter(), { abortOnError: false });
   const config = app.get<ConfigService<Env, true>>(ConfigService);
 
   // Behind a proxy (the Vite dev server, Vercel, a load balancer), take the visitor's IP from

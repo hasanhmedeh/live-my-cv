@@ -13,10 +13,22 @@ export interface Env {
 const NODE_ENVS = ['development', 'production', 'test'] as const;
 const PLACEHOLDER_SECRET = 'replace-me-with-a-long-random-string';
 
-/**
- * Checks the raw environment and returns typed settings. On any problem it prints every issue
- * at once with a hint, then exits: a stack trace is no help for a missing .env file.
- */
+/** Every configuration problem at once, so they can all be fixed in one go. */
+export class EnvError extends Error {
+  constructor(readonly problems: string[]) {
+    super(
+      [
+        "The Funfair API can't start, its configuration needs attention:",
+        ...problems.map((p) => `  - ${p}`),
+        '',
+        'Copy apps/api/.env.example to apps/api/.env and fill in the values (or set them in the environment).',
+      ].join('\n'),
+    );
+    this.name = 'EnvError';
+  }
+}
+
+/** Checks the raw environment and returns typed settings, or throws an EnvError listing every problem. */
 export function validateEnv(raw: Record<string, unknown>): Env {
   const problems: string[] = [];
   const str = (key: string) => (typeof raw[key] === 'string' ? (raw[key] as string).trim() : '');
@@ -35,7 +47,7 @@ export function validateEnv(raw: Record<string, unknown>): Env {
   const port = Number(str('PORT') || 3000);
   if (!Number.isInteger(port) || port < 1 || port > 65535) problems.push('PORT must be a whole number between 1 and 65535.');
 
-  const webOrigin = (str('WEB_ORIGIN') || 'http://localhost:5173').split(',').map((o) => o.trim()).filter(Boolean);
+  const webOrigin = (str('WEB_ORIGIN') || 'http://localhost:5173').split(',').map((o) => o.trim().replace(/\/+$/, '')).filter(Boolean);
   for (const origin of webOrigin) {
     if (!isOrigin(origin)) problems.push(`WEB_ORIGIN "${origin}" is not an origin like https://example.com (no path).`);
   }
@@ -43,19 +55,7 @@ export function validateEnv(raw: Record<string, unknown>): Env {
   const nodeEnv = str('NODE_ENV') || 'development';
   if (!(NODE_ENVS as readonly string[]).includes(nodeEnv)) problems.push(`NODE_ENV must be one of ${NODE_ENVS.join(', ')}.`);
 
-  if (problems.length > 0) {
-    console.error(
-      [
-        '',
-        "The Funfair API can't start, its configuration needs attention:",
-        ...problems.map((p) => `  - ${p}`),
-        '',
-        'Copy apps/api/.env.example to apps/api/.env and fill in the values (or set them in the environment).',
-        '',
-      ].join('\n'),
-    );
-    process.exit(1);
-  }
+  if (problems.length > 0) throw new EnvError(problems);
 
   return {
     DATABASE_URL: databaseUrl,
