@@ -40,7 +40,8 @@ export interface Overview {
   days: AnalyticsDays;
   /** The first day of the range (UTC), YYYY-MM-DD. */
   since: string;
-  users: { total: number; admins: number; newToday: number; newInRange: number; activeToday: number; activeInRange: number };
+  /** `google`: signed up with Google (no password); `googleLinked`: signed up with email, then continued with Google. */
+  users: { total: number; admins: number; google: number; googleLinked: number; newToday: number; newInRange: number; activeToday: number; activeInRange: number };
   tickets: {
     purchases: number;
     purchasesToday: number;
@@ -111,6 +112,8 @@ export class AnalyticsService {
     const [
       users,
       admins,
+      googleSignups,
+      googleLinked,
       newToday,
       newInRange,
       active,
@@ -129,6 +132,8 @@ export class AnalyticsService {
     ] = await Promise.all([
       db.user.count(),
       db.user.count({ where: { role: 'admin' } }),
+      db.user.count({ where: { passwordHash: null } }),
+      db.user.count({ where: { passwordHash: { not: null }, googleId: { not: null } } }),
       db.user.count({ where: { createdAt: { gte: today } } }),
       db.user.count({ where: { createdAt: { gte: start } } }),
       db.$queryRaw<[{ today: number; inRange: number }]>`
@@ -250,7 +255,7 @@ export class AnalyticsService {
       generatedAt: now.toISOString(),
       days,
       since: start.toISOString().slice(0, 10),
-      users: { total: users, admins, newToday, newInRange, activeToday: activeRow.today, activeInRange: activeRow.inRange },
+      users: { total: users, admins, google: googleSignups, googleLinked, newToday, newInRange, activeToday: activeRow.today, activeInRange: activeRow.inRange },
       tickets: {
         purchases: totals.purchases,
         purchasesToday: totals.today,

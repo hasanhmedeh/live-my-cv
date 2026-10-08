@@ -75,6 +75,11 @@ export class OverviewView {
       `<div class="tile"><p class="tile-label">${label}</p><p class="tile-value">${value}</p><p class="tile-note">${note}</p></div>`;
     const tiles = [
       tile('Members', num(d.users.total), `+${num(d.users.newInRange)} in ${d.days} days · +${num(d.users.newToday)} today`),
+      tile(
+        'Signed up with Google',
+        num(d.users.google ?? 0),
+        `${num(d.users.total - (d.users.google ?? 0))} with email${d.users.googleLinked ? ` (${num(d.users.googleLinked)} linked Google since)` : ''} · ${pct(d.users.google ?? 0, d.users.total)} Google`,
+      ),
       tile('Active players', num(d.users.activeInRange), `${num(d.users.activeToday)} today`),
       tile('Rounds played', num(d.rounds.inRange), `${num(d.rounds.today)} today · ${num(d.rounds.total)} all time`),
       tile('Completion rate', pct(d.rounds.completed, finished), `${num(d.rounds.abandoned)} left early, all time`),

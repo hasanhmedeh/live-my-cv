@@ -253,7 +253,8 @@ export interface Overview {
   days: OverviewDays;
   /** First day of the range, YYYY-MM-DD. */
   since: string;
-  users: { total: number; admins: number; newToday: number; newInRange: number; activeToday: number; activeInRange: number };
+  /** `google`: signed up with Google (no password); `googleLinked`: signed up with email, then continued with Google. Missing from an older server. */
+  users: { total: number; admins: number; google?: number; googleLinked?: number; newToday: number; newInRange: number; activeToday: number; activeInRange: number };
   tickets: {
     purchases: number;
     purchasesToday: number;

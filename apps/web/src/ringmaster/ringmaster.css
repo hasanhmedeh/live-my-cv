@@ -647,6 +647,15 @@ tr.clickable:hover td {
   background: var(--grid);
   color: var(--muted);
 }
+.pill-google {
+  background: color-mix(in srgb, #4285f4 16%, transparent);
+  color: var(--heading);
+}
+.pill-google svg,
+.pill-muted svg {
+  vertical-align: -1px;
+  margin-right: 2px;
+}
 
 /* ---------- Attractions ---------- */
 .attractions {

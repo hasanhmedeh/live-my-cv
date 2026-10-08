@@ -4,6 +4,16 @@ import { formatStat, statLabel } from '../account/stats';
 import { ask } from './dialog';
 import { busy, esc, num, onApiError, pagerHtml, plural, rideLabel, toast, when } from './util';
 
+/** How they sign in: a Google pill for Google signups, a quieter one for email accounts that linked Google later. */
+const GOOGLE_G =
+  '<svg viewBox="0 0 48 48" width="11" height="11" aria-hidden="true" focusable="false"><path fill="#EA4335" d="M24 9.5c3.54 0 6.71 1.22 9.21 3.6l6.85-6.85C35.9 2.38 30.47 0 24 0 14.62 0 6.51 5.38 2.56 13.22l7.98 6.19C12.43 13.72 17.74 9.5 24 9.5z"/><path fill="#4285F4" d="M46.98 24.55c0-1.57-.15-3.09-.38-4.55H24v9.02h12.94c-.58 2.96-2.26 5.48-4.78 7.18l7.73 6c4.51-4.18 7.09-10.36 7.09-17.65z"/><path fill="#FBBC05" d="M10.53 28.59c-.48-1.45-.76-2.99-.76-4.59s.27-3.14.76-4.59l-7.98-6.19C.92 16.46 0 20.12 0 24c0 3.88.92 7.54 2.56 10.78l7.97-6.19z"/><path fill="#34A853" d="M24 48c6.48 0 11.93-2.13 15.89-5.81l-7.73-6c-2.15 1.45-4.92 2.3-8.16 2.3-6.26 0-11.57-4.22-13.47-9.91l-7.98 6.19C6.51 42.62 14.62 48 24 48z"/></svg>';
+const googlePill = (u: { google?: boolean; hasPassword?: boolean }) =>
+  u.hasPassword === false
+    ? ` <span class="pill pill-google" title="Signed up with Google">${GOOGLE_G} Google</span>`
+    : u.google
+      ? ` <span class="pill pill-muted" title="Signed up with email, then continued with Google">${GOOGLE_G} Google linked</span>`
+      : '';
+
 /** "Female", or "gender not given" for an account made before signup asked. */
 const genderLabel = (g: Gender | null | undefined) => GENDERS.find((x) => x.id === g)?.label ?? 'gender not given';
 
@@ -143,8 +153,8 @@ export class MembersView {
 
     this.el.innerHTML = `<p><a href="#members">← All members</a></p>
       <div class="member-detail">
-        <div class="view-head"><div><h2 id="h-members">${esc(u.username)} ${staff ? '<span class="pill pill-staff">🎩 Staff</span>' : ''}</h2>
-          <p class="muted">${esc(u.email)}${u.google ? ' (Google)' : ''} · ${esc(genderLabel(u.gender))} · joined ${esc(when(u.createdAt))} · ${plural(u.rounds, 'round', 'rounds')} · ${plural(u.purchases, 'pack', 'packs')} · ${plural(shopOrdersTotal, 'shop order', 'shop orders')}</p></div></div>
+        <div class="view-head"><div><h2 id="h-members">${esc(u.username)} ${staff ? '<span class="pill pill-staff">🎩 Staff</span>' : ''}${googlePill(u)}</h2>
+          <p class="muted">${esc(u.email)} · ${esc(genderLabel(u.gender))} · joined ${esc(when(u.createdAt))} · ${plural(u.rounds, 'round', 'rounds')} · ${plural(u.purchases, 'pack', 'packs')} · ${plural(shopOrdersTotal, 'shop order', 'shop orders')}</p></div></div>
         <div class="member-actions">
           <div class="member-action"><h4>🎟️ Tickets</h4><p class="hint">They have <strong>${num(u.ticketBalance)}</strong>. Set a new balance:</p>
             <div class="inline"><input type="number" min="0" max="100000" step="1" inputmode="numeric" value="${u.ticketBalance}" aria-label="New ticket balance" data-balance />
@@ -227,7 +237,7 @@ function tableHtml(users: AdminUser[]) {
       (u) =>
         `<tr class="clickable" data-member="${esc(u.id)}" tabindex="0"><td><a href="#members/${encodeURIComponent(u.id)}" class="cell-main">${esc(u.username)}</a>${
           u.role === 'admin' ? ' <span class="pill pill-staff">🎩 Staff</span>' : ''
-        }<span class="cell-sub">${esc(u.email)}</span></td><td class="r">${num(u.ticketBalance)}</td><td class="r">${num(u.rounds)}</td><td class="r">${num(u.purchases)}</td><td>${esc(when(u.createdAt))}</td></tr>`,
+        }${googlePill(u)}<span class="cell-sub">${esc(u.email)}</span></td><td class="r">${num(u.ticketBalance)}</td><td class="r">${num(u.rounds)}</td><td class="r">${num(u.purchases)}</td><td>${esc(when(u.createdAt))}</td></tr>`,
     )
     .join('');
   return `<div class="table-wrap"><table><thead><tr><th>Member</th><th class="r">Tickets</th><th class="r">Rounds</th><th class="r">Packs</th><th>Joined</th></tr></thead><tbody>${rows}</tbody></table></div>`;
