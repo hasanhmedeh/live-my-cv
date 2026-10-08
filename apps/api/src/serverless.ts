@@ -21,6 +21,16 @@ function app() {
   return ready;
 }
 
+/** The error's name and first line, with connection strings and long tokens blanked out. */
+function startupError(err: unknown) {
+  const text = err instanceof Error ? `${err.name}: ${err.message}` : String(err);
+  return text
+    .split('\n')[0]
+    .replace(/[a-z][a-z0-9+.-]*:\/\/\S+/gi, '[url]')
+    .replace(/[A-Za-z0-9_\-+/=]{32,}/g, '[redacted]')
+    .slice(0, 300);
+}
+
 export default async function handler(req: IncomingMessage, res: ServerResponse) {
   let express: Express;
   try {
@@ -29,7 +39,7 @@ export default async function handler(req: IncomingMessage, res: ServerResponse)
     console.error(err);
     // Name the settings that need fixing (never their values), so a misconfigured deployment
     // explains itself instead of failing with the host's generic error page.
-    const problems = err instanceof EnvError ? err.problems : ['The API failed to start, see the function logs.'];
+    const problems = err instanceof EnvError ? err.problems : [`The API failed to start: ${startupError(err)}`];
     res.writeHead(503, { 'content-type': 'application/json', 'cache-control': 'no-store' });
     res.end(JSON.stringify({ statusCode: 503, message: 'The API is not configured correctly', error: 'Service Unavailable', problems }));
     return;
