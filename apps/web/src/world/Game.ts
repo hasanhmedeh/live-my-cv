@@ -523,7 +523,7 @@ export class Game {
     const cost = (id: AttractionId) => `<span class="cost">${session.cost(id)} 🎟️</span>`;
     this.ui.panel(
       'welcome',
-      `<p class="eyebrow">${user ? `Welcome back, ${escapeHtml(user.username)}` : 'Welcome to the fair'}</p><h2>Step right up! 🎪</h2><p>Walk around the park and try everything. Every ride and game takes tickets: <strong>1 ticket a round</strong>, or <strong>5</strong> for the Giant Wheel and the Sky Falcon. Each payment buys one round, then you're back on your feet.</p><p class="booth-account">🎟️ Tickets are free: pick up <strong>a pack of 20 at the Ticket Booth every 5 hours</strong>${
+      `<p class="eyebrow">${user ? `Welcome back, ${escapeHtml(user.username)}` : 'Welcome to the fair'}</p><h2>Step right up! 🎪</h2><p>Walk around the park and try everything. Every ride and game takes tickets (prices below). Each payment buys one round, then you're back on your feet.</p><p class="booth-account">🎟️ Tickets are free: pick up <strong>a pack of 20 at the Ticket Booth every 5 hours</strong>${
         user ? '' : ' with a free account'
       }. Leftover tickets carry over.</p><h3>🎢 Rides</h3><ul>
         <li>🎢 <strong>Thunder Loop</strong> — drive the coaster yourself: launch, loop and roll ${cost('coaster')}</li>

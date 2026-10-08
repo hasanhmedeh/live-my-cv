@@ -50,13 +50,19 @@
             <strong>Sky Falcon</strong>, launch the <strong>rocket</strong> into orbit, smash the <strong>crates</strong>, race the <strong>karts</strong>, or rent
             a <strong>drone</strong> and see it all from the sky.
           </p>
+          <div class="intro-closed" id="intro-closed" hidden>
+            <p class="intro-closed-sign" aria-hidden="true">🚧 Closed 🚧</p>
+            <p class="intro-closed-title">The park is closed right now</p>
+            <p class="intro-closed-message" id="intro-closed-message"></p>
+            <p class="intro-closed-staff" id="intro-closed-staff" hidden>🎩 Park is closed — staff only. You can still go in to test the rides.</p>
+          </div>
           <div class="intro-actions">
             <button id="enter" class="btn btn-primary" type="button" disabled>
               <span class="btn-label">Building the fair…</span>
             </button>
           </div>
           <div class="intro-account" id="intro-guest" hidden>
-            <p>Walk in as a guest, or sign up for free tickets: 20 every 5 hours, for every ride and game.</p>
+            <p id="intro-guest-text">Walk in as a guest, or sign up for free tickets: 20 every 5 hours, for every ride and game.</p>
             <div class="intro-account-actions">
               <button type="button" class="btn btn-cream btn-small" data-auth="signup">Sign up</button>
               <button type="button" class="btn btn-outline btn-small" data-auth="login">Log in</button>
@@ -98,6 +104,7 @@
         <p class="account-tickets"></p>
         <p class="account-rides" aria-live="polite"></p>
         <ul class="account-list" aria-label="Completed rounds per attraction" hidden></ul>
+        <a class="account-staff" href="/ringmaster.html" target="_blank" rel="noopener" hidden>🎩 Ringmaster's Office <span aria-hidden="true">↗</span><span class="visually-hidden"> (opens in a new tab)</span></a>
         <div class="time-actions">
           <button type="button" class="time-btn" data-account-export>⬇️ My data</button>
           <button type="button" class="time-btn" data-account-logout>Log out</button>
@@ -128,6 +135,11 @@
           <button type="button" id="time-play" class="time-btn" aria-pressed="true">⏸ Pause</button>
           <button type="button" id="time-local" class="time-btn" aria-pressed="false">🕒 My local time</button>
         </div>
+      </div>
+
+      <div id="park-banner" class="park-banner" role="status" hidden>
+        <p><strong>🚧 The park is closed.</strong> <span class="park-banner-text"></span></p>
+        <button type="button" class="park-banner-close" aria-label="Dismiss the notice" title="Dismiss">✕</button>
       </div>
 
       <div id="prompt" class="prompt" role="status" aria-live="polite" hidden></div>

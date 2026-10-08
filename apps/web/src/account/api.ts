@@ -20,17 +20,33 @@ export const DEFAULT_COSTS: Record<AttractionId, number> = {
   crates: 1,
   striker: 1,
 };
-/** One free pack per purchase, and one purchase per cool-down. */
+/** One free pack per purchase, and one purchase per cool-down (until GET /park sends the live rules). */
 export const PACK_SIZE = 20;
 export const COOLDOWN_HOURS = 5;
+
+/** Staff (`admin`) can open the Ringmaster's Office and can still ride while the park is closed. */
+export type Role = 'player' | 'admin';
 
 export interface User {
   id: string;
   email: string;
   username: string;
   createdAt: string;
+  /** Missing from an older server: a player. */
+  role?: Role;
   termsAcceptedAt?: string | null;
   termsVersion?: string | null;
+}
+
+/** GET /park: whether the gates are open, and the rules every visitor sees (guests too). */
+export interface Park {
+  open: boolean;
+  /** Only when closed: what the sign on the gate says (null for the default wording). */
+  message: string | null;
+  /** Tickets per round; an attraction without a price yet is left out. */
+  costs: Partial<Record<AttractionId, number>>;
+  packSize: number;
+  cooldownHours: number;
 }
 
 /** The member's ticket wallet. `nextPurchaseAt` is null when a pack can be bought right now. */
@@ -88,6 +104,79 @@ export interface RideStats {
   byRide: Record<AttractionId, AttractionStats>;
 }
 
+// ---------- The Ringmaster's Office (staff only) ----------
+
+/** The park's settings row, as staff see and edit it. */
+export interface ParkSettings {
+  open: boolean;
+  closedMessage: string | null;
+  packSize: number;
+  cooldownHours: number;
+  updatedAt: string | null;
+}
+
+export interface Overview {
+  users: { total: number; admins: number; newToday: number; new7d: number };
+  tickets: { purchases: number; purchasesToday: number; ticketsSold: number; ticketsSpent: number; inCirculation: number };
+  rounds: { total: number; today: number; completed: number; open: number };
+  byRide: Partial<Record<AttractionId, { rounds: number; completed: number; ticketsSpent: number; price: number | null }>>;
+  park: ParkSettings;
+  /** The last 14 days (UTC), oldest first, today included and zero-filled. */
+  daily: { date: string; signups: number; purchases: number; rounds: number }[];
+}
+
+export interface AttractionPrice {
+  attraction: AttractionId;
+  /** Null when the attraction has no price yet (it can't be boarded then). */
+  tickets: number | null;
+  updatedAt: string | null;
+}
+
+/** A member as the Ringmaster's Office lists them. */
+export interface AdminUser {
+  id: string;
+  email: string;
+  username: string;
+  role: Role;
+  ticketBalance: number;
+  lastPurchaseAt: string | null;
+  createdAt: string;
+  termsAcceptedAt: string | null;
+  rounds: number;
+  purchases: number;
+}
+
+export interface AdminUserDetail {
+  user: AdminUser;
+  purchases: Purchase[];
+  rounds: Round[];
+  byRide: Partial<Record<AttractionId, { rounds: number; ticketsSpent: number }>>;
+}
+
+export interface AdminPurchase extends Purchase {
+  provider?: string;
+  user: { id: string; username: string; email: string } | null;
+}
+
+export interface AdminRound extends Round {
+  user: { id: string; username: string } | null;
+}
+
+export interface AdminAction {
+  id: string;
+  actorName: string;
+  action: string;
+  target: string | null;
+  details: unknown;
+  createdAt: string;
+}
+
+/** One page of a list: `limit` rows from `offset`. */
+export interface Page {
+  limit: number;
+  offset: number;
+}
+
 const BASE = (import.meta.env.VITE_API_URL ?? '/api').replace(/\/+$/, '');
 /** Long enough for a cold server, short enough that a button never stays "busy" for good. */
 const TIMEOUT_MS = 12_000;
@@ -141,6 +230,27 @@ export class PurchaseCooldownError extends ApiError {
   }
 }
 
+/** 503 with code 'park_closed': the park is closed, so no boarding and no packs (staff excepted). */
+export class ParkClosedError extends ApiError {
+  constructor(message: string, data: unknown) {
+    super(503, message, data);
+    this.name = 'ParkClosedError';
+  }
+
+  /** The server answered on purpose: it isn't down. */
+  override get unavailable() {
+    return false;
+  }
+}
+
+const isParkClosed = (status: number, data: unknown) => status === 503 && (data as { code?: unknown } | null)?.code === 'park_closed';
+
+/** The server's own words, as they are (the closed sign is written by staff). */
+const rawMessage = (data: unknown) => {
+  const m = (data as { message?: unknown } | null)?.message;
+  return typeof m === 'string' && m.trim() ? m.trim() : null;
+};
+
 /** Nest's error body carries `message` as a string or, for validation, a list of strings. */
 function messageOf(body: unknown, status: number) {
   const raw = (body as { message?: unknown } | null)?.message;
@@ -151,7 +261,7 @@ function messageOf(body: unknown, status: number) {
   return list.map((m) => m.charAt(0).toUpperCase() + m.slice(1)).join('. ');
 }
 
-async function request<T>(method: 'GET' | 'POST' | 'DELETE', path: string, body?: unknown): Promise<T> {
+async function request<T>(method: 'GET' | 'POST' | 'PUT' | 'PATCH' | 'DELETE', path: string, body?: unknown): Promise<T> {
   let res: Response;
   try {
     res = await fetch(BASE + path, {
@@ -167,6 +277,7 @@ async function request<T>(method: 'GET' | 'POST' | 'DELETE', path: string, body?
   if (res.status === 204) return undefined as T;
   const data: unknown = await res.json().catch(() => null);
   if (!res.ok) {
+    if (isParkClosed(res.status, data)) throw new ParkClosedError(rawMessage(data) ?? 'The park is closed right now.', data);
     const message = messageOf(data, res.status);
     throw res.status === 402 ? new NotEnoughTicketsError(message, data) : new ApiError(res.status, message, data);
   }
@@ -197,4 +308,34 @@ export const api = {
   finish: (id: string, body: { completed: boolean; stats: RoundStats }) => request<FinishedRound>('POST', `/rides/rounds/${encodeURIComponent(id)}/finish`, body),
   stats: () => request<RideStats>('GET', '/rides/stats'),
   history: (limit = 20) => request<{ rounds: Round[] }>('GET', `/rides/history?limit=${limit}`),
+
+  /** Open or closed, the prices and the pack rules. No account needed. */
+  park: () => request<Park>('GET', '/park'),
+};
+
+/** `?a=1&b=x` from the values that are set. */
+const query = (params: Record<string, string | number | undefined | null>) => {
+  const q = new URLSearchParams();
+  for (const [k, v] of Object.entries(params)) if (v !== undefined && v !== null && v !== '') q.set(k, String(v));
+  const s = q.toString();
+  return s ? `?${s}` : '';
+};
+
+/** The Ringmaster's Office: staff only (a guest gets a 401, a player a 403). The server logs every change. */
+export const ringmaster = {
+  overview: () => request<Overview>('GET', '/ringmaster/overview'),
+  park: () => request<ParkSettings>('GET', '/ringmaster/park'),
+  updatePark: (body: Partial<Pick<ParkSettings, 'open' | 'closedMessage' | 'packSize' | 'cooldownHours'>>) => request<ParkSettings>('PATCH', '/ringmaster/park', body),
+  prices: () => request<{ prices: AttractionPrice[] }>('GET', '/ringmaster/prices'),
+  setPrice: (attraction: AttractionId, tickets: number) => request<AttractionPrice>('PUT', `/ringmaster/prices/${attraction}`, { tickets }),
+  users: (p: Page & { q?: string }) =>
+    request<{ users: AdminUser[]; total: number }>('GET', `/ringmaster/users${query({ q: p.q?.trim(), limit: p.limit, offset: p.offset })}`),
+  user: (id: string) => request<AdminUserDetail>('GET', `/ringmaster/users/${encodeURIComponent(id)}`),
+  updateUser: (id: string, body: { ticketBalance?: number; role?: Role; resetCooldown?: true }) =>
+    request<AdminUser>('PATCH', `/ringmaster/users/${encodeURIComponent(id)}`, body),
+  deleteUser: (id: string) => request<void>('DELETE', `/ringmaster/users/${encodeURIComponent(id)}`),
+  purchases: (p: Page) => request<{ purchases: AdminPurchase[]; total: number }>('GET', `/ringmaster/purchases${query({ limit: p.limit, offset: p.offset })}`),
+  rounds: (p: Page & { ride?: AttractionId | null }) =>
+    request<{ rounds: AdminRound[]; total: number }>('GET', `/ringmaster/rounds${query({ ride: p.ride, limit: p.limit, offset: p.offset })}`),
+  actions: (p: Page) => request<{ actions: AdminAction[]; total: number }>('GET', `/ringmaster/actions${query({ limit: p.limit, offset: p.offset })}`),
 };

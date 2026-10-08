@@ -4,9 +4,12 @@ import {
   COOLDOWN_HOURS,
   DEFAULT_COSTS,
   NotEnoughTicketsError,
+  PACK_SIZE,
+  ParkClosedError,
   PurchaseCooldownError,
   type AttractionId,
   type FinishedRound,
+  type Park,
   type Purchase,
   type RideStats,
   type RoundStats,
@@ -20,6 +23,11 @@ type Listener = () => void;
 const RETRY_MS = [3_000, 10_000];
 /** How many purchases the booth and the account card show. */
 const RECENT_PURCHASES = 5;
+/** While the visitor is in the fair, the gates are checked this often. */
+const PARK_POLL_MS = 60_000;
+
+/** "every 5 hours", "every hour", "any time" (a cool-down of 0 means no wait at all). */
+export const everyHours = (h: number) => (h <= 0 ? 'any time' : h === 1 ? 'every hour' : `every ${h} hours`);
 
 /**
  * Who's visiting: a member (`user`) or a guest (`null`), and the member's tickets. Everything
@@ -35,9 +43,39 @@ class Session {
   private listeners = new Set<Listener>();
   private warned = false;
   private ticketsLoading: { id: string; p: Promise<Tickets | null> } | null = null;
+  private _park: Park | null = null;
+  private parkLoading: Promise<Park | null> | null = null;
+  private parkListeners = new Set<(park: Park | null) => void>();
+  private parkTimer: ReturnType<typeof setInterval> | null = null;
+  private parkCheckedAt = 0;
 
   get user() {
     return this._user;
+  }
+
+  /** Staff: they can open the Ringmaster's Office, and ride while the park is closed. */
+  get isStaff() {
+    return this._user?.role === 'admin';
+  }
+
+  /** The gates and the rules from GET /park; null until it answers (or while the server is away). */
+  get park() {
+    return this._park;
+  }
+
+  /** Open unless the server says otherwise: an unreachable server never shuts the fair. */
+  get parkOpen() {
+    return this._park?.open ?? true;
+  }
+
+  /** Tickets in one pack (the live rule once known). */
+  get packSize() {
+    return this._tickets?.packSize ?? this._park?.packSize ?? PACK_SIZE;
+  }
+
+  /** Hours between two packs (the live rule once known). */
+  get cooldownHours() {
+    return this._tickets?.cooldownHours ?? this._park?.cooldownHours ?? COOLDOWN_HOURS;
   }
 
   /** False until the first check against the server has settled (either way). */
@@ -67,7 +105,72 @@ class Session {
 
   /** What one round of `ride` costs (the server's table once it's in, the usual prices until then). */
   cost(ride: AttractionId) {
-    return this._tickets?.costs?.[ride] ?? DEFAULT_COSTS[ride];
+    return this._tickets?.costs?.[ride] ?? this._park?.costs?.[ride] ?? DEFAULT_COSTS[ride];
+  }
+
+  /** Calls `fn` whenever the park opens, closes or its closed sign changes. Returns an unsubscribe. */
+  onPark(fn: (park: Park | null) => void) {
+    this.parkListeners.add(fn);
+    return () => void this.parkListeners.delete(fn);
+  }
+
+  /**
+   * Asks the server whether the park is open, and for the prices and pack rules. Never throws:
+   * when the server can't be reached the park counts as open (the fair still opens for guests).
+   * At boot (`retry`), an unreachable server is asked again a couple of times.
+   */
+  loadPark(retry = false): Promise<Park | null> {
+    if (this.parkLoading) return this.parkLoading;
+    const p = this.fetchPark(retry ? 0 : RETRY_MS.length).finally(() => {
+      if (this.parkLoading === p) this.parkLoading = null;
+    });
+    return (this.parkLoading = p);
+  }
+
+  private async fetchPark(attempt: number): Promise<Park | null> {
+    this.parkCheckedAt = Date.now();
+    try {
+      this.setPark(normalisePark(await api.park()));
+    } catch (err) {
+      if (err instanceof ApiError && err.unavailable) {
+        this.warnOnce(err);
+        // the gates stay open; the prices and rules last heard are kept
+        if (this._park && !this._park.open) this.setPark({ ...this._park, open: true, message: null });
+        if (attempt < RETRY_MS.length) setTimeout(() => void this.loadPark(), RETRY_MS[attempt]);
+      }
+    }
+    return this._park;
+  }
+
+  /** A board or a purchase was turned away at the gate: the park closed since we last looked. */
+  noteParkClosed(err: ParkClosedError) {
+    this.setPark({ ...(this._park ?? { costs: {}, packSize: this.packSize, cooldownHours: this.cooldownHours }), open: false, message: err.message });
+  }
+
+  /** Re-checks the gates every minute while the visitor is in the fair (and when the tab comes back). */
+  watchPark() {
+    if (this.parkTimer) return;
+    const check = () => {
+      if (!document.hidden && Date.now() - this.parkCheckedAt >= PARK_POLL_MS - 1000) void this.loadPark();
+    };
+    this.parkTimer = setInterval(check, PARK_POLL_MS);
+    document.addEventListener('visibilitychange', check);
+  }
+
+  private setPark(park: Park) {
+    const before = this._park;
+    this._park = park;
+    // a member's wallet carries the same rules: keep it in step with the latest word
+    if (this._tickets)
+      this._tickets = {
+        ...this._tickets,
+        costs: { ...this._tickets.costs, ...park.costs },
+        packSize: park.packSize,
+        cooldownHours: park.cooldownHours,
+      };
+    if (JSON.stringify(before) === JSON.stringify(park)) return;
+    if (before?.open !== park.open || before?.message !== park.message) for (const fn of this.parkListeners) fn(park);
+    this.emit();
   }
 
   /** Milliseconds until the next pack can be bought: 0 when it can be now, null when unknown. */
@@ -180,17 +283,18 @@ class Session {
       const prev = this._tickets;
       this._tickets = {
         balance: res.balance,
-        packSize: prev?.packSize ?? res.purchase.quantity,
-        cooldownHours: prev?.cooldownHours ?? COOLDOWN_HOURS,
+        packSize: prev?.packSize ?? this._park?.packSize ?? res.purchase.quantity,
+        cooldownHours: prev?.cooldownHours ?? this.cooldownHours,
         lastPurchaseAt: res.purchase.createdAt,
         nextPurchaseAt: res.nextPurchaseAt,
         canBuy: res.canBuy,
-        costs: prev?.costs ?? DEFAULT_COSTS,
+        costs: prev?.costs ?? { ...DEFAULT_COSTS, ...this._park?.costs },
       };
       this._purchases = [{ ...res.purchase, balanceAfter: res.balance }, ...(this._purchases ?? [])].slice(0, RECENT_PURCHASES);
       this.emit();
       return res;
     } catch (err) {
+      if (err instanceof ParkClosedError) this.noteParkClosed(err);
       if (err instanceof PurchaseCooldownError && this._tickets) {
         this._tickets = { ...this._tickets, canBuy: false, nextPurchaseAt: err.nextPurchaseAt ?? this._tickets.nextPurchaseAt };
         this.emit();
@@ -212,6 +316,7 @@ class Session {
       this.emit();
       return res;
     } catch (err) {
+      if (err instanceof ParkClosedError) this.noteParkClosed(err);
       if (err instanceof NotEnoughTicketsError && err.balance !== null && this._tickets) {
         this._tickets = { ...this._tickets, balance: err.balance };
         this.emit();
@@ -251,7 +356,7 @@ class Session {
 
   private set(user: User | null) {
     const switched = user?.id !== this._user?.id;
-    const changed = !this._known || switched || user?.username !== this._user?.username;
+    const changed = !this._known || switched || user?.username !== this._user?.username || user?.role !== this._user?.role;
     if (switched) {
       this._tickets = null;
       this._stats = null;
@@ -276,6 +381,19 @@ class Session {
 }
 
 export const session = new Session();
+
+/** GET /park's answer, with anything missing or malformed falling back to the usual rules. */
+function normalisePark(raw: Park): Park {
+  const num = (v: unknown, fallback: number) => (typeof v === 'number' && Number.isFinite(v) && v >= 0 ? v : fallback);
+  const costs: Park['costs'] = {};
+  for (const id of Object.keys(DEFAULT_COSTS) as AttractionId[]) {
+    const c = raw?.costs?.[id];
+    if (typeof c === 'number' && Number.isFinite(c) && c > 0) costs[id] = c;
+  }
+  const open = raw?.open !== false;
+  const message = !open && typeof raw?.message === 'string' && raw.message.trim() ? raw.message.trim() : null;
+  return { open, message, costs, packSize: num(raw?.packSize, PACK_SIZE), cooldownHours: num(raw?.cooldownHours, COOLDOWN_HOURS) };
+}
 
 /** "03:12:45" for a wait of that long (the booth's countdown to the next pack). */
 export function formatWait(ms: number) {
