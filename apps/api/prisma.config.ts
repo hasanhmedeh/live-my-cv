@@ -17,6 +17,7 @@ if (!url && !process.argv.includes('generate')) {
 
 export default defineConfig({
   schema: 'prisma/schema.prisma',
-  migrations: { path: 'prisma/migrations' },
+  // `prisma db seed` refills the park's setup from prisma/seed.json (see scripts/seed.mjs).
+  migrations: { path: 'prisma/migrations', seed: 'node scripts/seed.mjs seed' },
   datasource: { url },
 });

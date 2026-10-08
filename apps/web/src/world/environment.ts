@@ -503,7 +503,8 @@ export class Environment {
       [22, -60, PALETTE.mustard],
       [56, -28, PALETTE.candy],
       [-44, -50, PALETTE.teal],
-      [12, 30, PALETTE.violet],
+      // on the lawn beside the path to the Nebula 360 (not on it), clear of the trees west of it
+      [5, 36, PALETTE.violet],
     ];
     const rnd = mulberry(8);
     for (const [x, z, col] of spots) {

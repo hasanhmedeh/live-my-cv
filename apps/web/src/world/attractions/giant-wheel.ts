@@ -252,8 +252,10 @@ export class GiantWheel implements Attraction {
     this.cam = 'cabin';
     this.yaw = 0;
     this.placeCabins();
-    this.ctx.ui.panel(
+    // opens by itself the first time; after that it's behind the ℹ️
+    this.ctx.ui.setIntro(
       'wheel-intro',
+      'the Giant Wheel',
       `<p class="eyebrow">Giant Wheel · tribute to Ain Dubai</p><h2>The tallest wheel on Earth</h2><p>250 m tall, 48 capsules of up to 40 riders, 192 cable spokes, on four 126 m legs. A real turn takes <strong>38 minutes</strong>; this ride shows it as a time-lapse: one full turn in 2½ minutes, back to the platform.</p><p>${
         this.ctx.mobile
           ? 'Joystick <strong>left/right</strong> looks around, <strong>up</strong> fast-forwards. Tap <kbd>E</kbd> to switch camera.'

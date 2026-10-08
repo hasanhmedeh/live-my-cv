@@ -18,7 +18,8 @@ const PLACES: Record<ZoneId, Place> = {
   crates: { icon: '🥫', label: 'Crate Smash', blurb: 'Kick, roll and smash the crate stacks' },
   striker: { icon: '🔔', label: 'High Striker', blurb: 'Swing the hammer and ring the bell' },
   drone: { icon: '🚁', label: 'Drone Flights', blurb: 'Rent a drone and see it all from the sky' },
-  booth: { icon: '🎟️', label: 'Ticket Booth', blurb: 'Free tickets for every ride and game' },
+  booth: { icon: '🎟️', label: 'Ticket Booth', blurb: 'Free tickets, treats and souvenirs at Rosa’s counter' },
+  ideas: { icon: '💡', label: 'Idea Box', blurb: 'Tell us what you’d love to see in the fair' },
 };
 export const MAP_PLACES = (Object.entries(PLACES) as [ZoneId, Place][]).map(([id, p]) => ({ id, ...p }));
 

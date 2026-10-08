@@ -43,6 +43,10 @@ export interface Park {
   open: boolean;
   /** Only when closed: what the sign on the gate says (null for the default wording). */
   message: string | null;
+  /** The whole park under maintenance: nobody but staff may come into the fair at all (stricter than closed). */
+  underMaintenance: boolean;
+  /** Only while it is: its sign (null for the default wording). */
+  maintenanceMessage: string | null;
   /** Tickets per round; an attraction without a price yet is left out. */
   costs: Partial<Record<AttractionId, number>>;
   packSize: number;
@@ -50,6 +54,70 @@ export interface Park {
   /** Attractions closed for maintenance, each with its sign (null for the default wording). Open ones are left out. */
   maintenance: Partial<Record<AttractionId, string | null>>;
 }
+
+// ---------- The Ticket Booth's shop ----------
+
+export type ShopKind = 'treat' | 'souvenir';
+/** Where a souvenir is worn: one at a time per slot. */
+export type SouvenirSlot = 'head' | 'face' | 'leftHand' | 'rightHand';
+/** What a treat does in the game. */
+export type Perk = 'speed' | 'kick' | 'drone';
+
+/** One thing for sale at the booth, for tickets (apps/api/src/shop/catalog.ts). */
+export interface ShopItem {
+  id: string;
+  kind: ShopKind;
+  name: string;
+  icon: string;
+  tickets: number;
+  blurb: string;
+  perk?: Perk;
+  minutes?: number;
+  slot?: SouvenirSlot;
+  /** How many are left: 0 is sold out, null is no limit. Missing from an older server: no limit. */
+  stock?: number | null;
+}
+
+/** A souvenir the member owns, and whether they're wearing it. */
+export interface Souvenir {
+  item: string;
+  equipped: boolean;
+  acquiredAt: string;
+}
+
+export interface ShopOrder {
+  id: string;
+  item: string;
+  ticketsSpent: number;
+  balanceAfter: number;
+  createdAt: string;
+}
+
+// ---------- The Idea Box ----------
+
+/** What a suggestion is about (see account/ideas.ts for the words and icons). */
+export type SuggestionTopic = 'attraction' | 'shop' | 'park' | 'problem' | 'other';
+/** Where it stands, as staff set it in The Ringmaster's Office. */
+export type SuggestionStatus = 'pending' | 'accepted' | 'in_development' | 'done' | 'declined';
+
+/** A suggestion left at the Idea Box, and staff's answer (given once). */
+export interface Suggestion {
+  id: string;
+  topic: SuggestionTopic;
+  message: string;
+  status: SuggestionStatus;
+  statusChangedAt: string | null;
+  reply: string | null;
+  repliedAt: string | null;
+  /** The username of the member of staff who answered. */
+  repliedBy: string | null;
+  /** Staff answered or changed the status since the member last looked. */
+  unread: boolean;
+  createdAt: string;
+}
+
+/** The most a suggestion (or an answer) can say. */
+export const SUGGESTION_MAX = 500;
 
 /** The member's ticket wallet. `nextPurchaseAt` is null when a pack can be bought right now. */
 export interface Tickets {
@@ -108,10 +176,22 @@ export interface RideStats {
 
 // ---------- The Ringmaster's Office (staff only) ----------
 
+/** Who's in the fair right now. Members count once however many tabs they have open. */
+export interface Visitors {
+  /** Past the entrance: members plus guests. */
+  inFair: number;
+  members: number;
+  guests: number;
+  /** Looking at the entrance (the intro card), not in yet. */
+  atEntrance: number;
+}
+
 /** The park's settings row, as staff see and edit it. */
 export interface ParkSettings {
   open: boolean;
   closedMessage: string | null;
+  underMaintenance: boolean;
+  maintenanceMessage: string | null;
   packSize: number;
   cooldownHours: number;
   updatedAt: string | null;
@@ -200,6 +280,25 @@ export interface AdminUserDetail {
   purchases: Purchase[];
   rounds: Round[];
   byRide: Partial<Record<AttractionId, { rounds: number; ticketsSpent: number }>>;
+  /** Their latest treats and souvenirs bought at the booth, newest first. */
+  shopOrders: ShopOrder[];
+  /** How many shop orders they've made in all. */
+  shopOrdersTotal: number;
+}
+
+/** A shop item as the office edits it: today's price and stock, and what it has sold. */
+export interface AdminShopItem extends ShopItem {
+  stock: number | null;
+  /** The catalog's own price, which it sells at until one is set in the office. */
+  defaultTickets: number;
+  /** Orders of it, ever. */
+  sold: number;
+  updatedAt: string | null;
+}
+
+/** A treat or souvenir bought at the booth, as the office's ledger lists it. */
+export interface AdminShopOrder extends ShopOrder {
+  user: { id: string; username: string };
 }
 
 export interface AdminPurchase extends Purchase {
@@ -208,6 +307,10 @@ export interface AdminPurchase extends Purchase {
 }
 
 export interface AdminRound extends Round {
+  user: { id: string; username: string };
+}
+
+export interface AdminSuggestion extends Suggestion {
   user: { id: string; username: string };
 }
 
@@ -227,6 +330,12 @@ export interface Page {
 }
 
 const BASE = (import.meta.env.VITE_API_URL ?? '/api').replace(/\/+$/, '');
+
+/** GET /live: the park's (and the member's own account's) live updates, as Server-Sent Events. */
+export const LIVE_URL = `${BASE}/live`;
+
+/** A member's own account, as GET /live tells it: their wallet and role, or that it was deleted. */
+export type AccountNews = { balance: number; role: Role; lastPurchaseAt: string | null } | { deleted: true };
 /** Long enough for a cold server, short enough that a button never stays "busy" for good. */
 const TIMEOUT_MS = 12_000;
 
@@ -279,9 +388,16 @@ export class PurchaseCooldownError extends ApiError {
   }
 }
 
-/** 503 with code 'park_closed': the park is closed, so no boarding and no packs (staff excepted). */
+/**
+ * 503 with code 'park_closed' (the park is closed, so no boarding and no packs) or, with
+ * `underMaintenance`, 'park_maintenance' (nobody in the fair at all). Staff are let through both.
+ */
 export class ParkClosedError extends ApiError {
-  constructor(message: string, data: unknown) {
+  constructor(
+    message: string,
+    data: unknown,
+    readonly underMaintenance = false,
+  ) {
     super(503, message, data);
     this.name = 'ParkClosedError';
   }
@@ -289,6 +405,18 @@ export class ParkClosedError extends ApiError {
   /** The server answered on purpose: it isn't down. */
   override get unavailable() {
     return false;
+  }
+}
+
+/** 409 with code 'sold_out': none of that item left at the booth. */
+export class SoldOutError extends ApiError {
+  readonly item: string | null;
+
+  constructor(message: string, data: unknown) {
+    super(409, message, data);
+    this.name = 'SoldOutError';
+    const item = (data as { item?: unknown } | null)?.item;
+    this.item = typeof item === 'string' ? item : null;
   }
 }
 
@@ -301,6 +429,23 @@ export class RideClosedError extends ApiError {
     this.name = 'RideClosedError';
     const ride = (data as { ride?: unknown } | null)?.ride;
     this.ride = typeof ride === 'string' && isAttraction(ride) ? ride : null;
+  }
+
+  override get unavailable() {
+    return false;
+  }
+}
+
+/** 429 with code 'suggestion_limit': the member has left as many suggestions as a day allows. */
+export class SuggestionLimitError extends ApiError {
+  /** When the box takes another one from them. */
+  readonly nextAt: string | null;
+
+  constructor(message: string, data: unknown) {
+    super(429, message, data);
+    this.name = 'SuggestionLimitError';
+    const at = (data as { nextAt?: unknown } | null)?.nextAt;
+    this.nextAt = typeof at === 'string' && !Number.isNaN(Date.parse(at)) ? at : null;
   }
 
   override get unavailable() {
@@ -344,8 +489,12 @@ async function request<T>(method: 'GET' | 'POST' | 'PUT' | 'PATCH' | 'DELETE', p
   if (!res.ok) {
     const code = closedCode(res.status, data);
     if (code === 'park_closed') throw new ParkClosedError(rawMessage(data) ?? 'The park is closed right now.', data);
+    if (code === 'park_maintenance') throw new ParkClosedError(rawMessage(data) ?? 'The fair is under maintenance.', data, true);
     if (code === 'ride_closed') throw new RideClosedError(rawMessage(data) ?? 'Under maintenance. Back soon!', data);
+    if (res.status === 429 && (data as { code?: unknown } | null)?.code === 'suggestion_limit')
+      throw new SuggestionLimitError(rawMessage(data) ?? 'That’s enough ideas for today. Come back tomorrow!', data);
     const message = messageOf(data, res.status);
+    if (res.status === 409 && (data as { code?: unknown } | null)?.code === 'sold_out') throw new SoldOutError(message, data);
     throw res.status === 402 ? new NotEnoughTicketsError(message, data) : new ApiError(res.status, message, data);
   }
   // a static host may answer 200 with its own HTML page: that isn't the API either
@@ -359,7 +508,6 @@ export const api = {
   login: (body: { email: string; password: string }) => request<{ user: User }>('POST', '/auth/login', body),
   logout: () => request<void>('POST', '/auth/logout'),
   /** Everything the fair keeps about the member, as one JSON document. */
-  exportData: () => request<Record<string, unknown>>('GET', '/auth/me/export'),
   /** Deletes the account and all its purchases and rounds. A wrong password is a 401. */
   deleteAccount: (password: string) => request<void>('DELETE', '/auth/me', { password }),
 
@@ -373,11 +521,27 @@ export const api = {
   /** Pays for one round (the tickets are spent now) and opens it. */
   board: (ride: AttractionId) => request<{ round: Round; balance: number }>('POST', `/rides/${ride}/board`),
   finish: (id: string, body: { completed: boolean; stats: RoundStats }) => request<FinishedRound>('POST', `/rides/rounds/${encodeURIComponent(id)}/finish`, body),
+  /** Ends a round whose attraction (or the park) closed while it was played, and gives its tickets back. */
+  refund: (id: string) => request<{ refunded: number; balance: number }>('POST', `/rides/rounds/${encodeURIComponent(id)}/refund`),
   stats: () => request<RideStats>('GET', '/rides/stats'),
   history: (limit = 20) => request<{ rounds: Round[] }>('GET', `/rides/history?limit=${limit}`),
 
   /** Open or closed, what is under maintenance, the prices and the pack rules. No account needed. */
   park: () => request<Park>('GET', '/park'),
+
+  /** The booth's shop: what's for sale (anyone), the member's souvenirs, buying and wearing. */
+  shop: () => request<{ items: ShopItem[] }>('GET', '/shop'),
+  souvenirs: () => request<{ souvenirs: Souvenir[] }>('GET', '/shop/souvenirs'),
+  /** The member's own orders, newest first, and how many there are in all. */
+  orders: (limit = 10) => request<{ orders: ShopOrder[]; total: number }>('GET', `/shop/orders?limit=${limit}`),
+  buyItem: (item: string) => request<{ balance: number; order: ShopOrder; souvenirs: Souvenir[] }>('POST', '/shop/buy', { item }),
+  wear: (item: string, equipped: boolean) => request<{ souvenirs: Souvenir[] }>('PATCH', `/shop/souvenirs/${encodeURIComponent(item)}`, { equipped }),
+
+  /** The Idea Box: the member's own suggestions, and how many have news from staff. */
+  suggestions: () => request<{ suggestions: Suggestion[]; total: number; unread: number }>('GET', '/suggestions'),
+  /** Throws a SuggestionLimitError after a few in a day. */
+  suggest: (body: { topic: SuggestionTopic; message: string }) => request<Suggestion>('POST', '/suggestions', body),
+  suggestionsSeen: () => request<void>('POST', '/suggestions/seen'),
 };
 
 /** `?a=1&b=x` from the values that are set. */
@@ -392,10 +556,14 @@ const query = (params: Record<string, string | number | undefined | null>) => {
 export const ringmaster = {
   overview: (days: OverviewDays) => request<Overview>('GET', `/ringmaster/overview${query({ days })}`),
   park: () => request<ParkSettings>('GET', '/ringmaster/park'),
-  updatePark: (body: Partial<Pick<ParkSettings, 'open' | 'closedMessage' | 'packSize' | 'cooldownHours'>>) => request<ParkSettings>('PATCH', '/ringmaster/park', body),
+  visitors: () => request<Visitors>('GET', '/ringmaster/visitors'),
+  updatePark: (body: Partial<Pick<ParkSettings, 'open' | 'closedMessage' | 'underMaintenance' | 'maintenanceMessage' | 'packSize' | 'cooldownHours'>>) => request<ParkSettings>('PATCH', '/ringmaster/park', body),
   attractions: () => request<{ attractions: AttractionSettings[] }>('GET', '/ringmaster/attractions'),
   updateAttraction: (attraction: AttractionId, body: Partial<Pick<AttractionSettings, 'tickets' | 'open' | 'closedMessage'>>) =>
     request<AttractionSettings>('PATCH', `/ringmaster/attractions/${attraction}`, body),
+  shopItems: () => request<{ items: AdminShopItem[] }>('GET', '/ringmaster/shop'),
+  updateShopItem: (item: string, body: { tickets?: number; stock?: number | null }) =>
+    request<AdminShopItem>('PATCH', `/ringmaster/shop/${encodeURIComponent(item)}`, body),
   users: (p: Page & { q?: string }) =>
     request<{ users: AdminUser[]; total: number }>('GET', `/ringmaster/users${query({ q: p.q?.trim(), limit: p.limit, offset: p.offset })}`),
   user: (id: string) => request<AdminUserDetail>('GET', `/ringmaster/users/${encodeURIComponent(id)}`),
@@ -403,7 +571,16 @@ export const ringmaster = {
     request<AdminUser>('PATCH', `/ringmaster/users/${encodeURIComponent(id)}`, body),
   deleteUser: (id: string) => request<void>('DELETE', `/ringmaster/users/${encodeURIComponent(id)}`),
   purchases: (p: Page) => request<{ purchases: AdminPurchase[]; total: number }>('GET', `/ringmaster/purchases${query({ limit: p.limit, offset: p.offset })}`),
+  shopOrders: (p: Page) => request<{ orders: AdminShopOrder[]; total: number }>('GET', `/ringmaster/shop-orders${query({ limit: p.limit, offset: p.offset })}`),
   rounds: (p: Page & { ride?: AttractionId | null }) =>
     request<{ rounds: AdminRound[]; total: number }>('GET', `/ringmaster/rounds${query({ ride: p.ride, limit: p.limit, offset: p.offset })}`),
   actions: (p: Page) => request<{ actions: AdminAction[]; total: number }>('GET', `/ringmaster/actions${query({ limit: p.limit, offset: p.offset })}`),
+  suggestions: (p: Page & { status?: SuggestionStatus | null }) =>
+    request<{ suggestions: AdminSuggestion[]; total: number; counts: Record<SuggestionStatus, number> }>(
+      'GET',
+      `/ringmaster/suggestions${query({ status: p.status, limit: p.limit, offset: p.offset })}`,
+    ),
+  /** The reply is given once: a second one gets a 409. */
+  updateSuggestion: (id: string, body: { status?: SuggestionStatus; reply?: string }) =>
+    request<AdminSuggestion>('PATCH', `/ringmaster/suggestions/${encodeURIComponent(id)}`, body),
 };

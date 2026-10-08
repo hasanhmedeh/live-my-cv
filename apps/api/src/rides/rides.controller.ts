@@ -6,7 +6,7 @@ import type { Attraction, User } from '../generated/prisma/client.js';
 import { FinishRoundDto } from './dto/finish-round.dto.js';
 import { ParseRidePipe } from './parse-ride.pipe.js';
 import type { RoundJson } from './round-json.js';
-import { RidesService, type BoardResult, type FinishResult, type RideStats } from './rides.service.js';
+import { RidesService, type BoardResult, type FinishResult, type RefundResult, type RideStats } from './rides.service.js';
 
 /** Every attraction needs an account and tickets: guests are turned away here with a 401. */
 @Controller('rides')
@@ -27,6 +27,16 @@ export class RidesController {
   @HttpCode(HttpStatus.OK)
   finish(@CurrentUser() user: User, @Param('id') id: string, @Body() body: FinishRoundDto): Promise<FinishResult> {
     return this.rides.finish(user.id, id, body);
+  }
+
+  /**
+   * Ends a round whose attraction (or the park) closed while it was played, and gives its tickets
+   * back. 409 if it's open again (finish the round instead), already over, or the caller is staff.
+   */
+  @Post('rounds/:id/refund')
+  @HttpCode(HttpStatus.OK)
+  refund(@CurrentUser() user: User, @Param('id') id: string): Promise<RefundResult> {
+    return this.rides.refund(user, id);
   }
 
   @Get('stats')

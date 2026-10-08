@@ -14,6 +14,10 @@ import { NAME_COLORS, physicsWord } from './letters';
 import { PALETTE } from './textures';
 import { escapeHtml, UI } from './ui';
 import { Zones } from './zones';
+import { perks } from './perks';
+import { Shop, VENDOR_LOOK } from './shop';
+import { Ideas } from './ideas';
+import { Wardrobe } from './souvenirs';
 import { Minimap } from './minimap';
 import { WorldMap } from './world-map';
 import { Trackside } from './trackside';
@@ -31,25 +35,27 @@ import { Rocket } from './attractions/rocket';
 import { Crates, CRATES_ROUND } from './attractions/crates';
 import { Striker } from './attractions/striker';
 import { Arch, Booth, Carousel } from './attractions/landmarks';
+import { IdeaKiosk } from './attractions/idea-kiosk';
 import { GiantWheel } from './attractions/giant-wheel';
 import { Drone } from './attractions/drone';
 import { SkyFlip } from './attractions/sky-flip';
 import { Ship } from './attractions/ship';
 import { Speedway } from './attractions/speedway';
-import { ApiError, ATTRACTION_IDS, isAttraction, NotEnoughTicketsError, ParkClosedError, PurchaseCooldownError, RideClosedError, type AttractionId } from '../account/api';
+import { ApiError, ATTRACTION_IDS, isAttraction, NotEnoughTicketsError, ParkClosedError, RideClosedError, type AttractionId } from '../account/api';
 import { everyHours, formatWait, session } from '../account/session';
 import { authDialog, type AuthMode } from '../account/auth-dialog';
 import { AccountMenu } from '../account/account-menu';
 import { results, type ResultsChoice, type RoundResult } from '../account/results';
 import { cleanStats } from '../account/stats';
-import { accountButtons, boothBodyHtml, boothPanelHtml, legalLinksHtml, packText, ticketsText, waitHtml, type CounterState } from './ticket-counter';
+import { STATUSES } from '../account/ideas';
+import { accountButtons, legalLinksHtml, packText, ticketsText, waitHtml } from './ticket-counter';
 
 /** The clock slider / pause / local-time panel. Off for now: the park stays at 16:00. */
 const TIME_CONTROLS = false;
 /** How many guests walk the park, by graphics tier. */
 const CROWD_SIZE = { high: 64, medium: 44, low: 26, lowest: 12 } as const;
 
-type Mode = 'drive' | 'coaster' | 'rocket' | 'striker' | 'wheel' | 'drone' | 'flip' | 'ship' | 'race';
+type Mode = 'drive' | 'coaster' | 'rocket' | 'striker' | 'wheel' | 'drone' | 'flip' | 'ship' | 'race' | 'shop' | 'ideas';
 
 const nextFrame = () => new Promise<void>((r) => requestAnimationFrame(() => r()));
 
@@ -96,6 +102,7 @@ export class Game {
   private striker!: Striker;
   private wheel!: GiantWheel;
   private booth!: Booth;
+  private ideaKiosk!: IdeaKiosk;
   private drone!: Drone;
   private flip!: SkyFlip;
   private ship!: Ship;
@@ -117,9 +124,23 @@ export class Game {
   private round: { id: string; ride: AttractionId } | null = null;
   /** The attraction is on its way out (fading); `leaveCompleted` says whether its round ran to the end. */
   private leaving = false;
+  /** The round's attraction (or the park) closed while it was played: it ends with the sign and a refund, not the results. */
+  private lockedOut = false;
+  /** In the fair (entered from the intro), rather than at the intro card. */
+  private inFair = false;
+  private welcomed = false;
+  /** The park went under maintenance (and this visitor isn't staff): main.ts brings the intro back. */
+  onShutOut: (() => void) | null = null;
   private leaveCompleted = false;
   /** The Ticket Booth's counter: a purchase in flight, and how the last one went. */
-  private counter: CounterState = { buying: false, error: null, flash: null };
+  /** The Ticket Booth's counter: Rosa and her shop (set up once the people are loaded). */
+  private shop: Shop | null = null;
+  /** The Idea Box on the entrance plaza: suggestions for the park, and staff's answers. */
+  private ideas: Ideas | null = null;
+  /** Staff answered an idea while the visitor was busy (on a ride, a card open): the news waits for them. */
+  private ideaNews = false;
+  /** What the visitor wears from the shop. */
+  private wardrobe: Wardrobe | null = null;
   /** The crates round's HUD badge, as last drawn. */
   private cratesBadge = '';
   /** Whose account the open cards were drawn for, so they redraw when someone signs in or out. */
@@ -162,6 +183,8 @@ export class Game {
       this.updatables.push(new Carousel(this.ctx));
       this.booth = new Booth(this.ctx);
       this.updatables.push(this.booth);
+      this.ideaKiosk = new IdeaKiosk(this.ctx);
+      this.updatables.push(this.ideaKiosk);
     });
     step(3, () => {
       this.stack = new Coaster(this.ctx, {
@@ -295,6 +318,9 @@ export class Game {
       const [guests, anims] = await peopleModels;
       const people = new PeopleFactory(guests, anims);
       this.player = new Player(this.ctx, people.create(VISITOR_LOOK));
+      // Rosa behind the booth's counter, and what the visitor wears from her shop
+      this.booth.setVendor(people.create(VENDOR_LOOK));
+      this.wardrobe = new Wardrobe(this.player.rig, this.scene);
       this.wire();
       // the crowd: queues, riders, families, kids and dogs (fewer on modest hardware)
       const dogs = await dogModels;
@@ -423,6 +449,7 @@ export class Game {
     });
     this.input.on('action', () => this.onAction());
     this.input.on('escape', () => this.onEscape());
+    this.input.on('info', () => this.ui.toggleInfo());
     this.input.on('reset', () => {
       if (this.mode === 'drive') this.teleport('entrance');
       else if (this.mode === 'race') this.speedway.rescue();
@@ -461,12 +488,12 @@ export class Game {
     // the cards' buttons: sign up / log in (from an attraction's gate, boarding it after), pay for a
     // round (or retry), buy tickets, head to the booth, stop the crates round
     this.ui.panelElement.addEventListener('click', (e) => {
-      const b = (e.target as HTMLElement).closest<HTMLElement>('[data-auth], [data-board], [data-buy], [data-goto], [data-stop]');
+      const b = (e.target as HTMLElement).closest<HTMLElement>('[data-auth], [data-board], [data-goto], [data-stop]');
       if (!b) return;
       const ride = isAttraction(b.dataset.ride) ? b.dataset.ride : null;
       if (b.dataset.auth) void this.signIn(b.dataset.auth as AuthMode, ride);
-      else if (b.hasAttribute('data-buy')) void this.buyTickets();
       else if (b.dataset.goto === 'booth') this.goToBooth();
+      else if (b.dataset.goto === 'ideas') this.goToIdeas();
       else if (b.hasAttribute('data-stop')) this.leave(false);
       else if (ride) this.board(ride);
     });
@@ -481,6 +508,36 @@ export class Game {
     new AccountMenu((title, text) => this.notice(title, text));
     // the countdowns to the next pack of tickets tick while their card is open
     setInterval(() => this.tickCountdowns(), 1000);
+    // the booth's shop, and the treats' perks at the top of the screen
+    perks.mount(document.getElementById('perks')!);
+    this.shop = new Shop({
+      root: document.getElementById('shop')!,
+      booth: this.booth,
+      player: this.player,
+      sfx: this.sfx,
+      mobile: this.mobile,
+      onAuth: (mode) => void this.signIn(mode, null),
+      onLeave: () => this.leaveShop(),
+    });
+    this.ideas = new Ideas({
+      root: document.getElementById('ideas')!,
+      kiosk: this.ideaKiosk,
+      sfx: this.sfx,
+      onAuth: (mode) => void this.signIn(mode, null),
+      onLeave: () => this.leaveIdeas(),
+    });
+    // staff answered one of the member's ideas: a card says so, once they're free to read it
+    let unread = session.suggestions?.unread ?? 0;
+    session.onSuggestions(() => {
+      const now = session.suggestions?.unread ?? 0;
+      if (now > unread && this.mode !== 'ideas') this.ideaNews = true;
+      if (!now) this.ideaNews = false;
+      unread = now;
+    });
+    // what the member wears follows their souvenirs (bought, put on, taken off, or another account)
+    const dress = () => this.wardrobe?.set(session.wearing);
+    session.onChange(dress);
+    dress();
     this.sessionUser = session.user?.id ?? null;
     session.onChange(() => this.onSessionChange());
     // the gates: a closed park gets its banner, an attraction under maintenance its red ring, roadworks and map badges
@@ -493,7 +550,7 @@ export class Game {
     if (TIME_CONTROLS) this.timeControl = new TimeControl(this.env);
     else document.getElementById('clock')?.remove();
     this.worldMap = new WorldMap(document.getElementById('world-map')!);
-    this.worldMap.canOpen = () => this.mode === 'drive' && !authDialog.isOpen && !results.isOpen;
+    this.worldMap.canOpen = () => this.inFair && this.mode === 'drive' && !authDialog.isOpen && !results.isOpen;
     this.worldMap.onToggle = (open) => {
       this.input.paused = open;
       if (this.mode === 'drive') this.player.enabled = !open;
@@ -538,15 +595,25 @@ export class Game {
   /** Called when the visitor presses "Enter the fair". */
   enter() {
     this.sfx.unlock();
+    this.inFair = true;
+    session.setInFair(true);
     this.ui.hud.hidden = false;
+    if (this.mode === 'drive') this.player.enabled = true;
     session.watchPark();
     this.onParkChange();
+    // back in after the park's maintenance: no second welcome
+    if (this.welcomed) return;
+    this.welcomed = true;
+    // the guide opens by itself on a first visit; after that it's behind the ℹ️ (rendered fresh each time: prices, maintenance)
+    this.ui.setGuide('welcome', 'the fair', () => this.guideHtml(), { accent: PALETTE.candy });
+  }
+
+  /** The park's guide: how it works, every ride and game with its price, and the controls. */
+  private guideHtml() {
     const user = session.user;
     const cost = (id: AttractionId) =>
       session.maintenance(id) === undefined ? `<span class="cost">${session.cost(id)} 🎟️</span>` : '<span class="cost cost-closed">🚧 Under maintenance</span>';
-    this.ui.panel(
-      'welcome',
-      `<p class="eyebrow">${user ? `Welcome back, ${escapeHtml(user.username)}` : 'Welcome to the fair'}</p><h2>Step right up! 🎪</h2><p>Walk around the park and try everything. Every ride and game takes tickets (prices below). Each payment buys one round, then you're back on your feet.</p><p class="booth-account">🎟️ Tickets are free: pick up <strong>${packText()}</strong>${
+    return `<p class="eyebrow">${user ? `Welcome back, ${escapeHtml(user.username)}` : 'Welcome to the fair'}</p><h2>Step right up! 🎪</h2><p>Walk around the park and try everything. Every ride and game takes tickets (prices below). Each payment buys one round, then you're back on your feet.</p><p class="booth-account">🎟️ Tickets are free: pick up <strong>${packText()}</strong>${
         user ? '' : ' with a free account'
       }. Leftover tickets carry over.</p><h3>🎢 Rides</h3><ul>
         <li>🎢 <strong>Thunder Loop</strong> — drive the coaster yourself: launch, loop and roll ${cost('coaster')}</li>
@@ -560,12 +627,11 @@ export class Game {
       </ul><h3>🎯 Games</h3><ul>
         <li>🥫 <strong>Crate Smash</strong> — ${CRATES_ROUND} seconds to knock down as many crates as you can ${cost('crates')}</li>
         <li>🔔 <strong>High Striker</strong> — three swings to ring the bell ${cost('striker')}</li>
-        <li>🎟️ <strong>Ticket Booth</strong> — your free tickets and the price list, always free to visit</li>
+        <li>🎟️ <strong>Ticket Booth</strong> — Rosa's counter: your free tickets, treats with perks, and souvenirs to wear</li>
+        <li>💡 <strong>Idea Box</strong> — on the entrance plaza: tell us what you'd love to see in the fair, and follow what becomes of it</li>
       </ul>${
         user ? '<p class="panel-actions"><button class="btn btn-primary btn-small" type="button" data-goto="booth">Take me to the Ticket Booth 🎟️</button></p>' : accountButtons()
-      }<p>${this.mobile ? 'Use the joystick to walk (push it all the way to run) and the <kbd>E</kbd> button to play.' : 'Walk with <kbd>WASD</kbd> or arrows, hold <kbd>Shift</kbd> to run, <kbd>Space</kbd> to roll, <kbd>F</kbd> to kick, <kbd>H</kbd> to wave and <kbd>E</kbd> to play. Try kicking the big letters over!'}</p>`,
-      { accent: PALETTE.candy },
-    );
+      }<p>${this.mobile ? 'Use the joystick to walk (push it all the way to run) and the <kbd>E</kbd> button to play.' : 'Walk with <kbd>WASD</kbd> or arrows, hold <kbd>Shift</kbd> to run, <kbd>Space</kbd> to roll, <kbd>F</kbd> to kick, <kbd>H</kbd> to wave and <kbd>E</kbd> to play. Try kicking the big letters over!'}</p><p class="sub">Open this again any time with the ℹ️ button (top right) or <kbd>I</kbd>.</p>`;
   }
 
   private onAction() {
@@ -582,9 +648,9 @@ export class Game {
     const z = this.zones.active;
     if (!z) return;
     if (z === 'booth') {
-      this.player.interact();
-      this.showZonePanel(z);
-      this.sfx.chime();
+      this.enterShop();
+    } else if (z === 'ideas') {
+      this.enterIdeas();
     } else if (z === 'drone') {
       // E at the counter shows the offer; E again (or its button) takes off
       if (this.panelZone === 'drone' && this.ui.panelOpenKey.startsWith('drone-offer')) this.board('drone');
@@ -635,6 +701,11 @@ export class Game {
     this.worldMap.close();
     results.close(null);
     this.round = { id, ride };
+    // closed while the ticket printed: the round ends before it starts, and the tickets come back
+    if (session.shutOut || (!session.isStaff && (!session.parkOpen || session.maintenance(ride) !== undefined))) {
+      this.lockedOut = true;
+      return this.finishRound(false);
+    }
     this.launch(ride);
   }
 
@@ -689,7 +760,8 @@ export class Game {
   }
 
   private boardFailed(ride: AttractionId, err: unknown) {
-    if (this.mode !== 'drive') return;
+    // under maintenance since we last looked: the session noted it, and the visitor is on the way out
+    if (this.mode !== 'drive' || !this.inFair) return;
     // the cookie expired, or the account is gone: carry on as a guest
     if (err instanceof ApiError && err.status === 401) {
       session.expire();
@@ -730,6 +802,59 @@ export class Game {
     );
   }
 
+  /**
+   * The park went under maintenance, and this visitor isn't staff: they leave the fair. A round in
+   * progress stops (its tickets come back), the HUD and every card close, and main.ts brings the
+   * intro back, where the way in stays shut until the maintenance is over.
+   */
+  private closeFair() {
+    if (!this.inFair) return;
+    if (this.mode === 'shop') this.leaveShop();
+    if (this.mode === 'ideas') this.leaveIdeas();
+    this.inFair = false;
+    session.setInFair(false);
+    if (this.round) this.lockOut();
+    this.ui.hidePanel();
+    this.panelZone = null;
+    this.worldMap.close();
+    results.close(null);
+    this.ui.prompt('', '', '');
+    this.ui.hud.hidden = true;
+    this.parkBanner.hidden = true;
+    if (this.mode === 'drive') this.player.enabled = false;
+    this.onShutOut?.();
+  }
+
+  /** The round's attraction (or the whole park) closed under the player: out they come, with their tickets back. */
+  private lockOut() {
+    if (this.lockedOut) return;
+    this.lockedOut = true;
+    // a ride still fading in is stopped by startRide; a ride on its way out ends through endRide
+    if (this.mode === 'drive' && this.round?.ride !== 'crates') return;
+    this.leave(false);
+  }
+
+  /** After a lock-out: the round's tickets go back, and the sign says why it stopped. */
+  private async showLockedOut(ride: AttractionId, roundId: string) {
+    const refunded = await session.refund(roundId);
+    // open again already, or the server's away: the round is closed as usual, without the results
+    if (refunded === null) void session.finish(roundId, false, {}).catch(() => {});
+    if (!this.inFair || this.mode !== 'drive' || this.round || this.boarding) return;
+    const z = ZONES[ride];
+    const parkClosed = !session.parkOpen;
+    const sign = parkClosed
+      ? (session.park?.message ?? "The park is closed right now. Come back soon: you're welcome to look around meanwhile.")
+      : (session.maintenance(ride) ?? `Our crew is giving ${z.title} some care. It will be back soon: try another attraction meanwhile!`);
+    const back = refunded ? (refunded === 1 ? 'its ticket is back in your wallet' : `its ${refunded} tickets are back in your wallet`) : 'it has been ended';
+    this.sfx.beep();
+    this.panelZone = ride;
+    this.ui.panel(
+      `${parkClosed ? 'closed' : 'maintenance'}-${ride}-${Date.now()}`,
+      `<p class="eyebrow">${z.title} · ${parkClosed ? 'Park closed' : 'Under maintenance'}</p><h2>🚧 ${parkClosed ? 'The park just closed' : `${escapeHtml(z.title)} just closed`}</h2><p>${escapeHtml(sign)}</p><p class="sub">Your round was stopped, and ${back}.</p>`,
+      { accent: PALETTE.candy },
+    );
+  }
+
   /** The attraction is closed for maintenance: its sign. */
   private showMaintenance(ride: AttractionId) {
     const z = ZONES[ride];
@@ -756,6 +881,10 @@ export class Game {
     this.zones?.setClosed(new Set(closed.keys()));
     this.worldMap?.setClosed(closed);
     if (this.minimap) this.minimap.closed = new Set(closed.keys());
+    if (this.inFair && session.shutOut) return this.closeFair();
+    // a player in a round of an attraction that just closed is shown out (staff ride on, to test it)
+    const playing = this.round?.ride;
+    if (playing && !session.isStaff && (!open || closed.has(playing))) return this.lockOut();
     // a maintenance or closed sign that's open while the gate reopens is stale
     const key = this.ui.panelOpenKey;
     if (this.mode === 'drive' && (key.startsWith('maintenance-') || key.startsWith('closed-'))) {
@@ -763,6 +892,13 @@ export class Game {
       if (ride && isAttraction(ride) && open && session.maintenance(ride) === undefined) {
         this.ui.hidePanel();
         this.panelZone = null;
+      }
+    } else if (this.mode === 'drive' && /^(gate|short|drone-offer|crates)-/.test(key) && !session.isStaff && !this.boarding && !this.round) {
+      // closed while its offer is up (the office pushes it live): the sign replaces the offer
+      const ride = this.panelZone;
+      if (ride && isAttraction(ride)) {
+        if (!open) this.showClosed(ride);
+        else if (session.maintenance(ride) !== undefined) this.showMaintenance(ride);
       }
     }
   }
@@ -817,6 +953,8 @@ export class Game {
 
   /** Cards that depend on the account redraw when someone signs in or out (or their wallet changes). */
   private onSessionChange() {
+    // no longer staff (or logged out) while the park is under maintenance
+    if (this.inFair && session.shutOut) return this.closeFair();
     const user = session.user?.id ?? null;
     const switched = user !== this.sessionUser;
     this.sessionUser = user;
@@ -826,7 +964,6 @@ export class Game {
       this.ui.hidePanel();
       this.panelZone = null;
     } else if (switched && (key.startsWith('drone-offer') || (key.startsWith('crates') && !this.round))) this.showZonePanel(key.startsWith('drone') ? 'drone' : 'crates');
-    else if (key.startsWith('booth')) this.renderBooth();
     else if (key.startsWith('short-') && !this.ui.panelElement.querySelector('.ticket-wait')) {
       // the wallet arrived: add the countdown to the next pack
       const wait = session.msUntilPurchase();
@@ -840,7 +977,12 @@ export class Game {
     this.player.interact();
     this.ui.hidePanel();
     this.panelZone = null;
-    this.startRide('drone', () => this.drone.start());
+    this.startRide('drone', () => {
+      this.drone.start();
+      // a fizzy soda from the booth: an extra minute in the air
+      const bonus = perks.takeDroneBonus();
+      if (bonus) this.drone.recharge(bonus);
+    });
   }
 
   private showZonePanel(z: ZoneId) {
@@ -858,51 +1000,40 @@ export class Game {
       this.ui.panel(`crates-${Date.now()}`, this.crates.panelHtml(this.cratesExtraHtml()), { accent: PALETTE.teal });
       return;
     }
-    if (z !== 'booth') return;
-    // the counter: a fresh look at the wallet, the purchases and the rounds every visit
-    this.counter = { buying: this.counter.buying, error: null, flash: null };
-    this.ui.panel(`booth-${Date.now()}`, boothPanelHtml(this.counter), { accent: PALETTE.candy });
-    if (session.user) {
-      void session.loadTickets().then((t) => {
-        if (!t && session.user && !session.tickets) {
-          this.counter.error = "We can't reach the ticket office right now. Your tickets are safe: try again in a moment.";
-          this.renderBooth();
-        }
-      });
-      void session.loadPurchases();
-      void session.loadStats();
-    }
   }
 
-  /** Redraws the booth card's body in place (no entrance animation), keeping the keyboard focus. */
-  private renderBooth() {
-    const body = this.ui.panelElement.querySelector<HTMLElement>('.booth-body');
-    if (!body || !this.ui.panelOpenKey.startsWith('booth')) return;
-    const focused = document.activeElement instanceof HTMLElement && body.contains(document.activeElement) ? document.activeElement : null;
-    const hook = focused?.matches('[data-buy]') ? '[data-buy]' : focused?.dataset.auth ? `[data-auth="${focused.dataset.auth}"]` : null;
-    body.innerHTML = boothBodyHtml(this.counter);
-    if (focused) (body.querySelector<HTMLElement>(hook ?? '[data-buy]') ?? this.ui.panelElement.querySelector<HTMLElement>('[data-panel-close]'))?.focus({ preventScroll: true });
+  /**
+   * Steps up to the Ticket Booth's counter: the visitor walks up to it (behind a quick fade), the
+   * camera moves to Rosa, and the shop opens beside her.
+   */
+  private enterShop() {
+    if (this.mode !== 'drive' || this.round || this.boarding || !this.shop) return;
+    this.ui.hidePanel();
+    this.panelZone = null;
+    this.ui.prompt('', '', '');
+    this.player.enabled = false;
+    // the shot starts from where the camera is, and glides over
+    this.camPos.copy(this.camera.position);
+    this.fade(() => {
+      const spot = this.shop!.counterSpot;
+      this.player.reset(spot.x, spot.z, spot.heading);
+      this.mode = 'shop';
+      document.body.classList.add('is-shopping');
+      this.shop!.open();
+      this.resize();
+    });
   }
 
-  /** The booth's "Buy 20 tickets" button. */
-  private async buyTickets() {
-    const wait = session.msUntilPurchase();
-    if (this.counter.buying || !session.user || (wait !== null && wait > 0)) return;
-    this.counter = { buying: true, error: null, flash: null };
-    this.renderBooth();
-    try {
-      const { purchase, balance } = await session.buy();
-      this.counter.flash = `+${ticketsText(purchase.quantity)}! You now have ${balance}. Enjoy the fair! 🎉`;
-      this.sfx.ding();
-    } catch (err) {
-      this.sfx.beep();
-      if (err instanceof PurchaseCooldownError) this.counter.error = 'Not yet: you already have this window’s pack. The next one is on the clock below.';
-      else if (!(err instanceof ApiError && err.status === 401)) this.counter.error = err instanceof ApiError ? err.message : 'Something went wrong. Please try again.';
-      // (a 401 has already turned the counter into the guest's version)
-    } finally {
-      this.counter.buying = false;
-      this.renderBooth();
-    }
+  /** Back from the counter to the fair: the camera returns behind the visitor. */
+  private leaveShop() {
+    if (this.mode !== 'shop') return;
+    this.shop?.close();
+    this.mode = 'drive';
+    document.body.classList.remove('is-shopping');
+    this.player.enabled = this.inFair;
+    this.camYaw = 0; // behind the visitor, who faces the booth
+    this.resize();
+    this.sfx.chime();
   }
 
   /** Takes the visitor to the Ticket Booth and opens its counter. */
@@ -910,7 +1041,66 @@ export class Game {
     if (this.mode !== 'drive' || this.round) return;
     this.ui.hidePanel();
     this.panelZone = null;
-    this.teleport('booth', () => this.showZonePanel('booth'));
+    this.teleport('booth', () => this.enterShop());
+  }
+
+  /**
+   * Steps up to the Idea Box: the visitor walks up to its slot (behind a quick fade), the camera
+   * moves over their shoulder, and the sheet opens beside it (as at the booth).
+   */
+  private enterIdeas() {
+    if (this.mode !== 'drive' || this.round || this.boarding || !this.ideas) return;
+    this.ui.hidePanel();
+    this.panelZone = null;
+    this.ideaNews = false;
+    this.ui.prompt('', '', '');
+    this.player.enabled = false;
+    // the shot starts from where the camera is, and glides over
+    this.camPos.copy(this.camera.position);
+    this.fade(() => {
+      const spot = this.ideas!.standSpot;
+      this.player.reset(spot.x, spot.z, spot.heading);
+      this.mode = 'ideas';
+      document.body.classList.add('is-shopping');
+      this.ideas!.open();
+      this.resize();
+    });
+  }
+
+  /** Back from the Idea Box to the fair: the camera returns behind the visitor. */
+  private leaveIdeas() {
+    if (this.mode !== 'ideas') return;
+    this.ideas?.close();
+    this.mode = 'drive';
+    document.body.classList.remove('is-shopping');
+    this.player.enabled = this.inFair;
+    this.camYaw = ZONES.ideas.heading; // behind the visitor, who faces the kiosk
+    this.resize();
+    this.sfx.chime();
+  }
+
+  /** Takes the visitor to the Idea Box and opens it. */
+  private goToIdeas() {
+    if (this.mode !== 'drive' || this.round) return;
+    this.ui.hidePanel();
+    this.panelZone = null;
+    this.teleport('ideas', () => this.enterIdeas());
+  }
+
+  /** Staff answered an idea: once the visitor is on foot with no card open, one says so. */
+  private showIdeaNews() {
+    if (!this.ideaNews || this.mode !== 'drive' || this.round || this.boarding || this.ui.panelOpenKey || !session.user) return;
+    this.ideaNews = false;
+    const n = session.suggestions?.unread ?? 0;
+    const latest = session.suggestions?.suggestions.find((s) => s.unread);
+    if (!n || !latest) return;
+    const said = latest.message.length > 80 ? `${latest.message.slice(0, 79).trimEnd()}…` : latest.message;
+    this.ui.panel(
+      `ideas-news-${Date.now()}`,
+      `<p class="eyebrow">The Idea Box</p><h2>${n === 1 ? 'Staff answered your idea 💡' : `Staff answered ${n} of your ideas 💡`}</h2><p>“${escapeHtml(said)}” is now <strong>${escapeHtml(STATUSES[latest.status].label.toLowerCase())}</strong>${latest.reply ? ', and staff left you a message' : ''}.</p><p class="panel-actions"><button class="btn btn-primary btn-small" type="button" data-goto="ideas">Read it at the Idea Box 💡</button></p>`,
+      { accent: PALETTE.violet },
+    );
+    this.sfx.chime();
   }
 
   /** Ticks the open card's countdowns to the next pack; at zero the booth's button wakes up. */
@@ -924,10 +1114,7 @@ export class Game {
       for (const c of clocks) c.textContent = formatWait(wait);
       return;
     }
-    if (this.ui.panelOpenKey.startsWith('booth')) {
-      this.renderBooth();
-      void session.loadTickets();
-    } else for (const c of clocks) c.closest('.ticket-wait')?.replaceWith(document.createRange().createContextualFragment(waitHtml(0)));
+    for (const c of clocks) c.closest('.ticket-wait')?.replaceWith(document.createRange().createContextualFragment(waitHtml(0)));
   }
 
   /** Under the crates card: how to start a round (or stop the one being played). */
@@ -951,6 +1138,11 @@ export class Game {
     this.ui.prompt('', '', '');
     this.player.enabled = false;
     this.fade(() => {
+      // closed while the ride was fading in: it never starts
+      if (this.lockedOut) {
+        this.player.enabled = true;
+        return this.finishRound(false);
+      }
       this.mode = mode;
       this.ui.cinematic(true);
       this.ui.rideExit(true);
@@ -959,6 +1151,8 @@ export class Game {
   }
 
   private onEscape() {
+    if (this.mode === 'shop') return this.leaveShop();
+    if (this.mode === 'ideas') return this.leaveIdeas();
     if (this.mode !== 'drive' || this.round?.ride === 'crates') return this.leave(false);
     if (this.zones.active === 'crates') this.cratesDismissed = true;
     this.ui.hidePanel();
@@ -982,7 +1176,9 @@ export class Game {
     }
     this.leaving = true;
     this.leaveCompleted = completed;
-    const exit: Record<Exclude<Mode, 'drive' | 'striker'>, () => void> = {
+    if (this.mode === 'shop') return this.leaveShop();
+    if (this.mode === 'ideas') return this.leaveIdeas();
+    const exit: Record<Exclude<Mode, 'drive' | 'striker' | 'shop' | 'ideas'>, () => void> = {
       coaster: () => this.ride.exit(),
       rocket: () => this.rocket.exit(),
       wheel: () => this.wheel.exit(),
@@ -998,11 +1194,13 @@ export class Game {
 
   private endRide() {
     this.camera.up.set(0, 1, 0);
+    this.ui.endIntro();
     const wasRide = this.mode === 'coaster' || this.mode === 'rocket' || this.mode === 'wheel' || this.mode === 'drone' || this.mode === 'flip' || this.mode === 'ship' || this.mode === 'race';
     if (this.mode === 'wheel' || this.mode === 'drone' || this.mode === 'flip') this.env.setHaze(1);
     const from = this.mode;
     this.mode = 'drive';
-    this.player.enabled = true;
+    // a ride that ended because the park went under maintenance lands at the intro, not on foot
+    this.player.enabled = this.inFair;
     this.ui.cinematic(false);
     this.ui.rideExit(false);
     this.ui.countdown(null);
@@ -1023,6 +1221,12 @@ export class Game {
     const round = this.round;
     if (!round) return;
     this.round = null;
+    if (this.lockedOut) {
+      this.lockedOut = false;
+      this.ui.hidePanel();
+      this.panelZone = null;
+      return void this.showLockedOut(round.ride, round.id);
+    }
     const measured: Record<AttractionId, Measured> = {
       coaster: this.stack,
       falcon: this.falcon,
@@ -1086,6 +1290,10 @@ export class Game {
     this.camera.aspect = w / h;
     // portrait screens need a wider view
     this.camera.fov = w / h < 0.8 ? 58 : 42;
+    // at the counter, the picture slides aside so Rosa shows beside the shop, not under it
+    const off = this.mode === 'shop' && this.shop ? this.shop.viewOffset(w, h) : this.mode === 'ideas' && this.ideas ? this.ideas.viewOffset(w, h) : null;
+    if (off && (off.x || off.y)) this.camera.setViewOffset(w, h, off.x, off.y, w, h);
+    else this.camera.clearViewOffset();
     this.camera.updateProjectionMatrix();
     this.renderer?.setSize(w, h);
     this.post?.setSize(w, h);
@@ -1129,6 +1337,7 @@ export class Game {
     this.player.sync();
 
     for (const u of this.updatables) u.update(dt, t);
+    this.wardrobe?.update(dt);
     this.updateCoasterAudio();
     if (this.mode === 'drive' || this.mode === 'drone' || this.mode === 'race') this.updateMinimap(dt);
     wind.uTime.value = t;
@@ -1167,6 +1376,25 @@ export class Game {
       this.zones.setVisible(false);
       this.speedway.updateCamera(this.camera, dt);
       this.env.follow(this.speedway.focus);
+    } else if (this.mode === 'shop' && this.shop) {
+      this.camera.up.set(0, 1, 0);
+      this.zones.setVisible(false);
+      const { pos, look } = this.shop.shot();
+      this.camPos.lerp(pos, 1 - Math.exp(-dt * 2.6));
+      this.camTarget.lerp(look, 1 - Math.exp(-dt * 2.6));
+      this.camera.position.copy(this.camPos);
+      this.camera.lookAt(this.camTarget);
+      this.env.follow(this.player.position);
+      this.shop.update(dt);
+    } else if (this.mode === 'ideas' && this.ideas) {
+      this.camera.up.set(0, 1, 0);
+      this.zones.setVisible(false);
+      const { pos, look } = this.ideas.shot();
+      this.camPos.lerp(pos, 1 - Math.exp(-dt * 2.6));
+      this.camTarget.lerp(look, 1 - Math.exp(-dt * 2.6));
+      this.camera.position.copy(this.camPos);
+      this.camera.lookAt(this.camTarget);
+      this.env.follow(this.player.position);
     } else if (this.mode === 'striker') {
       this.camera.up.set(0, 1, 0);
       this.zones.setVisible(false);
@@ -1273,6 +1501,7 @@ export class Game {
   }
 
   private updateZones(t: number) {
+    this.showIdeaNews();
     const zone = this.zones.update(this.player.position, t);
     this.worldMap.setNear(zone);
     if (zone) {

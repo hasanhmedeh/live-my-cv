@@ -1,9 +1,9 @@
-import { Body, Controller, Delete, Get, Header, HttpCode, HttpStatus, Post, Res, UseGuards } from '@nestjs/common';
+import { Body, Controller, Delete, Get, HttpCode, HttpStatus, Post, Res, UseGuards } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import type { Response } from 'express';
 import type { Env } from '../config/env.js';
 import type { User } from '../generated/prisma/client.js';
-import { AccountService, type AccountExport } from './account.service.js';
+import { AccountService } from './account.service.js';
 import { AuthThrottlerGuard } from './auth-throttler.guard.js';
 import { AuthService } from './auth.service.js';
 import { CurrentUser } from './current-user.decorator.js';
@@ -53,15 +53,6 @@ export class AuthController {
   @UseGuards(SessionGuard)
   me(@CurrentUser() user: User): { user: UserJson } {
     return { user: toUserJson(user) };
-  }
-
-  /** A copy of everything stored about the user, as a JSON file download. */
-  @Get('me/export')
-  @UseGuards(SessionGuard)
-  @Header('Content-Disposition', 'attachment; filename="funfair-data.json"')
-  @Header('Cache-Control', 'no-store')
-  export(@CurrentUser() user: User): Promise<AccountExport> {
-    return this.account.export(user);
   }
 
   /** Deletes the account and everything attached to it, then signs out. Needs the password again. */

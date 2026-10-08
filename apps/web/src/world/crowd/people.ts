@@ -1,6 +1,7 @@
 import * as THREE from 'three';
 import type { GLTF } from 'three/addons/loaders/GLTFLoader.js';
 import { clone as cloneSkinned } from 'three/addons/utils/SkeletonUtils.js';
+import { buildShoes, shoeMaterial } from './shoes';
 
 // People are Quaternius' "Universal Base Characters" (CC0): semi-realistic male and female
 // bodies with textured skin, eyes and rigged hairstyles, animated with his "Universal Animation
@@ -118,6 +119,37 @@ const GARMENT = /* glsl */ `
   }
 `;
 
+/**
+ * Fabric, drawn on the skin: a cotton tee and denim (or chinos) with real details. In the vertex
+ * stage the cloth stands off the body with room where clothes hang (a shirt from the chest over the
+ * stomach and past the waistband, sleeves opening out, trousers straight down from the thigh); in
+ * the fragment stage it gets folds, seams, hems, a ribbed collar, a belt and worn denim. The folds
+ * fade out with distance so they never shimmer.
+ */
+const FABRIC = /* glsl */ `
+  float fHash(vec3 p) {
+    p = fract(p * 0.3183099 + 0.1);
+    p *= 17.0;
+    return fract(p.x * p.y * p.z * (p.x + p.y + p.z));
+  }
+  float fNoise(vec3 x) {
+    vec3 i = floor(x);
+    vec3 f = fract(x);
+    f = f * f * (3.0 - 2.0 * f);
+    return mix(mix(mix(fHash(i), fHash(i + vec3(1, 0, 0)), f.x), mix(fHash(i + vec3(0, 1, 0)), fHash(i + vec3(1, 1, 0)), f.x), f.y),
+               mix(mix(fHash(i + vec3(0, 0, 1)), fHash(i + vec3(1, 0, 1)), f.x), mix(fHash(i + vec3(0, 1, 1)), fHash(i + vec3(1, 1, 1)), f.x), f.y), f.z);
+  }
+  vec3 fabricBump(vec3 surf_pos, vec3 surf_norm, vec2 dHdxy, float faceDir) {
+    vec3 sx = normalize(dFdx(surf_pos));
+    vec3 sy = normalize(dFdy(surf_pos));
+    vec3 r1 = cross(sy, surf_norm);
+    vec3 r2 = cross(surf_norm, sx);
+    float det = dot(sx, r1) * faceDir;
+    vec3 grad = sign(det) * (dHdxy.x * r1 + dHdxy.y * r2);
+    return normalize(abs(det) * surf_norm - grad);
+  }
+`;
+
 function dressBody(mat: THREE.MeshStandardMaterial, u: BodyUniforms) {
   mat.onBeforeCompile = (sh) => {
     Object.assign(sh.uniforms, u);
@@ -125,6 +157,8 @@ function dressBody(mat: THREE.MeshStandardMaterial, u: BodyUniforms) {
       uniform vec3 uTop; uniform vec3 uPants; uniform vec3 uShoe; uniform vec3 uSkin;
       uniform vec4 uCut; uniform float uInflate;
       varying vec4 vRegion;
+      varying vec3 vObj;
+      varying vec3 vObjN;
       ${GARMENT}
     `;
     sh.vertexShader = sh.vertexShader
@@ -133,36 +167,104 @@ function dressBody(mat: THREE.MeshStandardMaterial, u: BodyUniforms) {
         '#include <begin_vertex>',
         /* glsl */ `#include <begin_vertex>
         vRegion = aRegion;
+        vObj = position;
+        vObjN = objectNormal;
         vec3 gm = garment(aRegion);
-        // fabric sits a little proud of the skin (shoes and trousers a touch more)
-        transformed += objectNormal * uInflate * (gm.x * 1.3 + gm.y * 1.5 + gm.z * 1.5);`,
+        float y = aRegion.x;
+        float onArm = step(-0.5, aRegion.y);
+        // a tee hangs from the chest: more room over the stomach and at its hem (it sits untucked over
+        // the waistband), and the sleeves open out towards their ends
+        // (the extra room builds up just above the hem, so the triangles crossing it aren't stretched
+        // into a ragged edge: the hem itself is drawn as a clean line in the fragment stage)
+        float hang = smoothstep(0.74, 0.62, y) * smoothstep(uCut.z + 0.004, uCut.z + 0.04, y);
+        float shirt = gm.x * (1.3 + (1.0 - onArm) * 1.1 * hang + onArm * 1.4 * smoothstep(uCut.x - 0.3, uCut.x - 0.03, aRegion.y));
+        // trousers drop straight from the thigh: more room down the shin to the ankle
+        float legs = gm.y * 1.5 * (1.0 + 1.3 * smoothstep(0.42, 0.1, y));
+        // the bare foot tucks in under the trainers (shoes.ts), so it never shows through them
+        transformed += objectNormal * uInflate * (shirt + legs - gm.z * 0.8);`,
       );
     sh.fragmentShader = sh.fragmentShader
-      .replace('#include <common>', `#include <common>\n${decl}`)
+      .replace('#include <common>', `#include <common>\n${decl}\n${FABRIC}`)
       .replace(
         '#include <map_fragment>',
         /* glsl */ `#include <map_fragment>
         vec3 gm = garment(vRegion);
         float cloth = gm.x + gm.y + gm.z;
         diffuseColor.rgb *= uSkin;
-        // cotton tops, denim/chino legs, shoes with a pale sole
+        float y = vRegion.x;
+        float side = sign(vObj.x);
+        float frontness = vObjN.z; // the body faces +z in its own space
+        // ---- the tee: cotton, a ribbed crew collar, hemmed sleeves and a hem
+        vec3 top = uTop;
+        float collar = 1.0 - smoothstep(0.0, 0.022, uCut.w - y);
+        top *= 1.0 - 0.14 * collar * (0.6 + 0.4 * sin(atan(vObj.x, vObj.z) * 90.0));
+        float sleeveHem = vRegion.y > -0.5 ? 1.0 - smoothstep(0.0, 0.05, uCut.x - vRegion.y) : 0.0;
+        top *= 1.0 - 0.1 * sleeveHem;
+        float shirtHem = vRegion.y < -0.5 ? 1.0 - smoothstep(0.0, 0.016, y - uCut.z) : 0.0;
+        top *= 1.0 - 0.12 * shirtHem;
+        // ---- the trousers: denim fades on the thighs and knees, darker side seams and turn-ups
+        vec3 legs = uPants;
+        float fade = smoothstep(0.25, 0.95, frontness) * (smoothstep(0.24, 0.32, y) * (1.0 - smoothstep(0.44, 0.52, y)) + 0.7 * smoothstep(0.2, 0.25, y) * (1.0 - smoothstep(0.27, 0.31, y)));
+        legs *= 1.0 + 0.22 * fade;
+        float seam = (1.0 - smoothstep(0.03, 0.09, abs(frontness))) * step(0.5, vObjN.x * side);
+        legs *= 1.0 - 0.28 * seam;
+        float cuff = 1.0 - smoothstep(0.0, 0.014, y - uCut.y);
+        legs *= 1.0 - 0.18 * cuff;
+        // a dark leather belt on the waistband (long trousers only): crisp stitched edges, denim belt
+        // loops over it, and a brass frame buckle at the front. (Colours here are linear: dark.)
+        float longLegs = step(uCut.y, 0.1);
+        float bBot = uCut.z - 0.017;
+        float bTop = uCut.z + 0.001;
+        float belt = longLegs * gm.y * smoothstep(bBot - 0.0012, bBot, y) * (1.0 - smoothstep(bTop, bTop + 0.0012, y));
+        float edge = belt * (1.0 - smoothstep(0.0012, 0.0026, min(y - bBot, bTop - y)));
+        float ang = atan(vObj.x, vObj.z);
+        float loops = belt * step(abs(fract(ang / 6.2831853 * 7.0) - 0.5), 0.022);
+        float bx = abs(vObj.x);
+        float front = step(0.35, frontness);
+        float buckle = belt * front * step(bx, 0.026);
+        float hole = buckle * step(bx, 0.016) * step(bBot + 0.004, y) * step(y, bTop - 0.004);
+        vec3 leather = mix(vec3(0.032, 0.017, 0.009), vec3(0.014, 0.008, 0.004), edge);
+        legs = mix(legs, leather, belt * (1.0 - loops));
+        legs = mix(legs, vec3(0.5, 0.36, 0.12), buckle - hole);
+        legs = mix(legs, leather, hole);
+        // trainers with a pale sole
         vec3 shoe = vRegion.x < 0.012 ? vec3(0.85, 0.83, 0.8) : uShoe;
-        vec3 clothCol = gm.x * uTop + gm.y * uPants + gm.z * shoe;
-        // a darker waistband where the top meets the trousers
-        clothCol *= 1.0 - 0.25 * gm.y * smoothstep(uCut.z - 0.012, uCut.z, vRegion.x);
-        diffuseColor.rgb = mix(diffuseColor.rgb, clothCol, cloth);`,
+        vec3 clothCol = gm.x * top + gm.y * legs + gm.z * shoe;
+        diffuseColor.rgb = mix(diffuseColor.rgb, clothCol, cloth);
+        float beltShine = belt * (1.0 - loops);
+        float buckleShine = buckle - hole;`,
       )
       .replace(
         '#include <roughnessmap_fragment>',
         /* glsl */ `#include <roughnessmap_fragment>
-        roughnessFactor = mix(roughnessFactor, 0.86 - gm.z * 0.3, cloth);`,
+        roughnessFactor = mix(roughnessFactor, 0.9 - gm.z * 0.3, cloth);
+        roughnessFactor = mix(roughnessFactor, 0.62, beltShine);
+        roughnessFactor = mix(roughnessFactor, 0.3, buckleShine);`,
+      )
+      .replace(
+        '#include <metalnessmap_fragment>',
+        /* glsl */ `#include <metalnessmap_fragment>
+        metalnessFactor = mix(metalnessFactor, 0.85, buckleShine);`,
       )
       .replace(
         '#include <normal_fragment_maps>',
         /* glsl */ `vec3 geoNormal = normal;
         #include <normal_fragment_maps>
-        // no muscle detail through the clothes
-        normal = normalize(mix(normal, geoNormal, cloth));`,
+        // no muscle detail through the clothes...
+        normal = normalize(mix(normal, geoNormal, cloth));
+        // ...but the folds of the fabric: soft creases on the tee, bunching at the knees and ankles
+        float near = 1.0 - smoothstep(6.0, 22.0, length(vViewPosition));
+        if (cloth > 0.5 && gm.z < 0.5 && near > 0.0) {
+          vec3 q = vObj * 9.0;
+          float folds = gm.x * (fNoise(q * vec3(1.0, 2.2, 1.0)) * 0.6 + fNoise(q * 2.3) * 0.25);
+          float knee = 1.0 - smoothstep(0.0, 0.05, abs(y - 0.29));
+          float ankle = 1.0 - smoothstep(0.0, 0.07, y - uCut.y);
+          folds += gm.y * (0.35 * fNoise(q * vec3(1.6, 0.8, 1.6)) + (knee * 0.9 + ankle) * (0.5 + 0.5 * sin(y * 260.0 + fNoise(q * 3.0) * 6.0)));
+          // the waist gathers where the tee meets the waistband
+          folds += gm.x * shirtHem * 0.6 * sin(atan(vObj.x, vObj.z) * 24.0);
+          vec2 dh = vec2(dFdx(folds), dFdy(folds)) * 1.6 * near;
+          normal = fabricBump(-vViewPosition, normal, dh, faceDirection);
+        }`,
       );
   };
   mat.customProgramCacheKey = () => 'guest-body';
@@ -246,11 +348,11 @@ function relax(g: THREE.BufferGeometry, height: number) {
     }
     src.set(tmp);
   };
-  for (let it = 0; it < 6; it++) {
+  for (let it = 0; it < 18; it++) {
     pass(P, 0.5);
     pass(P, -0.53);
   }
-  for (let it = 0; it < 4; it++) pass(N, 0.6);
+  for (let it = 0; it < 6; it++) pass(N, 0.6);
   const outP = new Float32Array(n * 3);
   const outN = new Float32Array(n * 3);
   for (let i = 0; i < n; i++) {
@@ -265,10 +367,163 @@ function relax(g: THREE.BufferGeometry, height: number) {
   g.setAttribute('normal', new THREE.BufferAttribute(outN, 3));
 }
 
+/**
+ * Gym arms to everyday arms. The sculpts have bulging biceps, triceps, forearms and deltoids:
+ * every arm vertex is pulled in towards the line from the shoulder to the wrist (in the bind pose),
+ * most round the upper arm, and each cross-section is evened out towards its average radius so no
+ * single muscle stands out. Hands are left alone, and the shoulder blends into the body by the
+ * vertex's arm weight, so nothing tears where the arm meets the chest.
+ */
+function slimArms(mesh: THREE.SkinnedMesh) {
+  const g = mesh.geometry;
+  const pos = g.getAttribute('position') as THREE.BufferAttribute;
+  const si = g.getAttribute('skinIndex');
+  const sw = g.getAttribute('skinWeight');
+  const bones = mesh.skeleton.bones;
+  const bind = (name: string) => {
+    const i = bones.findIndex((b) => b.name === name);
+    return new THREE.Vector3().setFromMatrixPosition(mesh.skeleton.boneInverses[i].clone().invert());
+  };
+  const UPPER = /^(upperarm|lowerarm|clavicle)_/;
+  const HAND = /^(hand|index|middle|ring|pinky|thumb)_/;
+  for (const side of ['l', 'r'] as const) {
+    const shoulder = bind(`upperarm_${side}`);
+    const wrist = bind(`hand_${side}`);
+    const axis = wrist.clone().sub(shoulder);
+    const len = axis.length();
+    axis.normalize();
+    // the arm's vertices, with how far along it they are and how much they belong to it
+    const verts: { i: number; t: number; w: number; foot: THREE.Vector3; r: THREE.Vector3 }[] = [];
+    const p = new THREE.Vector3();
+    for (let i = 0; i < pos.count; i++) {
+      let arm = 0;
+      let hand = 0;
+      for (let k = 0; k < 4; k++) {
+        const w = sw.getComponent(i, k);
+        if (!w) continue;
+        const n = bones[si.getComponent(i, k)].name;
+        if (!n.endsWith(`_${side}`)) continue;
+        if (UPPER.test(n)) arm += w;
+        else if (HAND.test(n)) hand += w;
+      }
+      if (arm < 0.05 || hand > 0.5) continue;
+      p.set(pos.getX(i), pos.getY(i), pos.getZ(i));
+      const t = p.clone().sub(shoulder).dot(axis) / len;
+      if (t < -0.15 || t > 1.02) continue;
+      const foot = shoulder.clone().addScaledVector(axis, t * len);
+      verts.push({ i, t, w: Math.min(1, arm) * (1 - hand), foot, r: p.clone().sub(foot) });
+    }
+    // the average radius along the arm, in short sections
+    const BINS = 24;
+    const sum = new Float32Array(BINS);
+    const cnt = new Float32Array(BINS);
+    const bin = (t: number) => Math.min(BINS - 1, Math.max(0, Math.floor(((t + 0.15) / 1.17) * BINS)));
+    for (const v of verts) {
+      sum[bin(v.t)] += v.r.length();
+      cnt[bin(v.t)]++;
+    }
+    for (const v of verts) {
+      const b = bin(v.t);
+      const mean = cnt[b] ? sum[b] / cnt[b] : v.r.length();
+      // how much slimmer: most round the biceps and the deltoid, less at the elbow, none at the wrist
+      const t = v.t;
+      const slim =
+        t < 0.12
+          ? 0.87
+          : t < 0.5
+            ? 0.83
+            : t < 0.58
+              ? THREE.MathUtils.lerp(0.83, 0.9, (t - 0.5) / 0.08)
+              : THREE.MathUtils.lerp(0.86, 0.97, THREE.MathUtils.smoothstep(t, 0.62, 1.0));
+      const r = v.r.length();
+      if (r < 1e-5) continue;
+      // even the section out (no single muscle bulging), then pull it in
+      const target = THREE.MathUtils.lerp(r, mean, 0.55) * slim;
+      const k = THREE.MathUtils.lerp(1, target / r, v.w);
+      const q = v.foot.clone().addScaledVector(v.r, k);
+      pos.setXYZ(v.i, q.x, q.y, q.z);
+    }
+  }
+  pos.needsUpdate = true;
+  g.computeBoundingSphere();
+}
+
+/**
+ * A bodybuilder's neck and trapezius to an ordinary one: the neck is drawn in round its own axis,
+ * and the slope from the neck down to the shoulders (the traps) is lowered, blending out towards the
+ * head, the chest and the arms so nothing creases.
+ */
+function easeNeck(mesh: THREE.SkinnedMesh, height: number) {
+  const pos = mesh.geometry.getAttribute('position') as THREE.BufferAttribute;
+  const bones = mesh.skeleton.bones;
+  const bind = (name: string) => {
+    const i = bones.findIndex((b) => b.name === name);
+    return i < 0 ? null : new THREE.Vector3().setFromMatrixPosition(mesh.skeleton.boneInverses[i].clone().invert());
+  };
+  const neck = bind('neck_01');
+  const head = bind('Head');
+  const shoulder = bind('upperarm_l');
+  if (!neck || !head || !shoulder) return;
+  const shoulderX = Math.abs(shoulder.x);
+  for (let i = 0; i < pos.count; i++) {
+    const x = pos.getX(i);
+    let y = pos.getY(i);
+    let z = pos.getZ(i);
+    const ax = Math.abs(x);
+    // the neck itself, from the base to under the jaw: about 8% slimmer round its axis
+    const neckBand = THREE.MathUtils.smoothstep(y, neck.y - 0.05, neck.y - 0.01) * (1 - THREE.MathUtils.smoothstep(y, head.y - 0.02, head.y + 0.03));
+    const nearAxis = 1 - THREE.MathUtils.smoothstep(ax, 0.06, 0.1);
+    const k = 1 - 0.08 * neckBand * nearAxis;
+    const nx = x * k;
+    z = neck.z + (z - neck.z) * k;
+    // the traps: between the neck and the shoulder, a hump a few centimetres too high
+    const across = THREE.MathUtils.smoothstep(ax, 0.045, 0.08) * (1 - THREE.MathUtils.smoothstep(ax, shoulderX * 0.75, shoulderX * 1.05));
+    const up = THREE.MathUtils.smoothstep(y, neck.y - 0.12, neck.y - 0.06) * (1 - THREE.MathUtils.smoothstep(y, neck.y + 0.0, neck.y + 0.04));
+    y -= 0.022 * across * up * (height / 1.8);
+    pos.setXYZ(i, nx, y, z);
+  }
+  pos.needsUpdate = true;
+}
+
+/**
+ * No more V-taper: the lats that flare out under the arms are brought in, so the back and sides
+ * drop fairly straight from the armpits to the waist. Only the trunk moves (not the arms), easing
+ * out towards the armpit, the waist and the spine so the outline stays smooth.
+ */
+function narrowBack(mesh: THREE.SkinnedMesh, height: number) {
+  const g = mesh.geometry;
+  const pos = g.getAttribute('position') as THREE.BufferAttribute;
+  const si = g.getAttribute('skinIndex');
+  const sw = g.getAttribute('skinWeight');
+  const bones = mesh.skeleton.bones;
+  const shoulderI = bones.findIndex((b) => b.name === 'upperarm_l');
+  const shoulderX = Math.abs(new THREE.Vector3().setFromMatrixPosition(mesh.skeleton.boneInverses[shoulderI].clone().invert()).x);
+  const ARM = /^(upperarm|lowerarm|hand|clavicle)_/;
+  for (let i = 0; i < pos.count; i++) {
+    let arm = 0;
+    for (let k = 0; k < 4; k++) {
+      const w = sw.getComponent(i, k);
+      if (w && ARM.test(bones[si.getComponent(i, k)].name)) arm += w;
+    }
+    const y = pos.getY(i) / height;
+    const x = pos.getX(i);
+    const ax = Math.abs(x);
+    // under the armpits, down to the waist, most at the widest part of the lats
+    const band = THREE.MathUtils.smoothstep(y, 0.57, 0.63) * (1 - THREE.MathUtils.smoothstep(y, 0.7, 0.76));
+    // the sides, not the spine or the middle of the chest; fading out before the armpit
+    const sideways = THREE.MathUtils.smoothstep(ax, 0.05, 0.13) * (1 - THREE.MathUtils.smoothstep(ax, shoulderX * 0.95, shoulderX * 1.15));
+    const k = 1 - 0.11 * band * sideways * (1 - Math.min(1, arm * 2));
+    pos.setX(i, x * k);
+  }
+  pos.needsUpdate = true;
+}
+
 interface BodyTemplate {
   root: THREE.Object3D;
   height: number;
   clips: Map<string, THREE.AnimationClip>;
+  /** Trainers fitted to this body's feet (see shoes.ts), shared by everyone with it. */
+  shoes: THREE.BufferGeometry;
 }
 
 /** Bone categories used to tell feet, arms and the head apart. */
@@ -310,7 +565,13 @@ export class PeopleFactory {
       const box = new THREE.Box3().setFromBufferAttribute(main.geometry.getAttribute('position') as THREE.BufferAttribute);
       const height = box.max.y - box.min.y;
       relax(main.geometry, height);
+      slimArms(main);
+      easeNeck(main, height);
+      narrowBack(main, height);
       this.addRegions(main, height);
+      const region = main.geometry.getAttribute('aRegion') as THREE.BufferAttribute;
+      // the same feet the garment shader paints as shoes: foot bones, or right at the ground
+      const shoes = buildShoes(main, (i) => region.getZ(i) > 0.5 || region.getX(i) < 0.045);
       // pelvis bob was animated on the library's mannequin: rescale it to this body's hips
       const k = root.getObjectByName('pelvis')!.position.length() / animPelvis;
       const clips = new Map<string, THREE.AnimationClip>();
@@ -319,7 +580,7 @@ export class PeopleFactory {
         for (const t of cc.tracks) if (t.name.endsWith('.position')) for (let i = 0; i < t.values.length; i++) t.values[i] *= k;
         clips.set(n, cc);
       }
-      return { root, height, clips };
+      return { root, height, clips, shoes };
     };
     this.bodies = { m: body('Male'), f: body('Female') };
     for (const n of ['Hair_Long', 'Hair_Buns', 'Hair_SimpleParted', 'Hair_Buzzed', 'Hair_BuzzedFemale', 'Hair_Beard']) {
@@ -456,6 +717,17 @@ export class PeopleFactory {
       body.parent!.add(hm);
       extras.push(hm);
     }
+    // trainers over the painted feet: bound to this person's skeleton, placed exactly like the body
+    const shoes = new THREE.SkinnedMesh(t.shoes, shoeMaterial(look.shoe));
+    shoes.name = 'shoes';
+    shoes.position.copy(body.position);
+    shoes.quaternion.copy(body.quaternion);
+    shoes.scale.copy(body.scale);
+    shoes.bind(body.skeleton, body.bindMatrix);
+    shoes.castShadow = true;
+    shoes.frustumCulled = false;
+    body.parent!.add(shoes);
+    extras.push(shoes);
     return new PersonRig(this, t, model, look, [...skinned, ...extras]);
   }
 }
@@ -481,7 +753,7 @@ function aim(bone: THREE.Object3D, child: THREE.Object3D, dir: THREE.Vector3, k 
 }
 
 export type Gait = 'walk' | 'jog' | 'sprint';
-type Base = 'stand' | 'sit' | 'talk' | 'crouch' | 'dance';
+export type Base = 'stand' | 'sit' | 'talk' | 'crouch' | 'dance';
 const BASE_CLIP: Record<Base, string> = {
   stand: 'Idle_Loop',
   sit: 'Sitting_Idle_Loop',
@@ -557,6 +829,16 @@ export class PersonRig {
 
   get height() {
     return this.look.height;
+  }
+
+  /** One of the named bones (Head, hand_l, hand_r…), for what's worn or held to follow it. */
+  bone(name: 'Head' | 'hand_l' | 'hand_r' | 'lowerarm_l' | 'lowerarm_r' | 'spine_03' | 'pelvis') {
+    return this.bones[name];
+  }
+
+  /** The skinned meshes (body, eyes, hair, shoes), e.g. to measure where the face is. */
+  get skinnedMeshes(): readonly THREE.SkinnedMesh[] {
+    return this.meshes;
   }
 
   /** Where the stride is, 0…1 (two footfalls per cycle). */

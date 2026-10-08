@@ -1,6 +1,7 @@
-// The members: search them, and look after one (tickets, cooldown, staff role, deletion).
-import { ATTRACTION_IDS, ringmaster, type AdminUser, type AdminUserDetail, type User } from '../account/api';
+// The members: search them, and look after one (tickets, cooldown, staff role, deletion, what they bought).
+import { api, ApiError, ATTRACTION_IDS, ringmaster, type AdminUser, type AdminUserDetail, type ShopItem, type User } from '../account/api';
 import { formatStat, statLabel } from '../account/stats';
+import { ask } from './dialog';
 import { busy, esc, num, onApiError, pagerHtml, plural, rideLabel, toast, when } from './util';
 
 const LIMIT = 25;
@@ -10,6 +11,8 @@ export class MembersView {
   private offset = 0;
   private searchTimer: ReturnType<typeof setTimeout> | undefined;
   private detail: AdminUserDetail | null = null;
+  /** The shop's catalog, for item names and icons (fetched once). */
+  private catalog: ShopItem[] | null = null;
 
   constructor(
     private el: HTMLElement,
@@ -53,6 +56,24 @@ export class MembersView {
     else void this.loadList(true);
   }
 
+  /** Live: the member on screen (or the list, on the page being read), quietly. */
+  async refresh() {
+    const id = this.el.querySelector('.member-detail') ? this.detail?.user.id : undefined;
+    if (!id) return void this.loadList(false);
+    try {
+      const detail = await ringmaster.user(id);
+      // still looking at the same member?
+      if (this.detail?.user.id !== id || !this.el.querySelector('.member-detail')) return;
+      this.detail = detail;
+      this.renderDetail();
+    } catch (err) {
+      if (err instanceof ApiError && err.status === 404) {
+        toast('That account was just deleted.');
+        location.hash = '#members';
+      } else onApiError(err);
+    }
+  }
+
   // ---------- The list ----------
 
   private async loadList(fresh: boolean) {
@@ -75,15 +96,20 @@ export class MembersView {
   private async loadDetail(id: string) {
     this.el.innerHTML = `<p><a href="#members">← All members</a></p><p class="empty">Fetching their file…</p>`;
     try {
-      this.detail = await ringmaster.user(id);
+      [this.detail] = await Promise.all([ringmaster.user(id), this.loadCatalog()]);
       this.renderDetail();
     } catch (err) {
       onApiError(err);
     }
   }
 
+  private async loadCatalog() {
+    this.catalog ??= (await api.shop().catch(() => ({ items: [] as ShopItem[] }))).items;
+    return this.catalog;
+  }
+
   private renderDetail() {
-    const { user: u, purchases, rounds, byRide } = this.detail!;
+    const { user: u, purchases, rounds, byRide, shopOrders, shopOrdersTotal } = this.detail!;
     const self = this.me()?.id === u.id;
     const staff = u.role === 'admin';
     const played = ATTRACTION_IDS.filter((id) => byRide[id]?.rounds)
@@ -103,11 +129,19 @@ export class MembersView {
     const purchaseRows = purchases
       .map((p) => `<tr><td>${esc(when(p.createdAt))}</td><td class="r">+${num(p.quantity)}</td><td class="r">${p.balanceAfter === undefined ? '—' : num(p.balanceAfter)}</td></tr>`)
       .join('');
+    const orderRows = shopOrders
+      .map((o) => {
+        const item = this.catalog?.find((i) => i.id === o.item);
+        const kind = item ? (item.kind === 'treat' ? '<span class="pill pill-muted">Treat</span>' : '<span class="pill pill-staff">Souvenir</span>') : '';
+        return `<tr><td>${esc(when(o.createdAt))}</td><td>${esc(item ? `${item.icon} ${item.name}` : o.item)}</td><td>${kind}</td><td class="r">${num(o.ticketsSpent)}</td><td class="r">${num(o.balanceAfter)}</td></tr>`;
+      })
+      .join('');
+    const ordersMore = shopOrdersTotal > shopOrders.length ? `<p class="hint">The latest ${num(shopOrders.length)} of ${num(shopOrdersTotal)}. The <a href="#ledger">ledger</a> has every order.</p>` : '';
 
     this.el.innerHTML = `<p><a href="#members">← All members</a></p>
       <div class="member-detail">
         <div class="view-head"><div><h2 id="h-members">${esc(u.username)} ${staff ? '<span class="pill pill-staff">🎩 Staff</span>' : ''}</h2>
-          <p class="muted">${esc(u.email)} · joined ${esc(when(u.createdAt))} · ${plural(u.rounds, 'round', 'rounds')} · ${plural(u.purchases, 'pack', 'packs')}</p></div></div>
+          <p class="muted">${esc(u.email)} · joined ${esc(when(u.createdAt))} · ${plural(u.rounds, 'round', 'rounds')} · ${plural(u.purchases, 'pack', 'packs')} · ${plural(shopOrdersTotal, 'shop order', 'shop orders')}</p></div></div>
         <div class="member-actions">
           <div class="member-action"><h4>🎟️ Tickets</h4><p class="hint">They have <strong>${num(u.ticketBalance)}</strong>. Set a new balance:</p>
             <div class="inline"><input type="number" min="0" max="100000" step="1" inputmode="numeric" value="${u.ticketBalance}" aria-label="New ticket balance" data-balance />
@@ -123,6 +157,11 @@ export class MembersView {
           <div class="card"><h3>Per attraction</h3>${played ? `<div class="table-wrap"><table><thead><tr><th>Attraction</th><th class="r">Rounds</th><th class="r">Tickets</th></tr></thead><tbody>${played}</tbody></table></div>` : '<p class="empty">Hasn\'t played yet.</p>'}</div>
           <div class="card"><h3>Latest packs</h3>${purchaseRows ? `<div class="table-wrap"><table><thead><tr><th>When</th><th class="r">Tickets</th><th class="r">Balance after</th></tr></thead><tbody>${purchaseRows}</tbody></table></div>` : '<p class="empty">No packs yet.</p>'}</div>
         </div>
+        <div class="card"><h3>Shop orders</h3>${
+          orderRows
+            ? `<div class="table-wrap"><table><thead><tr><th>When</th><th>Item</th><th>Kind</th><th class="r">Tickets</th><th class="r">Balance after</th></tr></thead><tbody>${orderRows}</tbody></table></div>${ordersMore}`
+            : '<p class="empty">Nothing bought at the shop yet.</p>'
+        }</div>
         <div class="card"><h3>Latest rounds</h3>${roundRows ? `<div class="table-wrap"><table><thead><tr><th>Started</th><th>Attraction</th><th>Result</th><th class="r">Tickets</th><th>Stats</th></tr></thead><tbody>${roundRows}</tbody></table></div>` : '<p class="empty">No rounds yet.</p>'}</div>
       </div>`;
   }
@@ -148,13 +187,28 @@ export class MembersView {
         return update({ resetCooldown: true }, `${u.username} can pick up a pack now.`);
       case 'role': {
         const role = u.role === 'admin' ? 'player' : 'admin';
-        if (role === 'admin' && !confirm(`Make ${u.username} staff? They'll be able to open this office and change anything in it.`)) return;
+        if (
+          role === 'admin' &&
+          !(await ask({
+            icon: '🎩',
+            title: `Make ${u.username} staff?`,
+            body: "They'll be able to open this office and change anything in it, and to ride closed attractions.",
+            confirm: 'Make staff',
+          }))
+        )
+          return;
         return update({ role }, role === 'admin' ? `🎩 ${u.username} is staff now.` : `${u.username} is a player again.`);
       }
       case 'delete': {
-        const typed = prompt(`This deletes ${u.username}'s account, tickets and history for good.\nType their username to confirm:`);
-        if (typed === null) return;
-        if (typed.trim() !== u.username) return toast("That doesn't match their username, so nothing was deleted.", true);
+        const sure = await ask({
+          icon: '🗑️',
+          title: `Delete ${u.username}'s account?`,
+          body: 'Their account, tickets, rounds and purchases are deleted for good. This cannot be undone.',
+          confirm: 'Delete for good',
+          danger: true,
+          typeToConfirm: u.username,
+        });
+        if (!sure) return;
         const ok = await busy(button, async () => (await ringmaster.deleteUser(u.id), true));
         if (!ok) return;
         toast(`${u.username}'s account is gone.`);

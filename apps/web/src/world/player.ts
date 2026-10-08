@@ -4,6 +4,7 @@ import type { Ctx } from './context';
 import type { Input } from './input';
 import { clampToGrounds, LAYOUT } from './layout';
 import type { PersonRig } from './crowd/people';
+import { perks } from './perks';
 
 // The visitor is one of the park's realistic people (see crowd/people.ts): the same rig and
 // animation library as every guest, with a fixed outfit. Idle / walk / jog / sprint blend by
@@ -138,7 +139,8 @@ export class Player {
     }
     const mag = Math.min(1, Math.hypot(mx, mz));
     const running = this.enabled && input.boost && mag > 0.1;
-    let top = (running ? RUN_SPEED : WALK_SPEED) * mag;
+    // a sugar rush from the booth's cotton candy
+    let top = (running ? RUN_SPEED : WALK_SPEED) * mag * perks.speedMul;
     let tx = 0;
     let tz = 0;
     if (this.move === 'roll') {
@@ -225,8 +227,10 @@ export class Player {
       const dz = body.position.z - foot.y;
       if (Math.hypot(dx, dz) > 1.7 || body.position.y > 3) continue;
       const m = body.mass;
+      // the booth's popcorn: a power kick
+      const k = perks.kickMul;
       body.wakeUp();
-      body.applyImpulse(new CANNON.Vec3(f.x * m * 9, m * 4.5, f.y * m * 9));
+      body.applyImpulse(new CANNON.Vec3(f.x * m * 9 * k, m * 4.5 * Math.sqrt(k), f.y * m * 9 * k));
       body.angularVelocity.set((Math.random() - 0.5) * 6, (Math.random() - 0.5) * 6, (Math.random() - 0.5) * 6);
       hit = true;
     }

@@ -23,23 +23,27 @@ Stack: **Vite + TypeScript + Three.js + cannon-es + postprocessing + N8AO** for 
 
 Anyone can walk in as a guest and explore the park, knock over the letters and visit the Ticket Booth. **Every attraction needs tickets, and tickets need a free account.**
 
-- **Ticket counter:** the 🎟️ Ticket Booth sells packs of **20 tickets**, free for now. A pack is added to whatever you have left. You can buy **once every 5 hours**, counted from your last purchase (skipped windows don't stack up). The counter shows your balance, a countdown to the next pack, prices and your purchase history.
+- **Ticket counter:** the 🎟️ Ticket Booth hands out packs of **20 tickets**, free for now. A pack is added to whatever you have left. You can take **one every 5 hours**, counted from your last purchase (skipped windows don't stack up).
+- **The booth's shop:** press `E` at the booth to step up to the counter. The camera moves to **Rosa**, the vendor behind the kiosk window, who chats as you browse and buy, and the shop opens beside her with three aisles: **🎟️ Tickets** (the free pack, a countdown to the next, prices and your history), **🍭 Treats**, eaten on the spot (🍭 Cotton Candy: run 40% faster for 3 min · 🍿 Popcorn: kicks twice as hard for 3 min · 🥤 Fizzy Soda: +60 s on your next drone flight · 🍎 Candy Apple: just tasty), and **🎈 Souvenirs**, kept forever and worn round the fair (🎩 Top Hat, 🧢 Fair Cap, 🕶️ Star Shades, 🎈 Balloon, 👆 Foam Finger; one per spot). Everything is paid for in tickets; the catalog is `apps/api/src/shop/catalog.ts`.
 - **Prices:** every ride and game costs **1 ticket**; the **Giant Wheel** and **Sky Falcon** cost **5**. Prices, the pack size and the cooldown are database rows, changed in The Ringmaster's Office without a deploy.
 - **One round per ticket:** boarding spends the tickets, the attraction runs one round and ends on its own (leaving early still uses the ticket), and a results screen shows that round's statistics with personal bests. Riding again costs another ticket.
-- **Saved per user:** every purchase and every round, with its statistics. Players can download all their data or delete their account from the account menu in the HUD.
-- **Terms & privacy:** signing up requires accepting the [Terms of Service](apps/web/terms.html) and [Privacy Policy](apps/web/privacy.html) (served at `/terms` and `/privacy`). Fill in the highlighted placeholders before launch.
+- **💡 The Idea Box:** a kiosk with a giant light bulb on the entrance plaza's west side. Press `E` and a sheet opens beside it: pick what the idea is about (rides & games, treats & souvenirs, the park, something wrong, something else), write up to 500 characters and post it (an envelope flies into the slot). **My ideas** lists everything the member has shared, with where each one stands (waiting → accepted → in development → done, or declined) and staff's answer. When staff answer, a card pops up in the fair straight away ("Staff answered your idea"), and the kiosk opens on the news. Members only; up to 5 ideas a day.
+- **Saved per user:** every purchase and every round, with its statistics. Players can delete their account from the account menu in the HUD; a copy of their data is given on request by email.
+- **Terms & privacy:** signing up requires accepting the [Terms of Service](apps/web/terms.html) and [Privacy Policy](apps/web/privacy.html) (served at `/terms` and `/privacy`).
 
 ## The Ringmaster's Office (staff)
 
 The fair's back office lives at **`/ringmaster`**. Staff log in with their normal fair account; their account card in the game links to it.
 
 - **📊 Overview:** members, active players, rounds, completion rate, tickets handed out, spent and still in wallets. Charts of rounds, players and signups per day, and rounds by hour. Per-attraction numbers (rounds, players, finish rate, average round length), top players and park records. Look back over 7, 30 or 90 days (UTC).
-- **🎢 Attractions:** set each one's price, or switch it to **under maintenance** with an optional sign. Players see a red ring, an "Under maintenance" label and the sign, and can't board. Staff still can, to test it.
-- **🚧 Park gates:** close the whole park with a sign on the gate (visitors can still walk around, but nobody can board or pick up tickets). Set the pack size and the hours between packs.
+- **🎢 Attractions:** set each one's price, or switch it to **under maintenance** with an optional sign. Players see roadworks at it, a red ring, an "Under maintenance" label and the sign, and can't board. Anyone playing it when it closes is stopped and shown the sign, with the round's tickets refunded (closing the park does the same everywhere). Staff still can ride, to test it.
+- **🍭 Shop:** set the price of each treat and souvenir at the Ticket Booth, and how many are in stock (or no limit). Each order takes one; at 0 it's sold out, and players see "Only 3 left!" and "Sold out" on the shelf as it happens. Quick +10 / +50 buttons for restocking, and how many of each have sold.
+- **💡 Ideas:** what members left at the Idea Box, filtered by status (with counts; the tab's badge shows how many are waiting). Answer each suggestion **once** (a confirmation says so: the answer can't be changed afterwards) and set its status (waiting, accepted, in development, done, declined) as often as it moves along. The member sees both at once, live if they're in the fair. Two staff answering at the same moment can't both get through.
+- **🚧 Park gates:** close the whole park with a sign on the gate (visitors can still walk around, but nobody can board or pick up tickets). Separately, put the park **under maintenance** with its own sign: nobody but staff can come into the fair at all, visitors already inside are sent back to the entrance (any round in progress is stopped and refunded), and the way in reopens by itself when it's switched off. Set the pack size and the hours between packs.
 - **👥 Members:** search, set a balance, reset the pack cooldown, make someone staff or a player again, delete an account.
 - **🎟️ Ledger / 📜 Logbook:** every round and pack; every change made by staff, with before and after.
 
-Changes reach players within a minute (the game re-checks the gates every 60 s). To appoint the first member of staff, sign up in the fair, then:
+Changes reach players **live**, within a second: the game keeps a stream open to `GET /api/live`, which pushes the park (gates, maintenance, prices, pack rules) to everyone, and a member's own balance, role, cooldown or deletion to that member. If the stream can't connect, the game falls back to re-checking the gates every 60 s. It works the other way round too: the office keeps the same stream open, and what players do in the fair (signups, deleted accounts, packs, rounds and refunds) and what other staff change refreshes the view on screen within a couple of seconds (a **● Live** dot in the header shows it's connected, with the number of players in the fair right now; hover it for members, guests and visitors still at the entrance). A form someone is editing is never refreshed under them. Changes made outside the office (Prisma Studio, the `staff:*` scripts) aren't pushed; players pick them up the next time the game asks. To appoint the first member of staff, sign up in the fair, then:
 
 ```bash
 pnpm staff:appoint you@example.com           # local database (apps/api/.env)
@@ -106,6 +110,8 @@ pnpm --filter @funfair/api db:generate      # regenerate the Prisma client (pnpm
 pnpm studio:dev                             # Prisma Studio on the local database (apps/api/.env), port 5555
 pnpm studio:prod                            # Prisma Studio on production (apps/api/.env.production), port 5556
 pnpm staff:appoint <email> [--prod]         # make an account staff (opens /ringmaster); staff:dismiss, staff:list
+pnpm db:snapshot [--prod]                   # save the park's setup (gates, prices, maintenance signs, shop) to apps/api/prisma/seed.json
+pnpm db:seed [--prod]                       # write apps/api/prisma/seed.json back, e.g. after a database reset (also `prisma db seed`)
 pnpm --filter @funfair/web preview          # serve the web production build
 ```
 
@@ -124,13 +130,16 @@ apps/api/
   prisma.config.ts          Prisma CLI config: loads apps/api/.env
   scripts/init-env.mjs      creates .env on the first `pnpm dev`
   scripts/staff.mjs         pnpm staff:appoint | dismiss | list
+  scripts/seed.mjs          pnpm db:snapshot | db:seed: the park's setup, kept in prisma/seed.json
   src/main.ts               /api prefix, cookies, validation, CORS
   src/config/env.ts         validates the environment at startup
-  src/auth/                 signup (terms), login, logout, me, data export, account deletion; scrypt passwords, JWT session cookie, rate limits
+  src/auth/                 signup (terms), login, logout, me, account deletion; scrypt passwords, JWT session cookie, rate limits
   src/park/                 the live rules (prices, open/closed, maintenance, pack rules) and GET /api/park
+  src/live/                 GET /api/live: the office's changes pushed to the game (Server-Sent Events over Postgres LISTEN/NOTIFY)
   src/tickets/              ticket balance, packs, cooldown, purchase history
   src/rides/                attractions + default costs, boarding (spends tickets), rounds and their stats
-  src/ringmaster/           The Ringmaster's Office API: analytics, attractions, park gates, members, ledger, logbook (staff only)
+  src/suggestions/          the Idea Box: members' suggestions, and staff's answers (answered in src/ringmaster/)
+  src/ringmaster/           The Ringmaster's Office API: analytics, attractions, park gates, shop, ideas, members, ledger, logbook (staff only)
   src/health/               GET /api/health
   src/generated/prisma/     the generated client (not committed)
 ```
@@ -145,18 +154,28 @@ Every route is under `/api`. The session is an httpOnly, `SameSite=Lax` cookie n
 | `POST` | `/api/auth/login` | | Body `{ email, password }` → **200** `{ user }` and sets the cookie. **401** `Wrong email or password` |
 | `POST` | `/api/auth/logout` | | **204**, clears the cookie |
 | `GET` | `/api/auth/me` | ✔ | **200** `{ user }`, or **401** |
-| `GET` | `/api/auth/me/export` | ✔ | **200** JSON download of everything stored about the user (profile, tickets, purchases, rounds) |
 | `DELETE` | `/api/auth/me` | ✔ | Body `{ password }` → **204**, deletes the account and all its data. **401** `Wrong password` |
 | `GET` | `/api/tickets` | ✔ | **200** `{ balance, packSize, cooldownHours, lastPurchaseAt, nextPurchaseAt, canBuy, costs }` |
+| `GET` | `/api/shop` | | **200** `{ items }`: the booth's catalog (id, kind, name, icon, tickets, blurb, perk/minutes or slot), at today's prices, with `stock` (how many are left; `null` for no limit) |
+| `GET` | `/api/shop/orders?limit=` | ✔ | **200** `{ orders, total }`: the member's own treats and souvenirs bought, newest first (shown on their account card) |
+| `GET` | `/api/shop/souvenirs` | ✔ | **200** `{ souvenirs }`: what the member owns, and whether they're wearing it |
+| `POST` | `/api/shop/buy` | ✔ | Body `{ item }` → **200** `{ balance, order, souvenirs }` (a new souvenir is worn straight away). **402** `{ needed, balance }` when short, **409** for a souvenir already owned, **409** `{ code: 'sold_out' }` when none are left, **503** while the park is closed |
+| `PATCH` | `/api/shop/souvenirs/:item` | ✔ | Body `{ equipped }` → **200** `{ souvenirs }` (putting one on takes off whatever shares its spot) |
 | `POST` | `/api/tickets/purchase` | ✔ | **201** `{ balance, purchase, nextPurchaseAt, canBuy }`. **409** with `nextPurchaseAt` during the cooldown, **503** `code: 'park_closed'` while the park is closed |
 | `GET` | `/api/tickets/purchases` | ✔ | **200** `{ purchases }`, newest first (`?limit=`, default 50) |
 | `POST` | `/api/rides/:ride/board` | ✔ | Spends the tickets and opens a round: **201** `{ round: { id, ride, ticketsSpent, startedAt }, balance }`. **402** `{ needed, balance }` when short, **503** `code: 'park_closed'` or `'ride_closed'` while the park or the attraction is closed (not for staff), **401** for guests, **400** for an unknown attraction |
 | `POST` | `/api/rides/rounds/:id/finish` | ✔ | Body `{ completed, stats }` (up to 16 numeric stats) → **200** `{ round, history: { rounds, best } }`, where `best` is the min/max of each stat over earlier completed rounds. **409** if already finished, **404** if not yours |
+| `POST` | `/api/rides/rounds/:id/refund` | ✔ | Ends a round whose attraction (or the park) closed while it was played, and gives its tickets back → **200** `{ refunded, balance }`. The round is kept as abandoned, costing 0. **409** if it's open again, already over, older than an hour, or the caller is staff; **404** if not yours |
 | `GET` | `/api/rides/stats` | ✔ | **200** `{ totalRounds, ticketsSpent, byRide }`, with every attraction listed |
 | `GET` | `/api/rides/history` | ✔ | **200** `{ rounds }`, newest first (`?limit=`, default 20) |
-| `GET` | `/api/park` | | **200** `{ open, message, costs, packSize, cooldownHours, maintenance }`, where `maintenance` maps each closed attraction to its sign |
+| `GET` | `/api/suggestions` | ✔ | **200** `{ suggestions, total, unread }`: the member's own suggestions (latest 50), newest first, each `{ id, topic, message, status, statusChangedAt, reply, repliedAt, repliedBy, unread, createdAt }`; `unread` counts those with news from staff |
+| `POST` | `/api/suggestions` | ✔ | Body `{ topic, message }` (`topic`: `attraction`, `shop`, `park`, `problem` or `other`; `message`: 1–500 characters) → **201** the suggestion. **429** `{ code: 'suggestion_limit', nextAt }` after 5 in 24 hours |
+| `POST` | `/api/suggestions/seen` | ✔ | **204**: the member has read staff's news (nothing is `unread` any more) |
+| `GET` | `/api/park` | | **200** `{ open, message, underMaintenance, maintenanceMessage, costs, packSize, cooldownHours, maintenance }`, where `maintenance` maps each closed attraction to its sign and `underMaintenance` keeps everyone but staff out of the fair |
+| `GET` | `/api/live` | | **200** `text/event-stream`: a `park` event (as `GET /api/park`) on connect and on every change made in the office; with a session, also `account` events `{ balance, role, lastPurchaseAt }` or `{ deleted: true }`; `suggestions` events when staff answer one of the member's suggestions (the game then fetches `GET /api/suggestions`); for staff, also `office` events `{ kinds }` (`members`, `purchases`, `rounds`, `logbook`, `visitors`, `suggestions`: what changed, never who), at most one a second. Closed after 4 minutes; the browser reconnects |
+| `GET` | `/api/ringmaster/visitors` | staff | **200** `{ inFair, members, guests, atEntrance }`: game tabs connected to `/api/live` in the last minute (a member counts once however many tabs they have open) |
 | `GET` | `/api/health` | | **200** `{ ok: true, db: 'up' }`, or **503** if the database is unreachable |
-| | `/api/ringmaster/*` | staff | The office: `GET overview?days=7\|30\|90`, `GET`/`PATCH park`, `GET attractions`, `PATCH attractions/:ride` `{ tickets?, open?, closedMessage? }`, `GET users?q=&limit=&offset=`, `GET`/`PATCH`/`DELETE users/:id`, `GET purchases`, `GET rounds?ride=`, `GET actions`. **401** for guests, **403** for players |
+| | `/api/ringmaster/*` | staff | The office: `GET overview?days=7\|30\|90`, `GET`/`PATCH park`, `GET attractions`, `PATCH attractions/:ride` `{ tickets?, open?, closedMessage? }`, `GET shop`, `PATCH shop/:item` `{ tickets?, stock? }` (`stock: null` for no limit), `GET users?q=&limit=&offset=`, `GET`/`PATCH`/`DELETE users/:id`, `GET purchases`, `GET rounds?ride=`, `GET suggestions?status=&limit=&offset=` (→ `{ suggestions, total, counts }`), `PATCH suggestions/:id` `{ status?, reply? }` (the reply only once: **409** if it has one), `GET actions`. **401** for guests, **403** for players |
 
 `user` is `{ id, email, username, role, createdAt }` (`role` is `player` or `admin`, i.e. staff). Attraction ids are `coaster`, `falcon`, `rocket`, `ferris`, `flip`, `ship`, `speedway`, `drone`, `crates` and `striker`. Prices, maintenance, the pack size and the cooldown are rows in `attraction_settings` and `park_settings`; the defaults for a missing row live in `apps/api/src/rides/attractions.ts`. Signup, login and account deletion are each limited to 10 requests a minute per IP (**429**, with `Retry-After`).
 
@@ -207,7 +226,9 @@ Walk down the path south-west of the entrance to the kart garage and press `E`. 
 
 ## Controls
 
-`WASD`/arrows walk · `Shift` run · `Space` dodge-roll · `F` kick · `E`/`Enter` interact · `H` wave · `R` back to entrance · `M` park map · `Esc` exit a ride. Touch devices get a joystick + action button. Mouse wheel zooms.
+`WASD`/arrows walk · `Shift` run · `Space` dodge-roll · `F` kick · `E`/`Enter` interact · `H` wave · `R` back to entrance · `M` park map · `I` info · `Esc` exit a ride. Touch devices get a joystick + action button. Mouse wheel zooms.
+
+Info: the guide to the fair, and each ride's intro (its story and controls), open by themselves only the first time this browser meets them. After that they're behind the **ℹ️** button in the top-right corner (or `I`), which shows the guide on foot and the ride's intro while riding, and glows briefly when a ride's intro is there to read again.
 
 Park map: click the minimap (or press `M`) to open a full-screen map. Drag to pan, scroll or pinch to zoom, pick a place on the map or in the legend, then pick it again (or press `Enter`) to fast travel there.
 
@@ -238,8 +259,8 @@ On each deployment, `apps/web/vercel.json`'s build command runs from the repo ro
 ### Notes
 
 - **Rate limits** (signup, login, account deletion) are counted in each function instance's memory, so on serverless they're per instance and looser than locally. Move the counters in `apps/api/src/auth/auth-throttler.guard.ts` to a shared store (e.g. Upstash Redis) if you need them strict.
+- **Live updates** (`GET /api/live`) run in their own function, `apps/web/api/live.js`, with a 300 s limit (the API closes each stream after 4 minutes and the browser reconnects); that limit needs Fluid compute on the Hobby plan, which is on by default for new projects. Each API instance holds one Postgres connection for `LISTEN` while visitors are connected, using `DATABASE_URL_UNPOOLED` (set by the Neon integration; Neon's pooled URL can't `LISTEN`). A tab hidden for 30 s drops its stream and reconnects when it's back.
 - **Elsewhere:** the API also runs as a normal Node server (`pnpm build --filter=@funfair/api`, `pnpm --filter @funfair/api db:deploy`, `pnpm --filter @funfair/api start`). Put it behind the site's origin with a rewrite of `/api/*`; a separate origin would need cross-site (`SameSite=None`) cookies.
-- **Before launch**, fill in the highlighted placeholders in `apps/web/terms.html` and `apps/web/privacy.html`.
 
 ## Content and settings
 

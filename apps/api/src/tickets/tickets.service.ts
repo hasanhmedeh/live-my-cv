@@ -2,6 +2,7 @@ import { ConflictException, HttpStatus, Injectable } from '@nestjs/common';
 import type { Attraction, User } from '../generated/prisma/client.js';
 import { ParkService } from '../park/park.service.js';
 import { PrismaService } from '../prisma/prisma.service.js';
+import { announceQuietly } from '../live/announce.js';
 import { PACK_CURRENCY, PACK_PRICE_CENTS, PACK_PROVIDER } from '../rides/attractions.js';
 import { toPurchaseJson, type PurchaseJson } from './purchase-json.js';
 
@@ -93,6 +94,7 @@ export class TicketsService {
       });
     }
 
+    await announceQuietly(this.prisma, { t: 'office', kind: 'purchases' });
     const { purchase, balance } = result;
     return {
       balance,

@@ -153,6 +153,39 @@ main {
 .whoami {
   color: var(--muted);
 }
+/* the live updates' state: a pulsing dot while the office hears what happens in the fair */
+.live-pill {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 0.8rem;
+  font-weight: 700;
+  color: var(--muted);
+}
+.live-pill::before {
+  content: '';
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  background: var(--muted);
+}
+.live-pill.is-on {
+  color: var(--good);
+}
+.live-pill.is-on::before {
+  background: var(--good);
+  animation: live-pulse 2s ease-in-out infinite;
+}
+@keyframes live-pulse {
+  50% {
+    opacity: 0.35;
+  }
+}
+@media (prefers-reduced-motion: reduce) {
+  .live-pill.is-on::before {
+    animation: none;
+  }
+}
 .bar-link {
   border: 0;
   padding: 0;
@@ -284,6 +317,13 @@ textarea:focus-visible {
   background: transparent;
   color: var(--bad);
   box-shadow: inset 0 0 0 1.5px var(--bad);
+}
+.btn-danger-solid {
+  background: var(--bad);
+  color: #fff;
+}
+.btn-danger-solid:hover {
+  filter: brightness(1.08);
 }
 .btn-small {
   min-height: 32px;
@@ -664,6 +704,114 @@ tr.clickable:hover td {
   font-weight: 700;
 }
 
+/* ---------- Shop ---------- */
+.shop-section {
+  margin: 0 0 12px;
+  font-size: 1.1rem;
+}
+.attractions + .shop-section {
+  margin-top: 24px;
+}
+
+/* ---------- Idea Box ---------- */
+.tab-badge {
+  display: inline-grid;
+  place-items: center;
+  min-width: 1.45em;
+  height: 1.45em;
+  margin-left: 2px;
+  padding: 0 5px;
+  border-radius: 999px;
+  background: var(--accent);
+  color: var(--accent-ink);
+  font-size: 0.72rem;
+  font-variant-numeric: tabular-nums;
+}
+.ideas-filter {
+  flex-wrap: wrap;
+  margin-bottom: 16px;
+  border-radius: 18px;
+}
+.ideas-filter .num {
+  margin-left: 2px;
+  opacity: 0.75;
+}
+.ideas {
+  display: grid;
+  gap: 14px;
+  grid-template-columns: repeat(auto-fill, minmax(min(100%, 380px), 1fr));
+}
+.idea {
+  display: grid;
+  gap: 10px;
+  align-content: start;
+  padding: 16px;
+  border-radius: var(--radius);
+  background: var(--card);
+  box-shadow: var(--shadow);
+  border-top: 4px solid var(--heading);
+}
+.idea.is-accepted,
+.idea.is-in_development,
+.idea.is-done {
+  border-top-color: var(--good);
+}
+.idea.is-declined {
+  border-top-color: var(--bad);
+}
+.idea-topic {
+  color: var(--muted);
+  font-size: 0.85rem;
+  font-weight: 700;
+}
+.idea-text {
+  margin: 0;
+  white-space: pre-line;
+  overflow-wrap: anywhere;
+}
+.idea > .idea-text {
+  font-size: 1.02rem;
+}
+.idea a {
+  color: var(--heading);
+}
+.idea-reply {
+  padding: 10px 12px;
+  border-left: 3px solid var(--heading);
+  border-radius: 4px 10px 10px 4px;
+  background: var(--card-2);
+}
+.idea-reply-who {
+  margin: 0 0 4px;
+  color: var(--muted);
+  font-size: 0.8rem;
+  font-weight: 700;
+}
+.idea .hint {
+  font-weight: 400;
+}
+.idea-chars {
+  margin-top: -6px;
+  color: var(--faint);
+  font-size: 0.78rem;
+  text-align: right;
+  font-variant-numeric: tabular-nums;
+}
+.idea-chars.is-low {
+  color: var(--bad);
+  font-weight: 700;
+}
+.idea-pick {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex: 1;
+  min-width: 200px;
+}
+.idea-pick select {
+  flex: 1;
+}
+
 /* ---------- Park gates ---------- */
 .gates-form {
   display: grid;
@@ -768,6 +916,72 @@ tr.clickable:hover td {
 }
 
 /* ---------- Toast ---------- */
+/* ---------- Dialogs (dialog.ts) ---------- */
+.office-dialog {
+  width: min(440px, calc(100vw - 32px));
+  padding: 0;
+  border: 0;
+  border-radius: var(--radius);
+  background: var(--card);
+  color: var(--text);
+  box-shadow: var(--shadow), 0 0 0 1px var(--line);
+}
+.office-dialog::backdrop {
+  background: rgba(14, 8, 30, 0.62);
+  backdrop-filter: blur(3px);
+}
+.office-dialog form {
+  display: grid;
+  gap: 12px;
+  padding: 22px;
+}
+.office-dialog-icon {
+  margin: 0;
+  font-size: 2rem;
+  line-height: 1;
+}
+.office-dialog h2 {
+  margin: 0;
+  font: 400 1.4rem/1.15 var(--display);
+  color: var(--heading);
+  overflow-wrap: anywhere;
+}
+.office-dialog p {
+  margin: 0;
+  color: var(--muted);
+  line-height: 1.5;
+}
+.office-dialog label strong {
+  color: var(--text);
+  overflow-wrap: anywhere;
+}
+.office-dialog-actions {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: flex-end;
+  gap: 10px;
+  margin-top: 6px;
+}
+@media (prefers-reduced-motion: no-preference) {
+  .office-dialog[open] {
+    animation: office-dialog-in 0.16s ease-out;
+  }
+  .office-dialog[open]::backdrop {
+    animation: office-dialog-fade 0.16s ease-out;
+  }
+}
+@keyframes office-dialog-in {
+  from {
+    opacity: 0;
+    transform: translateY(8px) scale(0.98);
+  }
+}
+@keyframes office-dialog-fade {
+  from {
+    opacity: 0;
+  }
+}
+
 .toast {
   position: fixed;
   left: 50%;

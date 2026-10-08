@@ -1,6 +1,7 @@
 import { ConflictException, HttpException, HttpStatus, Injectable, NotFoundException } from '@nestjs/common';
 import { Prisma, type Attraction, type User } from '../generated/prisma/client.js';
-import { ParkService } from '../park/park.service.js';
+import { isStaff, ParkService } from '../park/park.service.js';
+import { announce, announceQuietly } from '../live/announce.js';
 import { PrismaService } from '../prisma/prisma.service.js';
 import { ATTRACTIONS } from './attractions.js';
 import type { FinishRoundDto } from './dto/finish-round.dto.js';
@@ -22,6 +23,16 @@ export interface FinishResult {
     best: StatBests;
   };
 }
+
+export interface RefundResult {
+  /** Tickets given back: what the round cost. */
+  refunded: number;
+  /** The balance with them back in it. */
+  balance: number;
+}
+
+/** A round can be refunded this long after it started: no attraction runs anywhere near an hour. */
+const REFUND_WINDOW_MS = 60 * 60_000;
 
 export interface RideSummary {
   /** Rounds started (each one paid for), finished or not. */
@@ -98,6 +109,7 @@ export class RidesService {
       );
     }
 
+    await announceQuietly(this.prisma, { t: 'office', kind: 'rounds' });
     const { round, balance } = result;
     return {
       round: { id: round.id, ride: round.ride, ticketsSpent: round.ticketsSpent, startedAt: round.startedAt.toISOString() },
@@ -120,6 +132,7 @@ export class RidesService {
       if (!exists) throw new NotFoundException('Round not found');
       throw new ConflictException('This round is already over');
     }
+    await announceQuietly(this.prisma, { t: 'office', kind: 'rounds' });
 
     const round = await this.prisma.rideRound.findUniqueOrThrow({ where: { id: roundId } });
     const [rounds, bestRows] = await Promise.all([
@@ -127,6 +140,38 @@ export class RidesService {
       this.bestRows(userId, { ride: round.ride, excludeRoundId: round.id }),
     ]);
     return { round: toRoundJson(round), history: { rounds, best: toBests(bestRows) } };
+  }
+
+  /**
+   * Ends a round cut short because its attraction (or the whole park) closed, or the park went
+   * under maintenance, while it was being
+   * played, and gives its tickets back. Only while it really is closed, not for staff (they ride
+   * through closures), only for a round still open and started within the hour, and only once:
+   * the update matches open rounds, so a second (or concurrent) refund finds nothing. The round
+   * is kept, as abandoned and costing nothing.
+   */
+  async refund(user: User, roundId: string): Promise<RefundResult> {
+    const round = await this.prisma.rideRound.findFirst({ where: { id: roundId, userId: user.id } });
+    if (!round) throw new NotFoundException('Round not found');
+    if (round.endedAt) throw new ConflictException('This round is already over');
+    const [park, attraction] = await Promise.all([this.park.rules(), this.park.attraction(round.ride)]);
+    if (isStaff(user) || (park.open && !park.underMaintenance && attraction.open) || Date.now() - round.startedAt.getTime() > REFUND_WINDOW_MS) {
+      throw new ConflictException('This round can only be finished, not refunded');
+    }
+    return this.prisma.$transaction(async (tx) => {
+      const { count } = await tx.rideRound.updateMany({
+        where: { id: roundId, userId: user.id, endedAt: null },
+        data: { endedAt: new Date(), completed: false, stats: {}, ticketsSpent: 0 },
+      });
+      if (count === 0) throw new ConflictException('This round is already over');
+      const { ticketBalance } = await tx.user.update({
+        where: { id: user.id },
+        data: { ticketBalance: { increment: round.ticketsSpent } },
+        select: { ticketBalance: true },
+      });
+      await announce(tx, { t: 'office', kind: 'rounds' });
+      return { refunded: round.ticketsSpent, balance: ticketBalance };
+    });
   }
 
   /** Lifetime numbers per attraction, with every attraction present. */

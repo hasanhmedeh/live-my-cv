@@ -270,6 +270,8 @@ export class AnalyticsService {
       park: {
         open: rules.open,
         closedMessage: rules.closedMessage,
+        underMaintenance: rules.underMaintenance,
+        maintenanceMessage: rules.maintenanceMessage,
         packSize: rules.packSize,
         cooldownHours: rules.cooldownHours,
         updatedAt: rules.updatedAt?.toISOString() ?? null,

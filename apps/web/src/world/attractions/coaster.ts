@@ -564,9 +564,9 @@ export class Coaster implements Attraction {
     $('rh-toast').hidden = true;
     document.body.classList.add('is-riding-coaster');
     this.updateHudStatic();
-    this.ctx.ui.panel(`${this.cfg.id}-intro`, this.cfg.intro(this.ctx.mobile), { accent: PALETTE.mustard });
-    // the intro steps aside after a few seconds
-    this.introTimer = 9;
+    // the intro opens by itself the first time (then steps aside after a few seconds); after that it's behind the ℹ️
+    const shown = this.ctx.ui.setIntro(`${this.cfg.id}-intro`, this.cfg.name, this.cfg.intro(this.ctx.mobile), { accent: PALETTE.mustard });
+    this.introTimer = shown ? 9 : 0;
     this.lastZone = null;
     this.zoneVisits.clear();
     this.ctx.sfx.chime();

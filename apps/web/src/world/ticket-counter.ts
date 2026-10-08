@@ -1,5 +1,5 @@
-// The Ticket Booth's counter: what a guest is told, a member's wallet with the free pack (or the
-// countdown to the next one), the price list, their rounds and their latest purchases.
+// Bits of the ticket counter shared by the game's cards and the booth's shop (shop.ts): ticket
+// wording, the sign-up buttons, the countdown to the next pack, the price list and a member's history.
 import { ATTRACTION_IDS, type AttractionId } from '../account/api';
 import { everyHours, formatWait, session } from '../account/session';
 import { MAP_PLACES } from './minimap';
@@ -32,7 +32,7 @@ export function waitHtml(ms: number, id = '') {
 }
 
 /** Every attraction and what a round costs (the server's prices once they're in). */
-function priceListHtml() {
+export function priceListHtml() {
   const rows = ATTRACTION_IDS.map((id) => {
     const p = MAP_PLACES.find((m) => m.id === id)!;
     const price = session.maintenance(id) === undefined ? ticketsText(session.cost(id)) : '🚧 Under maintenance';
@@ -41,33 +41,8 @@ function priceListHtml() {
   return `<h3>Price list · one round each</h3><ul class="ticket-list">${rows}</ul>`;
 }
 
-/** The member's wallet: the balance, the free pack (or how long until the next one), and how the last purchase went. */
-function walletHtml(state: CounterState) {
-  const t = session.tickets;
-  if (!t)
-    return state.error
-      ? `<p class="booth-account">🎟️ ${escapeHtml(state.error)}</p>`
-      : `<p class="booth-account">🎟️ Signed in as <strong>${escapeHtml(session.user!.username)}</strong> · counting your tickets…</p>`;
-  const wait = session.msUntilPurchase() ?? 0;
-  // aria-disabled rather than disabled, so a keyboard user's focus stays on the button
-  const button =
-    wait > 0
-      ? `<button class="btn btn-primary btn-small" type="button" data-buy aria-disabled="true" aria-describedby="ticket-wait">Buy ${t.packSize} tickets</button>`
-      : `<button class="btn btn-primary btn-small" type="button" data-buy${state.buying ? ' aria-disabled="true" aria-busy="true"' : ''}>${
-          state.buying ? 'Printing your tickets…' : `Buy ${t.packSize} tickets · free`
-        }</button>`;
-  const note = state.error
-    ? `<p class="ticket-error" role="alert">${escapeHtml(state.error)}</p>`
-    : state.flash
-      ? `<p class="ticket-flash" role="status">${escapeHtml(state.flash)}</p>`
-      : '';
-  return `<div class="ticket-wallet"><span>Your tickets</span><b>🎟️ ${t.balance}</b></div><p class="panel-actions">${button}</p>${
-    wait > 0 ? waitHtml(wait, 'ticket-wait') : ''
-  }${note}<p class="sub">Tickets are free for now: one pack of ${t.packSize} ${everyHours(t.cooldownHours)}, and leftover tickets carry over.</p>`;
-}
-
 /** The member's rounds so far and their latest purchases. */
-function historyHtml() {
+export function historyHtml() {
   const stats = session.stats;
   const rounds = stats
     ? stats.totalRounds
@@ -85,25 +60,4 @@ function historyHtml() {
             .join('')}</ul>`
         : '<p>No purchases yet: your first pack is on the house.</p>';
   return `<h3>Your fair so far</h3><p>🎢 ${rounds}</p><h3>Latest purchases</h3>${list}`;
-}
-
-export interface CounterState {
-  /** A purchase is on its way to the server. */
-  buying: boolean;
-  /** What went wrong with the last purchase (or loading the wallet). */
-  error: string | null;
-  /** What went right with it. */
-  flash: string | null;
-}
-
-/** Everything under the booth card's title (redrawn in place as the wallet changes). */
-export function boothBodyHtml(state: CounterState) {
-  if (!session.user)
-    return `<p class="booth-account">🎟️ Every ride and game costs tickets, and tickets need a free account. Sign up (it's free) and pick up <strong>${session.packSize} free tickets</strong> right here, ${everyHours(session.cooldownHours)}.</p>${accountButtons()}${priceListHtml()}${legalLinksHtml()}`;
-  return `${walletHtml(state)}${priceListHtml()}${historyHtml()}${legalLinksHtml()}`;
-}
-
-/** The whole booth card. */
-export function boothPanelHtml(state: CounterState) {
-  return `<p class="eyebrow">Ticket Booth · Ticket counter</p><h2>Tickets, please! 🎟️</h2><div class="booth-body">${boothBodyHtml(state)}</div>`;
 }

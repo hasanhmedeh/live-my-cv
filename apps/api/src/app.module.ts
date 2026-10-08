@@ -4,10 +4,13 @@ import { ConfigModule } from '@nestjs/config';
 import { AuthModule } from './auth/auth.module.js';
 import { validateEnv } from './config/env.js';
 import { HealthModule } from './health/health.module.js';
+import { LiveModule } from './live/live.module.js';
 import { ParkModule } from './park/park.module.js';
 import { PrismaModule } from './prisma/prisma.module.js';
 import { RidesModule } from './rides/rides.module.js';
 import { RingmasterModule } from './ringmaster/ringmaster.module.js';
+import { ShopModule } from './shop/shop.module.js';
+import { SuggestionsModule } from './suggestions/suggestions.module.js';
 import { TicketsModule } from './tickets/tickets.module.js';
 
 @Module({
@@ -23,7 +26,10 @@ import { TicketsModule } from './tickets/tickets.module.js';
     AuthModule,
     TicketsModule,
     RidesModule,
+    ShopModule,
+    SuggestionsModule,
     RingmasterModule,
+    LiveModule,
     HealthModule,
   ],
 })

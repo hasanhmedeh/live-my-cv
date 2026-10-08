@@ -12,6 +12,7 @@ const guestRow = document.getElementById('intro-guest')!;
 const memberRow = document.getElementById('intro-member')!;
 const logoutBtn = document.getElementById('intro-logout') as HTMLButtonElement;
 const closedCard = document.getElementById('intro-closed')!;
+const worksCard = document.getElementById('intro-works')!;
 
 let worldReady = false;
 let closed = false;
@@ -25,6 +26,8 @@ void session.loadPark(true);
 /**
  * The card follows the session: guests are offered an account, members are greeted. While the park
  * is closed it shows the sign (visitors can still walk in and look around; staff can still ride).
+ * While it's under maintenance it shows that sign instead, and the way in stays shut to everyone
+ * but staff (the account buttons stay, so staff can log in).
  */
 function renderAccount() {
   const user = session.user;
@@ -34,17 +37,33 @@ function renderAccount() {
   document.getElementById('intro-guest-text')!.textContent =
     `Walk in as a guest, or sign up for free tickets: ${session.packSize} ${everyHours(session.cooldownHours)}, for every ride and game.`;
 
-  const parkClosed = !session.parkOpen;
+  const works = session.parkUnderMaintenance;
+  worksCard.hidden = closed || !works;
+  document.getElementById('intro-works-message')!.textContent = works
+    ? (session.park?.maintenanceMessage ?? "We're giving the fair some care, so nobody can come in for now. Come back soon!")
+    : '';
+  document.getElementById('intro-works-staff')!.hidden = !session.isStaff;
+
+  const parkClosed = !session.parkOpen && !works;
   closedCard.hidden = closed || !parkClosed;
   document.getElementById('intro-closed-message')!.textContent = parkClosed
     ? (session.park?.message ?? 'The rides and the Ticket Booth are paused for now. Come back soon!')
     : '';
   document.getElementById('intro-closed-staff')!.hidden = !session.isStaff;
 
-  if (worldReady)
-    enterLabel.textContent = parkClosed && !session.isStaff ? 'Look around 🎪' : session.known && !user ? 'Continue as guest 🎪' : 'Enter the fair 🎪';
+  if (worldReady) {
+    enterBtn.disabled = session.shutOut;
+    enterLabel.textContent = session.shutOut
+      ? 'Under maintenance 🛠️'
+      : parkClosed && !session.isStaff
+        ? 'Look around 🎪'
+        : session.known && !user
+          ? 'Continue as guest 🎪'
+          : 'Enter the fair 🎪';
+  }
 }
 session.onChange(renderAccount);
+session.onPark(renderAccount);
 
 for (const b of intro.querySelectorAll<HTMLButtonElement>('[data-auth]'))
   b.addEventListener('click', async () => {
@@ -105,9 +124,17 @@ async function boot() {
     intro.classList.add('is-world-ready');
     worldReady = true;
     renderAccount();
-    enterBtn.disabled = false;
     if (!authDialog.isOpen) enterBtn.focus({ preventScroll: true });
+    // the park can go under maintenance at any time: the intro comes back, and the way in stays shut until it's over
+    session.watchPark();
+    game.onShutOut = () => {
+      intro.classList.remove('is-hidden');
+      intro.inert = false;
+      renderAccount();
+      if (!authDialog.isOpen) enterBtn.focus({ preventScroll: true });
+    };
     enterBtn.onclick = () => {
+      if (session.shutOut) return;
       enterBtn.blur();
       intro.classList.add('is-hidden');
       intro.inert = true;

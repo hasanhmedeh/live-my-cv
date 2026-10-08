@@ -1,5 +1,6 @@
 // What staff changed, and when: the admin_actions table, in words.
-import { isAttraction, ringmaster, type AdminAction } from '../account/api';
+import { isAttraction, ringmaster, type AdminAction, type SuggestionStatus } from '../account/api';
+import { STATUSES } from '../account/ideas';
 import { esc, onApiError, pagerHtml, rideName, when } from './util';
 
 const LIMIT = 30;
@@ -17,6 +18,11 @@ export class LogbookView {
   }
 
   show() {
+    void this.load();
+  }
+
+  /** Live: the newest entries (on the page being read). */
+  refresh() {
     void this.load();
   }
 
@@ -51,6 +57,12 @@ function describe(a: AdminAction): [string, string] {
   const ride = a.target && isAttraction(a.target) ? esc(rideName(a.target)) : target;
   const sign = typeof after.closedMessage === 'string' ? ` with the sign “${esc(after.closedMessage)}”` : '';
   switch (a.action) {
+    case 'park.maintenance.on': {
+      const works = typeof after.maintenanceMessage === 'string' ? ` with the sign “${esc(after.maintenanceMessage)}”` : '';
+      return ['🛠️', `Put the park under maintenance${works}: only staff can come in.${rules(after)}`];
+    }
+    case 'park.maintenance.off':
+      return ['🎪', `Ended the park's maintenance: visitors can come back in.${rules(after)}`];
     case 'park.close':
       return ['🚧', `Closed the park${sign}.${rules(after)}`];
     case 'park.open':
@@ -65,12 +77,25 @@ function describe(a: AdminAction): [string, string] {
       return ['🎟️', `Changed the price of <strong>${ride}</strong>.${price(before, after)}`];
     case 'attraction.update':
       return ['🪧', `Changed the maintenance sign of <strong>${ride}</strong>${sign || ' back to the default'}.`];
+    case 'shop.price':
+      return ['🍭', `Changed the price of <strong>${target}</strong> at the shop.${price(before, after)}`];
+    case 'shop.stock':
+      return ['📦', `${stock(before, after, target)}`];
+    case 'shop.update':
+      return ['🍭', `Changed <strong>${target}</strong> at the shop.${price(before, after)} ${stock(before, after, target)}`];
     case 'user.tickets':
       return ['🎟️', `Set <strong>${target}</strong>'s tickets from ${esc(before.tickets)} to ${esc(after.tickets)}.`];
     case 'user.role':
       return ['🎩', after.role === 'admin' ? `Made <strong>${target}</strong> staff.` : `Made <strong>${target}</strong> a player again.`];
     case 'user.cooldown':
       return ['⏳', `Let <strong>${target}</strong> pick up their next pack right away.`];
+    case 'suggestion.reply':
+      return [
+        '💌',
+        `Answered <strong>${target}</strong>'s idea ${idea(d)}${typeof after.status === 'string' ? ` and marked it ${statusName(after.status)}` : ''}: “${esc(after.reply)}”`,
+      ];
+    case 'suggestion.status':
+      return ['💡', `Marked <strong>${target}</strong>'s idea ${idea(d)} ${statusName(after.status)} (was ${statusName(before.status)}).`];
     case 'user.delete':
       return ['🗑️', `Deleted the account <strong>${target}</strong>${before.username ? ` (${esc(before.username)})` : ''}.`];
     default:
@@ -78,8 +103,20 @@ function describe(a: AdminAction): [string, string] {
   }
 }
 
+/** The start of the idea, as the logbook kept it. */
+const idea = (d: Change & { excerpt?: unknown }) => (typeof d.excerpt === 'string' ? `“${esc(d.excerpt)}”` : '');
+
+const statusName = (s: unknown) => (typeof s === 'string' && s in STATUSES ? `“${esc(STATUSES[s as SuggestionStatus].label)}”` : esc(s));
+
 const price = (before: Record<string, unknown>, after: Record<string, unknown>) =>
   'tickets' in after ? ` Price ${esc(before.tickets)} → ${esc(after.tickets)} tickets.` : '';
+
+const stock = (before: Record<string, unknown>, after: Record<string, unknown>, target: string) => {
+  const was = before.stock === null || before.stock === undefined ? 'no limit' : `${esc(before.stock)} in stock`;
+  if (after.stock === null) return `Took the stock limit off <strong>${target}</strong> (was ${was}).`;
+  if (after.stock === 0) return `Marked <strong>${target}</strong> sold out (was ${was}).`;
+  return `Set <strong>${target}</strong>'s stock to ${esc(after.stock)} (was ${was}).`;
+};
 
 const rules = (after: Record<string, unknown>) =>
   [

@@ -42,7 +42,7 @@ export class Input {
     if (v) this.keys.clear();
   }
 
-  on(evt: 'action' | 'roll' | 'kick' | 'reset' | 'honk' | 'escape' | 'camera' | 'any', fn: () => void) {
+  on(evt: 'action' | 'roll' | 'kick' | 'reset' | 'honk' | 'escape' | 'camera' | 'info' | 'any', fn: () => void) {
     (this.handlers[evt] ??= []).push(fn);
   }
 
@@ -53,8 +53,8 @@ export class Input {
   private onKeyDown = (e: KeyboardEvent) => {
     if (this._paused) return;
     const target = e.target as HTMLElement;
-    // typing into a form field, or using the time panel or a dialog (sign up), isn't playing the game
-    if (target && (target.tagName === 'INPUT' || target.tagName === 'TEXTAREA' || target.closest?.('.time-panel, #clock, dialog'))) return;
+    // typing into a form field, or using the time panel, a dialog (sign up) or the booth's shop, isn't playing the game
+    if (target && (target.tagName === 'INPUT' || target.tagName === 'TEXTAREA' || target.closest?.('.time-panel, #clock, dialog, .shop'))) return;
     const driving = ['KeyW', 'KeyA', 'KeyS', 'KeyD', 'KeyZ', 'KeyQ', 'ArrowUp', 'ArrowDown', 'ArrowLeft', 'ArrowRight', 'Space'];
     if (driving.includes(e.code)) e.preventDefault();
     if (e.repeat) {
@@ -74,6 +74,7 @@ export class Input {
     if (e.code === 'KeyH') this.emit('honk');
     if (e.code === 'KeyC') this.emit('camera');
     if (e.code === 'Escape') this.emit('escape');
+    if (e.code === 'KeyI') this.emit('info');
   };
 
   private setupStick() {

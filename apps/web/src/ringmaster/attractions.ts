@@ -21,6 +21,11 @@ export class AttractionsView {
     });
   }
 
+  /** Live: the latest prices and switches (main.ts holds off while a card is being edited). */
+  refresh() {
+    void this.show();
+  }
+
   async show() {
     if (!this.rows) this.el.innerHTML = `${head()}<p class="empty">Walking the midway…</p>`;
     try {
@@ -73,7 +78,7 @@ export class AttractionsView {
 }
 
 const head = (closed?: number) =>
-  `<div class="view-head"><div><h2 id="h-attractions">Attractions</h2><p class="muted">Prices and maintenance. Changes reach the fair within a minute; staff can still ride a closed attraction to test it.${
+  `<div class="view-head"><div><h2 id="h-attractions">Attractions</h2><p class="muted">Prices and maintenance. Changes reach the fair at once; staff can still ride a closed attraction to test it.${
     closed ? ` <strong>${num(closed)} under maintenance.</strong>` : ''
   }</p></div></div>`;
 

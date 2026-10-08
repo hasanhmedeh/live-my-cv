@@ -1,15 +1,22 @@
-// Every pack picked up and every round played, newest first.
-import { ATTRACTION_IDS, isAttraction, ringmaster, type AttractionId } from '../account/api';
+// Every pack picked up, every round played and everything bought at the booth's shop, newest first.
+import { api, ATTRACTION_IDS, isAttraction, ringmaster, type AttractionId, type ShopItem } from '../account/api';
 import { formatStat, statLabel } from '../account/stats';
 import { esc, num, onApiError, pagerHtml, rideLabel, when } from './util';
 
 const LIMIT = 25;
-type Book = 'rounds' | 'purchases';
+type Book = 'rounds' | 'purchases' | 'shop';
+const BOOKS: [Book, string][] = [
+  ['rounds', '🎢 Rounds'],
+  ['purchases', '🎟️ Packs'],
+  ['shop', '🛍️ Shop'],
+];
 
 export class LedgerView {
   private book: Book = 'rounds';
   private ride: AttractionId | null = null;
   private offset = 0;
+  /** The shop's catalog, for item names and icons (fetched once). */
+  private catalog: ShopItem[] | null = null;
 
   constructor(private el: HTMLElement) {
     el.addEventListener('click', (e) => {
@@ -39,22 +46,26 @@ export class LedgerView {
     void this.load();
   }
 
+  /** Live: the newest rounds and packs, without the "turning the pages" placeholder. */
+  refresh() {
+    void this.load(true);
+  }
+
   private head() {
-    const tabs = (['rounds', 'purchases'] as const)
-      .map((b) => `<button type="button" data-book="${b}" aria-pressed="${b === this.book}">${b === 'rounds' ? '🎢 Rounds' : '🎟️ Packs'}</button>`)
-      .join('');
+    const tabs = BOOKS.map(([b, label]) => `<button type="button" data-book="${b}" aria-pressed="${b === this.book}">${label}</button>`).join('');
     const filter =
       this.book === 'rounds'
         ? `<select name="ride" aria-label="Attraction"><option value="">Every attraction</option>${ATTRACTION_IDS.map(
             (id) => `<option value="${id}" ${id === this.ride ? 'selected' : ''}>${esc(rideLabel(id))}</option>`,
           ).join('')}</select>`
         : '';
-    return `<div class="view-head"><div><h2 id="h-ledger">Ledger</h2><p class="muted">Every round played and every pack picked up, newest first.</p></div>
+    return `<div class="view-head"><div><h2 id="h-ledger">Ledger</h2><p class="muted">Every round played, every pack picked up and every treat and souvenir bought at the booth, newest first.</p></div>
       <div class="view-tools"><div class="segmented" role="group" aria-label="Book">${tabs}</div>${filter}</div></div>`;
   }
 
-  private async load() {
-    this.el.innerHTML = `${this.head()}<div class="card" id="ledger-body"><p class="empty">Turning the pages…</p></div>`;
+  private async load(quiet = false) {
+    if (!quiet || !this.el.querySelector('#ledger-body'))
+      this.el.innerHTML = `${this.head()}<div class="card" id="ledger-body"><p class="empty">Turning the pages…</p></div>`;
     try {
       const body = this.el.querySelector('#ledger-body')!;
       if (this.book === 'rounds') {
@@ -72,6 +83,18 @@ export class LedgerView {
         body.innerHTML = rows
           ? `<div class="table-wrap"><table><thead><tr><th>Started</th><th>Member</th><th>Attraction</th><th>Result</th><th class="r">Tickets</th><th>Stats</th></tr></thead><tbody>${rows}</tbody></table></div>${pagerHtml(this.offset, LIMIT, total)}`
           : '<p class="empty">No rounds yet.</p>';
+      } else if (this.book === 'shop') {
+        const [{ orders, total }, catalog] = await Promise.all([ringmaster.shopOrders({ limit: LIMIT, offset: this.offset }), this.loadCatalog()]);
+        const rows = orders
+          .map((o) => {
+            const item = catalog.find((i) => i.id === o.item);
+            const kind = item ? (item.kind === 'treat' ? '<span class="pill pill-muted">Treat</span>' : '<span class="pill pill-staff">Souvenir</span>') : '';
+            return `<tr><td>${esc(when(o.createdAt))}</td><td><a href="#members/${encodeURIComponent(o.user.id)}">${esc(o.user.username)}</a></td><td>${esc(item ? `${item.icon} ${item.name}` : o.item)}</td><td>${kind}</td><td class="r">${num(o.ticketsSpent)}</td><td class="r">${num(o.balanceAfter)}</td></tr>`;
+          })
+          .join('');
+        body.innerHTML = rows
+          ? `<div class="table-wrap"><table><thead><tr><th>When</th><th>Member</th><th>Item</th><th>Kind</th><th class="r">Tickets</th><th class="r">Balance after</th></tr></thead><tbody>${rows}</tbody></table></div>${pagerHtml(this.offset, LIMIT, total)}`
+          : '<p class="empty">Nothing bought at the shop yet.</p>';
       } else {
         const { purchases, total } = await ringmaster.purchases({ limit: LIMIT, offset: this.offset });
         const rows = purchases
@@ -87,5 +110,10 @@ export class LedgerView {
     } catch (err) {
       onApiError(err);
     }
+  }
+
+  private async loadCatalog() {
+    if (!this.catalog) this.catalog = (await api.shop().catch(() => ({ items: [] as ShopItem[] }))).items;
+    return this.catalog;
   }
 }

@@ -572,8 +572,10 @@ export class Ship implements Attraction {
     this.yaw = 0;
     this.myPuppet.visible = false;
     this.place();
-    this.ctx.ui.panel(
+    // opens by itself the first time; after that it's behind the ℹ️
+    this.ctx.ui.setIntro(
       'ship-intro',
+      'Nebula 360',
       `<p class="eyebrow">Nebula 360 · Looping pendulum ship</p><h2>All the way round</h2><p>The motor pumps the boat higher with every swing until it goes <strong>right over the top</strong>, ${LOOPS} loops forward, stops dead with you <strong>hanging upside down</strong> 30 m up, then loops back the other way.</p><p>${
         this.ctx.mobile
           ? 'Joystick <strong>left/right</strong> looks around. Tap <kbd>E</kbd> to switch camera.'

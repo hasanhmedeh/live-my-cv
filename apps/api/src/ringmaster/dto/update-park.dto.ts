@@ -16,6 +16,18 @@ export class UpdateParkDto {
   @MaxLength(CLOSED_MESSAGE_MAX)
   closedMessage?: string | null;
 
+  /** True keeps everyone but staff out of the fair altogether (stricter than closing it). */
+  @IsOptional()
+  @IsBoolean()
+  underMaintenance?: boolean;
+
+  /** The sign while under maintenance. Blank (or null) means the default wording. */
+  @Transform(closedMessage)
+  @IsOptional()
+  @IsString()
+  @MaxLength(CLOSED_MESSAGE_MAX)
+  maintenanceMessage?: string | null;
+
   @IsOptional()
   @IsInt()
   @Min(PACK_SIZE_RANGE.min)

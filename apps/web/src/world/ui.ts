@@ -1,6 +1,22 @@
 // Thin wrapper over the HUD DOM declared in index.html.
 const $ = <T extends HTMLElement>(id: string) => document.getElementById(id) as T;
 
+/** Where this browser remembers which info cards it has already shown by themselves. */
+const SEEN_KEY = 'funfair.info.seen';
+/** How long the ℹ️ button glows when a card is there to read but didn't open by itself. */
+const NUDGE_MS = 4_000;
+
+type PanelOpts = { left?: boolean; accent?: string };
+
+/** An informative card: the park's guide, or a ride's intro. Rendered when shown, so it's always current. */
+interface InfoCard {
+  key: string;
+  html: () => string;
+  opts: PanelOpts;
+  /** For the button's label: "About Sky Flip". */
+  title: string;
+}
+
 export const escapeHtml = (s: string) =>
   s.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;');
 
@@ -13,6 +29,11 @@ export class UI {
   private rideExitEl = $('ride-exit');
   private promptKey = '';
   private panelKey = '';
+  private infoEl = $<HTMLButtonElement>('info-toggle');
+  private guide: InfoCard | null = null;
+  private intro: InfoCard | null = null;
+  private seen = readSeen();
+  private nudgeTimer: ReturnType<typeof setTimeout> | null = null;
   onPromptClick: (() => void) | null = null;
   onPanelClose: (() => void) | null = null;
   onRideExit: (() => void) | null = null;
@@ -23,6 +44,7 @@ export class UI {
     // transient badges dismiss on click too
     this.scoreEl.addEventListener('click', () => (this.scoreEl.hidden = true));
     $('rh-toast').addEventListener('click', (e) => ((e.currentTarget as HTMLElement).hidden = true));
+    this.infoEl.addEventListener('click', () => this.toggleInfo());
     this.panelEl.addEventListener('click', (e) => {
       const t = e.target as HTMLElement;
       if (t.closest('[data-panel-close]')) {
@@ -44,8 +66,73 @@ export class UI {
     this.promptEl.hidden = false;
   }
 
+  // ---------- The ℹ️ button ----------
+  // Informative cards (the park's guide, each ride's intro) open by themselves only the first time
+  // this browser meets them; after that, they're behind the ℹ️ button in the top-right corner.
+
+  /** The park's guide: what the ℹ️ shows on foot. Opens by itself on a first visit. */
+  setGuide(key: string, title: string, html: () => string, opts: PanelOpts = {}) {
+    this.guide = { key, title, html, opts };
+    this.labelInfo();
+    this.offer(this.guide);
+  }
+
+  /**
+   * A ride's intro: what the ℹ️ shows until `endIntro`. Opens by itself the first time; returns
+   * whether it did (a ride times its intro out only then).
+   */
+  setIntro(key: string, title: string, html: string, opts: PanelOpts = {}): boolean {
+    this.intro = { key, title, html: () => html, opts };
+    this.labelInfo();
+    return this.offer(this.intro);
+  }
+
+  /** The ride is over: the ℹ️ is back to the park's guide (and the ride's intro closes, if it's open). */
+  endIntro() {
+    if (!this.intro) return;
+    if (this.panelOpenKey === this.intro.key) this.hidePanel();
+    this.intro = null;
+    this.labelInfo();
+  }
+
+  /** The ℹ️ (or the I key): opens the card for where the visitor is, or closes it. */
+  toggleInfo() {
+    const card = this.intro ?? this.guide;
+    if (!card || this.hud.hidden) return;
+    if (this.panelOpenKey === card.key) this.hidePanel();
+    else this.showInfo(card);
+  }
+
+  private offer(card: InfoCard): boolean {
+    if (!this.seen.has(card.key)) {
+      this.seen.add(card.key);
+      writeSeen(this.seen);
+      this.showInfo(card);
+      return true;
+    }
+    // read before: the ℹ️ glows for a moment, so it's easy to find again
+    this.infoEl.classList.remove('is-nudging');
+    void this.infoEl.offsetWidth;
+    this.infoEl.classList.add('is-nudging');
+    if (this.nudgeTimer) clearTimeout(this.nudgeTimer);
+    this.nudgeTimer = setTimeout(() => this.infoEl.classList.remove('is-nudging'), NUDGE_MS);
+    return false;
+  }
+
+  private showInfo(card: InfoCard) {
+    this.panel(card.key, card.html(), card.opts);
+    this.infoEl.setAttribute('aria-expanded', 'true');
+  }
+
+  private labelInfo() {
+    const card = this.intro ?? this.guide;
+    const label = card ? `About ${card.title} (I)` : 'Info (I)';
+    this.infoEl.setAttribute('aria-label', label);
+    this.infoEl.title = label;
+  }
+
   /** Shows an info card. `key` avoids re-rendering identical content every frame. */
-  panel(key: string, html: string, opts: { left?: boolean; accent?: string } = {}) {
+  panel(key: string, html: string, opts: PanelOpts = {}) {
     if (this.panelKey === key && !this.panelEl.hidden) return;
     this.panelKey = key;
     this.panelEl.innerHTML =
@@ -53,6 +140,7 @@ export class UI {
     this.panelEl.classList.toggle('panel-left', !!opts.left);
     this.panelEl.style.borderTopColor = opts.accent ?? '';
     this.panelEl.hidden = false;
+    this.infoEl.setAttribute('aria-expanded', String(key === (this.intro ?? this.guide)?.key));
     // restart entry animation
     this.panelEl.style.animation = 'none';
     void this.panelEl.offsetWidth;
@@ -70,6 +158,7 @@ export class UI {
   hidePanel() {
     this.panelEl.hidden = true;
     this.panelKey = '';
+    this.infoEl.setAttribute('aria-expanded', 'false');
   }
 
   score(text: string | null) {
@@ -100,5 +189,23 @@ export class UI {
   /** Hide driving-only chrome during rides. */
   cinematic(on: boolean) {
     document.body.classList.toggle('is-cinematic', on);
+  }
+}
+
+function readSeen(): Set<string> {
+  try {
+    const raw: unknown = JSON.parse(localStorage.getItem(SEEN_KEY) ?? '[]');
+    return new Set(Array.isArray(raw) ? raw.filter((k): k is string => typeof k === 'string') : []);
+  } catch {
+    // private mode, or blocked storage: every card is new, every visit
+    return new Set();
+  }
+}
+
+function writeSeen(seen: Set<string>) {
+  try {
+    localStorage.setItem(SEEN_KEY, JSON.stringify([...seen]));
+  } catch {
+    // not remembered: the card just opens by itself again next time
   }
 }

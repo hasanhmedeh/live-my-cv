@@ -552,8 +552,10 @@ export class SkyFlip implements Attraction {
     this.eye.getWorldPosition(this.prevEye);
     this.prevVel.set(0, 0, 0);
     this.you.visible = false;
-    this.ctx.ui.panel(
+    // opens by itself the first time; after that it's behind the ℹ️
+    this.ctx.ui.setIntro(
       'flip-intro',
+      'Sky Flip',
       `<p class="eyebrow">Sky Flip · giant swing</p><h2>Hold on to something!</h2><p>The arm swings higher and higher until it goes <strong>right over the top</strong>, then loops while your gondola spins on its own: <strong>head over heels, 125 m up</strong> (half the height of the giant wheel).</p><p>${
         this.ctx.mobile ? 'Joystick <strong>left/right</strong> looks around. Tap <kbd>E</kbd> to switch camera.' : '<kbd>A</kbd>/<kbd>D</kbd> look around · <kbd>C</kbd> camera.'
       }</p>`,

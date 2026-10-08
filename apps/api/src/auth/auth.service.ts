@@ -2,6 +2,7 @@ import { ConflictException, Injectable, UnauthorizedException } from '@nestjs/co
 import { JwtService } from '@nestjs/jwt';
 import { Prisma, type User } from '../generated/prisma/client.js';
 import { PrismaService } from '../prisma/prisma.service.js';
+import { announceQuietly } from '../live/announce.js';
 import type { LoginDto } from './dto/login.dto.js';
 import type { SignupDto } from './dto/signup.dto.js';
 import { DUMMY_HASH, hashPassword, verifyPassword } from './password.js';
@@ -21,9 +22,11 @@ export class AuthService {
     const passwordHash = await hashPassword(password);
     try {
       // SignupDto only lets acceptTerms === true through, so reaching here means they were accepted.
-      return await this.prisma.user.create({
+      const user = await this.prisma.user.create({
         data: { email, username, usernameKey, passwordHash, termsAcceptedAt: new Date(), termsVersion: TERMS_VERSION },
       });
+      await announceQuietly(this.prisma, { t: 'office', kind: 'members' });
+      return user;
     } catch (error) {
       // Someone grabbed the email or username between the check and the insert.
       if (error instanceof Prisma.PrismaClientKnownRequestError && error.code === 'P2002') {

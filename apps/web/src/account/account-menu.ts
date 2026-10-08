@@ -5,10 +5,12 @@ import { ZONES } from '../world/layout';
 import { escapeHtml } from '../world/ui';
 
 const plural = (n: number, one: string, many: string) => `${n} ${n === 1 ? one : many}`;
+/** "8 Oct, 14:05" in the visitor's time zone. */
+const orderDate = (iso: string) => new Date(iso).toLocaleString(undefined, { day: 'numeric', month: 'short', hour: '2-digit', minute: '2-digit' });
 
 /**
  * The HUD account chip. Guests get a shortcut to sign up; members see their tickets on the chip
- * and open a small card with their rounds, a copy of their data, the way to delete the account
+ * and open a small card with their rounds, their latest orders at the shop, the souvenirs they wear, the way to delete the account
  * and a log-out button (it shares the graphics panel's look and behaviour).
  */
 export class AccountMenu {
@@ -18,16 +20,22 @@ export class AccountMenu {
   private ticketsEl = this.panel.querySelector<HTMLElement>('.account-tickets')!;
   private ridesEl = this.panel.querySelector<HTMLElement>('.account-rides')!;
   private listEl = this.panel.querySelector<HTMLElement>('.account-list')!;
+  private ordersHead = this.panel.querySelector<HTMLElement>('.account-orders-head')!;
+  private ordersEl = this.panel.querySelector<HTMLElement>('.account-orders')!;
+  private wearHead = this.panel.querySelector<HTMLElement>('.account-wear-head')!;
+  private wearEl = this.panel.querySelector<HTMLElement>('.account-wear')!;
+  /** The souvenir being put on or taken off right now. */
+  private changing: string | null = null;
   private staffLink = this.panel.querySelector<HTMLAnchorElement>('.account-staff')!;
   private noteEl = this.panel.querySelector<HTMLElement>('.account-note')!;
   private logoutBtn = this.panel.querySelector<HTMLButtonElement>('[data-account-logout]')!;
-  private exportBtn = this.panel.querySelector<HTMLButtonElement>('[data-account-export]')!;
   private deleteLink = this.panel.querySelector<HTMLButtonElement>('[data-account-delete]')!;
   private deleteForm = this.panel.querySelector<HTMLFormElement>('.account-delete')!;
   private deleteInput = this.deleteForm.querySelector<HTMLInputElement>('input')!;
   private deleteError = this.deleteForm.querySelector<HTMLElement>('.account-delete-error')!;
   private deleteBtn = this.deleteForm.querySelector<HTMLButtonElement>('[type="submit"]')!;
   private statsFailed = false;
+  private ordersFailed = false;
   private busy = false;
 
   /** `notify` puts a message on the game's card (e.g. once the account is gone). */
@@ -52,7 +60,11 @@ export class AccountMenu {
       this.logoutBtn.disabled = false;
       this.logoutBtn.textContent = 'Log out';
     });
-    this.exportBtn.addEventListener('click', () => void this.download());
+    // put a souvenir on, or take it off (whatever shares its spot comes off: the server says what's worn)
+    this.wearEl.addEventListener('click', (e) => {
+      const b = (e.target as HTMLElement).closest<HTMLButtonElement>('[data-wear]');
+      if (b) void this.wear(b.dataset.wear!, b.dataset.on === '1');
+    });
     this.deleteLink.addEventListener('click', () => this.askDelete(true));
     this.deleteForm.querySelector('[data-account-delete-cancel]')!.addEventListener('click', () => this.askDelete(false));
     this.deleteForm.addEventListener('submit', (e) => {
@@ -80,12 +92,23 @@ export class AccountMenu {
     // the card takes the focus so the game's keys (E, Esc) don't fire while it's open
     this.panel.focus({ preventScroll: true });
     this.statsFailed = false;
+    this.ordersFailed = false;
     this.renderStats();
+    this.renderOrders();
     void session.loadTickets();
     void session.loadStats().then((stats) => {
       if (stats || session.stats) return;
       this.statsFailed = true;
       this.renderStats();
+    });
+    // the item names and icons come from the catalog
+    void session.loadCatalog();
+    void session.loadSouvenirs();
+    this.renderWear();
+    void session.loadOrders().then((orders) => {
+      if (orders || session.orders) return;
+      this.ordersFailed = true;
+      this.renderOrders();
     });
   }
 
@@ -104,6 +127,8 @@ export class AccountMenu {
       this.staffLink.hidden = !session.isStaff;
       this.renderTickets();
       this.renderStats();
+      this.renderOrders();
+      this.renderWear();
     } else {
       this.busy = false;
       this.toggle(false);
@@ -145,33 +170,75 @@ export class AccountMenu {
     this.listEl.hidden = !rows.length;
   }
 
+  /** The latest treats and souvenirs bought at the booth, newest first. */
+  private renderOrders() {
+    if (this.panel.hidden) return;
+    const o = session.orders;
+    this.ordersHead.textContent = o
+      ? o.total
+        ? `🛍️ ${plural(o.total, 'order', 'orders')} at the shop`
+        : '🛍️ No orders yet: Rosa’s at the Ticket Booth!'
+      : this.ordersFailed
+        ? 'Your orders are unavailable right now.'
+        : 'Fetching your orders…';
+    const rows = o?.orders ?? [];
+    const catalog = session.catalog;
+    this.ordersEl.innerHTML =
+      rows
+        .map((order) => {
+          const item = catalog?.find((i) => i.id === order.item);
+          const name = item ? `${item.icon} ${item.name}` : order.item;
+          return `<li><span>${escapeHtml(name)} <small>${escapeHtml(orderDate(order.createdAt))}</small></span><b>${order.ticketsSpent} 🎟️</b></li>`;
+        })
+        .join('') + (o && o.total > rows.length ? `<li class="account-orders-more">and ${plural(o.total - rows.length, 'more', 'more')}</li>` : '');
+    this.ordersEl.hidden = !rows.length;
+  }
+
+  /** The member's souvenirs, each worn or not, with the button to change it. */
+  private renderWear() {
+    if (this.panel.hidden) return;
+    const owned = session.souvenirs;
+    const catalog = session.catalog;
+    const worn = owned.filter((s) => s.equipped).length;
+    this.wearHead.textContent = !session.souvenirsKnown
+      ? 'Looking in your bag…'
+      : owned.length
+        ? `🎈 Your souvenirs · wearing ${worn} of ${owned.length}`
+        : '🎈 No souvenirs yet: Rosa sells them at the Ticket Booth.';
+    // keep the keyboard on the same souvenir across the redraw
+    const focused = (document.activeElement as HTMLElement | null)?.closest?.<HTMLElement>('[data-wear]')?.dataset.wear;
+    this.wearEl.innerHTML = owned
+      .map((s) => {
+        const item = catalog?.find((i) => i.id === s.item);
+        const name = item ? `${item.icon} ${item.name}` : s.item;
+        const busy = this.changing === s.item;
+        const label = busy ? (s.equipped ? 'Taking off…' : 'Putting on…') : s.equipped ? 'Take off' : 'Put on';
+        return `<li class="${s.equipped ? 'is-worn' : ''}"><span>${escapeHtml(name)} <small>${s.equipped ? 'wearing' : 'in your bag'}</small></span><button type="button" class="account-wear-btn" data-wear="${escapeHtml(s.item)}" data-on="${s.equipped ? 0 : 1}" aria-label="${escapeHtml(`${label}: ${item?.name ?? s.item}`)}" ${busy ? 'aria-busy="true" disabled' : ''}>${label}</button></li>`;
+      })
+      .join('');
+    this.wearEl.hidden = !owned.length;
+    if (focused) this.wearEl.querySelector<HTMLElement>(`[data-wear="${CSS.escape(focused)}"]`)?.focus({ preventScroll: true });
+  }
+
+  private async wear(item: string, on: boolean) {
+    if (this.changing) return;
+    this.changing = item;
+    this.renderWear();
+    try {
+      await session.wear(item, on);
+      this.note('');
+    } catch (err) {
+      if (err instanceof ApiError && err.status === 401) session.expire();
+      this.note(err instanceof ApiError ? err.message : 'That didn’t work. Please try again.');
+    } finally {
+      this.changing = null;
+      this.renderWear();
+    }
+  }
+
   private note(text: string) {
     this.noteEl.textContent = text;
     this.noteEl.hidden = !text;
-  }
-
-  /** Saves everything the fair keeps about the member as a JSON file. */
-  private async download() {
-    this.exportBtn.disabled = true;
-    this.note('Gathering your data…');
-    try {
-      const data = await session.exportData();
-      const blob = new Blob([JSON.stringify(data, null, 2)], { type: 'application/json' });
-      const url = URL.createObjectURL(blob);
-      const a = document.createElement('a');
-      a.href = url;
-      a.download = 'funfair-data.json';
-      document.body.appendChild(a);
-      a.click();
-      a.remove();
-      setTimeout(() => URL.revokeObjectURL(url), 1000);
-      this.note('Saved as funfair-data.json.');
-    } catch (err) {
-      if (err instanceof ApiError && err.status === 401) session.expire();
-      this.note(err instanceof ApiError ? err.message : 'Something went wrong. Please try again.');
-    } finally {
-      this.exportBtn.disabled = false;
-    }
   }
 
   /** Shows (or hides) the "are you sure? enter your password" step. */

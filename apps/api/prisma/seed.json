@@ -1,0 +1,63 @@
+{
+  "park": {
+    "open": true,
+    "closedMessage": null,
+    "underMaintenance": false,
+    "maintenanceMessage": null,
+    "packSize": 20,
+    "cooldownHours": 1
+  },
+  "attractions": {
+    "coaster": {
+      "tickets": 1,
+      "open": true,
+      "closedMessage": null
+    },
+    "falcon": {
+      "tickets": 5,
+      "open": true,
+      "closedMessage": null
+    },
+    "rocket": {
+      "tickets": 1,
+      "open": true,
+      "closedMessage": "We are improving this game, come back later"
+    },
+    "ferris": {
+      "tickets": 5,
+      "open": true,
+      "closedMessage": null
+    },
+    "flip": {
+      "tickets": 1,
+      "open": true,
+      "closedMessage": null
+    },
+    "ship": {
+      "tickets": 1,
+      "open": true,
+      "closedMessage": null
+    },
+    "speedway": {
+      "tickets": 1,
+      "open": true,
+      "closedMessage": null
+    },
+    "drone": {
+      "tickets": 1,
+      "open": true,
+      "closedMessage": null
+    },
+    "crates": {
+      "tickets": 1,
+      "open": true,
+      "closedMessage": null
+    },
+    "striker": {
+      "tickets": 1,
+      "open": true,
+      "closedMessage": null
+    }
+  },
+  "shop": {}
+}

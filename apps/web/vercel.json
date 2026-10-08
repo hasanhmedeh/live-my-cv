@@ -10,9 +10,16 @@
   "functions": {
     "api/index.js": {
       "maxDuration": 15
+    },
+    "api/live.js": {
+      "maxDuration": 300
     }
   },
   "rewrites": [
+    {
+      "source": "/api/live",
+      "destination": "/api/live"
+    },
     {
       "source": "/api/:path*",
       "destination": "/api"

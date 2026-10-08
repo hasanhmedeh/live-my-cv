@@ -1,6 +1,11 @@
 /** The API's settings, validated once at startup. See .env.example for what each one does. */
 export interface Env {
   DATABASE_URL: string;
+  /**
+   * A direct (unpooled) connection, for LISTEN: live updates need a session, which a transaction
+   * pooler like Neon's doesn't keep. Falls back to DATABASE_URL.
+   */
+  DATABASE_URL_UNPOOLED: string;
   JWT_SECRET: string;
   PORT: number;
   /** Origins allowed to call the API cross-site with cookies. */
@@ -39,6 +44,9 @@ export function validateEnv(raw: Record<string, unknown>): Env {
     problems.push('DATABASE_URL must be a postgresql:// connection string.');
   }
 
+  const unpooledUrl = str('DATABASE_URL_UNPOOLED');
+  if (unpooledUrl && !/^postgres(ql)?:\/\//.test(unpooledUrl)) problems.push('DATABASE_URL_UNPOOLED must be a postgresql:// connection string.');
+
   const jwtSecret = str('JWT_SECRET');
   if (!jwtSecret) problems.push('JWT_SECRET is missing.');
   else if (jwtSecret === PLACEHOLDER_SECRET) problems.push('JWT_SECRET is still the placeholder from .env.example.');
@@ -59,6 +67,7 @@ export function validateEnv(raw: Record<string, unknown>): Env {
 
   return {
     DATABASE_URL: databaseUrl,
+    DATABASE_URL_UNPOOLED: unpooledUrl || databaseUrl,
     JWT_SECRET: jwtSecret,
     PORT: port,
     WEB_ORIGIN: webOrigin,

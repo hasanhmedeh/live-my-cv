@@ -27,6 +27,11 @@ export class OverviewView {
     });
   }
 
+  /** Live: the numbers again, quietly. */
+  refresh() {
+    void this.load();
+  }
+
   show() {
     if (!this.data) this.el.innerHTML = `${this.headHtml()}<p class="empty">Counting the crowd…</p>`;
     void this.load();
@@ -58,6 +63,9 @@ export class OverviewView {
   private render(d: Overview) {
     const closed = ATTRACTION_IDS.filter((id) => !d.byRide[id].open);
     const notices = [
+      d.park.underMaintenance
+        ? `<strong>🛠️ The park is under maintenance:</strong> only staff can come in. ${esc(d.park.maintenanceMessage ?? '')} <a href="#gates">Park gates →</a>`
+        : '',
       !d.park.open ? `<strong>🚧 The park is closed.</strong> ${esc(d.park.closedMessage ?? '')} <a href="#gates">Park gates →</a>` : '',
       closed.length ? `<strong>🔧 Under maintenance:</strong> ${closed.map((id) => esc(rideName(id))).join(', ')}. <a href="#attractions">Attractions →</a>` : '',
     ].filter(Boolean);

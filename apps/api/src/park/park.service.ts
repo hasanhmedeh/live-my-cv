@@ -7,6 +7,9 @@ import { ATTRACTIONS, DEFAULT_COOLDOWN_HOURS, DEFAULT_PACK_SIZE, DEFAULT_TICKET_
 export interface ParkRules {
   open: boolean;
   closedMessage: string | null;
+  /** Nobody but staff in the fair at all (stricter than closed). */
+  underMaintenance: boolean;
+  maintenanceMessage: string | null;
   packSize: number;
   cooldownHours: number;
   updatedAt: Date | null;
@@ -26,6 +29,10 @@ export interface PublicPark {
   open: boolean;
   /** Only while the park is closed: the sign on the gate (null for the default wording). */
   message: string | null;
+  /** The whole park under maintenance: nobody but staff may come into the fair at all. */
+  underMaintenance: boolean;
+  /** Only while it is: its sign (null for the default wording). */
+  maintenanceMessage: string | null;
   costs: Record<Attraction, number>;
   packSize: number;
   cooldownHours: number;
@@ -34,6 +41,7 @@ export interface PublicPark {
 }
 
 export const PARK_CLOSED_MESSAGE = 'The park is closed right now. Come back soon!';
+export const PARK_MAINTENANCE_MESSAGE = 'The fair is under maintenance. Come back soon!';
 export const RIDE_CLOSED_MESSAGE = 'Under maintenance. Back soon!';
 
 /** Staff can board and buy while the park, or an attraction, is closed: that's how they test it. */
@@ -52,6 +60,8 @@ export class ParkService {
     return {
       open: row?.open ?? true,
       closedMessage: row?.closedMessage ?? null,
+      underMaintenance: row?.underMaintenance ?? false,
+      maintenanceMessage: row?.maintenanceMessage ?? null,
       packSize: row?.packSize ?? DEFAULT_PACK_SIZE,
       cooldownHours: row?.cooldownHours ?? DEFAULT_COOLDOWN_HOURS,
       updatedAt: row?.updatedAt ?? null,
@@ -81,6 +91,8 @@ export class ParkService {
     return {
       open: rules.open,
       message: rules.open ? null : rules.closedMessage,
+      underMaintenance: rules.underMaintenance,
+      maintenanceMessage: rules.underMaintenance ? rules.maintenanceMessage : null,
       costs: costsOf(attractions),
       packSize: rules.packSize,
       cooldownHours: rules.cooldownHours,
@@ -88,9 +100,11 @@ export class ParkService {
     };
   }
 
-  /** 503 park_closed unless the park is open or `user` is staff. */
+  /** 503 park_maintenance or park_closed unless the park is open (and not under maintenance) or `user` is staff. */
   assertParkOpen(rules: ParkRules, user: Pick<User, 'role'>): void {
-    if (rules.open || isStaff(user)) return;
+    if (isStaff(user)) return;
+    if (rules.underMaintenance) throw closed('park_maintenance', rules.maintenanceMessage ?? PARK_MAINTENANCE_MESSAGE);
+    if (rules.open) return;
     throw closed('park_closed', rules.closedMessage ?? PARK_CLOSED_MESSAGE);
   }
 
@@ -116,7 +130,7 @@ function costsOf(attractions: AttractionRules[]): Record<Attraction, number> {
 }
 
 /** 503 with a `code` the web client recognises, so it shows the sign rather than "server down". */
-function closed(code: 'park_closed' | 'ride_closed', message: string, extra: Record<string, unknown> = {}) {
+function closed(code: 'park_closed' | 'park_maintenance' | 'ride_closed', message: string, extra: Record<string, unknown> = {}) {
   return new HttpException(
     { ...HttpException.createBody(message, 'Service Unavailable', HttpStatus.SERVICE_UNAVAILABLE), code, ...extra },
     HttpStatus.SERVICE_UNAVAILABLE,

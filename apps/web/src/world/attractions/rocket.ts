@@ -220,8 +220,10 @@ export class Rocket implements Attraction {
     this.rings.forEach((r) => (r.visible = true));
     this.camPos.set(this.pad.x - 26, 10, this.pad.z + 30);
     this.camLook.copy(this.pad).setY(8);
-    this.ctx.ui.panel(
+    // opens by itself the first time; after that it's behind the ℹ️
+    this.ctx.ui.setIntro(
       'rocket-intro',
+      'the Rocket Ride',
       `<p class="eyebrow">Rocket Ride</p><h2>T-minus 3…</h2><p>Each ring in the sky is a stage of the climb to orbit. Press <kbd>E</kbd> (or tap the button) to fire the next stage.</p>`,
       { accent: PALETTE.teal, left: true },
     );

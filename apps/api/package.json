@@ -18,6 +18,8 @@
     "db:migrate": "prisma migrate dev",
     "studio:dev": "node scripts/studio.mjs dev",
     "studio:prod": "node scripts/studio.mjs prod",
+    "db:seed": "node scripts/seed.mjs seed",
+    "db:snapshot": "node scripts/seed.mjs snapshot",
     "staff:appoint": "node scripts/staff.mjs appoint",
     "staff:dismiss": "node scripts/staff.mjs dismiss",
     "staff:list": "node scripts/staff.mjs list"

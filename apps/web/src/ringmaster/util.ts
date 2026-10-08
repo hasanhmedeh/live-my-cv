@@ -69,6 +69,21 @@ export async function busy<T>(button: HTMLButtonElement | null, run: () => Promi
 }
 
 /** Set by main.ts: a 401 or 403 sends staff back to the door; anything else is a toast. */
+/**
+ * True while staff are in the middle of something in `el`: a field has the focus, or holds a
+ * change that isn't saved yet. Live updates wait rather than wipe it (the members search excepted).
+ */
+export function isEditing(el: HTMLElement) {
+  const fields = 'input:not([name="q"]), textarea, select';
+  const active = document.activeElement;
+  if (active instanceof HTMLElement && el.contains(active) && active.matches(fields)) return true;
+  for (const f of el.querySelectorAll<HTMLInputElement | HTMLTextAreaElement>('input:not([name="q"]), textarea')) {
+    if (f instanceof HTMLInputElement && (f.type === 'checkbox' || f.type === 'radio') ? f.checked !== f.defaultChecked : f.value !== f.defaultValue) return true;
+  }
+  for (const s of el.querySelectorAll('select')) if ([...s.options].some((o) => o.selected !== o.defaultSelected)) return true;
+  return false;
+}
+
 export let onApiError: (err: unknown) => void = (err) => toast(errorText(err), true);
 export const setApiErrorHandler = (fn: (err: unknown) => void) => (onApiError = fn);
 

@@ -63,6 +63,11 @@ model User {
   purchases       TicketPurchase[]
   rounds          RideRound[]
   adminActions    AdminAction[]
+  shopOrders      ShopOrder[]
+  souvenirs       Souvenir[]
+  suggestions     Suggestion[]     @relation("SuggestionAuthor")
+  /// Staff only: the suggestions they answered.
+  repliedTo       Suggestion[]     @relation("SuggestionReplier")
 
   @@index([createdAt])
   @@map("users")
@@ -110,15 +115,20 @@ model AttractionSettings {
 /// and boarding and ticket sales stop (staff can still do both). Accounts keep working.
 /// Without the row the API treats the park as open, with the column defaults below.
 model ParkSettings {
-  id            Int      @id @default(1)
-  open          Boolean  @default(true)
+  id                 Int      @id @default(1)
+  open               Boolean  @default(true)
   /// Shown to visitors while the park is closed, e.g. "Closed for maintenance, back at 18:00".
-  closedMessage String?  @map("closed_message")
+  closedMessage      String?  @map("closed_message")
+  /// Stricter than closed: nobody but staff can come into the fair at all, and visitors already in
+  /// it are sent out (their round, if any, refunded). Accounts keep working, so staff can log in.
+  underMaintenance   Boolean  @default(false) @map("under_maintenance")
+  /// Shown to visitors while the park is under maintenance, e.g. "Repainting the midway, back at 18:00".
+  maintenanceMessage String?  @map("maintenance_message")
   /// Tickets in one pack, 1 to 1000 (a CHECK constraint in the migration).
-  packSize      Int      @default(20) @map("pack_size")
+  packSize           Int      @default(20) @map("pack_size")
   /// Hours between two purchases, counted from the last one: 0 (no wait) to 168 (a CHECK constraint).
-  cooldownHours Int      @default(5) @map("cooldown_hours")
-  updatedAt     DateTime @default(now()) @updatedAt @map("updated_at")
+  cooldownHours      Int      @default(5) @map("cooldown_hours")
+  updatedAt          DateTime @default(now()) @updatedAt @map("updated_at")
 
   @@map("park_settings")
 }
@@ -153,10 +163,12 @@ model AdminAction {
   actor     User?    @relation(fields: [actorId], references: [id], onDelete: SetNull)
   /// The actor's username at the time, or "cli" for the staff scripts.
   actorName String   @map("actor_name")
-  /// What happened: park.open, park.close, settings.update, attraction.open, attraction.close,
-  /// price.update, attraction.update, user.tickets, user.role, user.cooldown or user.delete.
+  /// What happened: park.open, park.close, park.maintenance.on, park.maintenance.off, settings.update, attraction.open, attraction.close,
+  /// price.update, attraction.update, shop.price, shop.stock, shop.update, user.tickets, user.role,
+  /// user.cooldown, user.delete, suggestion.reply or suggestion.status.
   action    String
-  /// What it happened to: an attraction id or a user's email. Null for the park's settings.
+  /// What it happened to: an attraction id, a shop item id or a user's email (for a suggestion, its
+  /// author's). Null for the park's settings.
   target    String?
   /// Before and after, e.g. { "before": { "tickets": 5 }, "after": { "tickets": 3 } }.
   details   Json?
@@ -164,4 +176,128 @@ model AdminAction {
 
   @@index([createdAt])
   @@map("admin_actions")
+}
+
+/// Who's in the fair right now: one row per open game tab (its own random id), written by the live
+/// stream (GET /api/live) while it's connected and counted in The Ringmaster's Office. Rows not seen
+/// for a minute don't count, and are cleared out after ten. No foreign key: it's only presence.
+model LiveVisitor {
+  id     String   @id
+  /// The member in that tab, or null for a guest.
+  userId String?  @map("user_id")
+  /// Past the entrance (the intro card), rather than looking at it.
+  inFair Boolean  @map("in_fair")
+  /// The connection that wrote the row last: only that one may mark it gone, so a reconnect wins.
+  stream String
+  /// The stream closed. A tab reconnecting (every few minutes) clears it again.
+  gone   Boolean  @default(false)
+  seenAt DateTime @default(now()) @map("seen_at") @db.Timestamptz(3)
+
+  @@index([seenAt])
+  @@map("live_visitors")
+}
+
+/// One thing bought at the Ticket Booth's shop, paid for in tickets: a treat (eaten at the counter)
+/// or a souvenir (kept, see Souvenir). What's for sale is apps/api/src/shop/catalog.ts.
+model ShopOrder {
+  id           String   @id @default(cuid())
+  userId       String   @map("user_id")
+  user         User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  /// The catalog id, e.g. "cotton-candy".
+  item         String
+  ticketsSpent Int      @map("tickets_spent")
+  /// The member's ticket balance right after paying.
+  balanceAfter Int      @map("balance_after")
+  createdAt    DateTime @default(now()) @map("created_at")
+
+  @@index([userId, createdAt])
+  @@index([createdAt])
+  @@index([item])
+  @@map("shop_orders")
+}
+
+/// Each shop item's price and stock, edited in The Ringmaster's Office. An item without a row sells
+/// at its catalog price (src/shop/catalog.ts) with no stock limit. Orders keep what they cost at the
+/// time in shop_orders.tickets_spent.
+model ShopItemSettings {
+  /// The catalog id, e.g. "cotton-candy".
+  item      String   @id
+  /// The price, 1 to 1000 tickets (a CHECK constraint in the migration).
+  tickets   Int
+  /// How many are left to sell: each order takes one, and at 0 it's sold out. Null means no limit.
+  /// Never negative (a CHECK constraint in the migration).
+  stock     Int?
+  updatedAt DateTime @default(now()) @updatedAt @map("updated_at")
+
+  @@map("shop_item_settings")
+}
+
+/// A souvenir a member owns: bought once, kept for good, and worn or not (one per slot).
+model Souvenir {
+  userId     String   @map("user_id")
+  user       User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  /// The catalog id, e.g. "top-hat".
+  item       String
+  equipped   Boolean  @default(true)
+  acquiredAt DateTime @default(now()) @map("acquired_at")
+
+  @@id([userId, item])
+  @@map("souvenirs")
+}
+
+/// What a suggestion is about, picked at the Idea Box.
+enum SuggestionTopic {
+  /// A new ride or game, or a change to one.
+  attraction
+  /// Treats and souvenirs at the Ticket Booth.
+  shop
+  /// The park itself: paths, benches, decorations, events.
+  park
+  /// Something broken or not working as it should.
+  problem
+  other
+
+  @@map("suggestion_topic")
+}
+
+/// Where a suggestion stands, as staff set it in The Ringmaster's Office.
+enum SuggestionStatus {
+  /// Not answered yet.
+  pending
+  accepted
+  in_development
+  done
+  declined
+
+  @@map("suggestion_status")
+}
+
+/// An idea, request or problem left at the Idea Box by a member. Staff answer it once in The
+/// Ringmaster's Office (reply) and move its status along as often as they like; the member sees
+/// both at the Idea Box, and `unread` until they look.
+model Suggestion {
+  id              String           @id @default(cuid())
+  userId          String           @map("user_id")
+  user            User             @relation("SuggestionAuthor", fields: [userId], references: [id], onDelete: Cascade)
+  topic           SuggestionTopic
+  /// 1 to 500 characters (a CHECK constraint in the migration).
+  message         String
+  status          SuggestionStatus @default(pending)
+  /// When staff last changed the status. Null while it is still pending from the start.
+  statusChangedAt DateTime?        @map("status_changed_at")
+  /// Staff's answer: written once, never edited (1 to 500 characters, a CHECK constraint).
+  reply           String?
+  repliedAt       DateTime?        @map("replied_at")
+  /// Who answered. Set to null when that account is deleted; repliedByName still says who it was.
+  repliedById     String?          @map("replied_by_id")
+  repliedBy       User?            @relation("SuggestionReplier", fields: [repliedById], references: [id], onDelete: SetNull)
+  repliedByName   String?          @map("replied_by_name")
+  /// Staff answered or changed the status since the member last looked at their suggestions.
+  unread          Boolean          @default(false)
+  createdAt       DateTime         @default(now()) @map("created_at")
+
+  @@index([userId, createdAt])
+  @@index([status, createdAt])
+  @@index([createdAt])
+  @@map("suggestions")
 }

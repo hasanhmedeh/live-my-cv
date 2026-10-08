@@ -1,6 +1,7 @@
 import {
   api,
   ApiError,
+  LIVE_URL,
   COOLDOWN_HOURS,
   DEFAULT_COSTS,
   NotEnoughTicketsError,
@@ -8,12 +9,19 @@ import {
   ParkClosedError,
   PurchaseCooldownError,
   RideClosedError,
+  SoldOutError,
+  type AccountNews,
   type AttractionId,
   type FinishedRound,
   type Park,
   type Purchase,
   type RideStats,
   type RoundStats,
+  type ShopItem,
+  type ShopOrder,
+  type Souvenir,
+  type Suggestion,
+  type SuggestionTopic,
   type Tickets,
   type User,
 } from './api';
@@ -24,8 +32,14 @@ type Listener = () => void;
 const RETRY_MS = [3_000, 10_000];
 /** How many purchases the booth and the account card show. */
 const RECENT_PURCHASES = 5;
-/** While the visitor is in the fair, the gates are checked this often. */
+/** How many shop orders the account card shows. */
+const RECENT_ORDERS = 5;
+/** While the visitor is in the fair and the live stream is down, the gates are checked this often. */
 const PARK_POLL_MS = 60_000;
+/** A tab hidden this long lets go of its live stream; it reconnects, and catches up, when it's back. */
+const HIDDEN_MS = 30_000;
+/** This tab's own id on the live stream, so the office can count who's in the fair (nothing else is in it). */
+const VISITOR_ID = typeof crypto !== 'undefined' && 'randomUUID' in crypto ? crypto.randomUUID() : `v-${Date.now()}-${Math.random().toString(36).slice(2)}`;
 
 /** "every 5 hours", "every hour", "any time" (a cool-down of 0 means no wait at all). */
 export const everyHours = (h: number) => (h <= 0 ? 'any time' : h === 1 ? 'every hour' : `every ${h} hours`);
@@ -49,6 +63,16 @@ class Session {
   private parkListeners = new Set<(park: Park | null) => void>();
   private parkTimer: ReturnType<typeof setInterval> | null = null;
   private parkCheckedAt = 0;
+  private live: EventSource | null = null;
+  private _catalog: ShopItem[] | null = null;
+  private catalogLoading: Promise<ShopItem[] | null> | null = null;
+  private _souvenirs: Souvenir[] | null = null;
+  private _orders: { orders: ShopOrder[]; total: number } | null = null;
+  private shopListeners = new Set<Listener>();
+  private _suggestions: { suggestions: Suggestion[]; total: number; unread: number } | null = null;
+  private suggestionListeners = new Set<Listener>();
+  private _inFair = false;
+  private liveHidden: ReturnType<typeof setTimeout> | null = null;
 
   get user() {
     return this._user;
@@ -67,6 +91,16 @@ class Session {
   /** Open unless the server says otherwise: an unreachable server never shuts the fair. */
   get parkOpen() {
     return this._park?.open ?? true;
+  }
+
+  /** The whole park is under maintenance: nobody but staff in the fair (stricter than closed). */
+  get parkUnderMaintenance() {
+    return this._park?.underMaintenance ?? false;
+  }
+
+  /** Kept out of the fair: it's under maintenance and this visitor isn't staff. */
+  get shutOut() {
+    return this.parkUnderMaintenance && !this.isStaff;
   }
 
   /**
@@ -118,7 +152,7 @@ class Session {
     return this._tickets?.costs?.[ride] ?? this._park?.costs?.[ride] ?? DEFAULT_COSTS[ride];
   }
 
-  /** Calls `fn` whenever the park or an attraction opens or closes, or a closed sign changes. Returns an unsubscribe. */
+  /** Calls `fn` whenever the park or an attraction opens or closes, the park goes under maintenance or comes out, or a sign changes. Returns an unsubscribe. */
   onPark(fn: (park: Park | null) => void) {
     this.parkListeners.add(fn);
     return () => void this.parkListeners.delete(fn);
@@ -145,7 +179,8 @@ class Session {
       if (err instanceof ApiError && err.unavailable) {
         this.warnOnce(err);
         // the gates stay open; the prices and rules last heard are kept
-        if (this._park && !this._park.open) this.setPark({ ...this._park, open: true, message: null });
+        if (this._park && (!this._park.open || this._park.underMaintenance))
+          this.setPark({ ...this._park, open: true, message: null, underMaintenance: false, maintenanceMessage: null });
         if (attempt < RETRY_MS.length) setTimeout(() => void this.loadPark(), RETRY_MS[attempt]);
       }
     }
@@ -154,7 +189,8 @@ class Session {
 
   /** A board or a purchase was turned away at the gate: the park closed since we last looked. */
   noteParkClosed(err: ParkClosedError) {
-    this.setPark({ ...this.parkOrDefaults(), open: false, message: err.message });
+    if (err.underMaintenance) this.setPark({ ...this.parkOrDefaults(), underMaintenance: true, maintenanceMessage: err.message });
+    else this.setPark({ ...this.parkOrDefaults(), open: false, message: err.message });
   }
 
   /** A board was turned away: the attraction went under maintenance since we last looked. */
@@ -164,17 +200,87 @@ class Session {
   }
 
   private parkOrDefaults(): Park {
-    return this._park ?? { open: true, message: null, costs: {}, packSize: this.packSize, cooldownHours: this.cooldownHours, maintenance: {} };
+    return this._park ?? { open: true, message: null, underMaintenance: false, maintenanceMessage: null, costs: {}, packSize: this.packSize, cooldownHours: this.cooldownHours, maintenance: {} };
   }
 
-  /** Re-checks the gates every minute while the visitor is in the fair (and when the tab comes back). */
+  /**
+   * Keeps the gates, the prices, the pack rules and the member's own wallet and role live while the
+   * visitor is in the fair: GET /live pushes every change made in The Ringmaster's Office. While
+   * the stream is down, the gates are checked every minute instead (and when the tab comes back).
+   */
   watchPark() {
     if (this.parkTimer) return;
     const check = () => {
-      if (!document.hidden && Date.now() - this.parkCheckedAt >= PARK_POLL_MS - 1000) void this.loadPark();
+      if (document.hidden || this.live?.readyState === EventSource.OPEN) return;
+      if (Date.now() - this.parkCheckedAt >= PARK_POLL_MS - 1000) void this.loadPark();
     };
     this.parkTimer = setInterval(check, PARK_POLL_MS);
-    document.addEventListener('visibilitychange', check);
+    // a hidden tab lets go of the stream after a while; coming back reconnects (with a fresh snapshot)
+    document.addEventListener('visibilitychange', () => {
+      if (this.liveHidden) clearTimeout(this.liveHidden);
+      this.liveHidden = null;
+      if (document.hidden) this.liveHidden = setTimeout(() => this.closeLive(), HIDDEN_MS);
+      else if (!this.live) this.openLive();
+      check();
+    });
+    if (!document.hidden) this.openLive();
+  }
+
+  /**
+   * Past the entrance (true) or back at it: the office counts who's in the fair, so the stream
+   * reconnects to say so.
+   */
+  setInFair(inFair: boolean) {
+    if (inFair === this._inFair) return;
+    this._inFair = inFair;
+    if (this.live) this.openLive();
+  }
+
+  /** Opens the live stream. It says who's listening by the session cookie, so a new member reopens it. */
+  private openLive() {
+    if (typeof EventSource === 'undefined') return;
+    this.closeLive();
+    const live = new EventSource(`${LIVE_URL}?visitor=${encodeURIComponent(VISITOR_ID)}&in=${this._inFair ? 1 : 0}`, { withCredentials: true });
+    live.addEventListener('park', (e) => {
+      const park = parseEvent<Park>(e);
+      if (!park) return;
+      this.parkCheckedAt = Date.now();
+      this.setPark(normalisePark(park));
+    });
+    // a price or the stock changed at the booth (in the office, or someone bought the last one)
+    live.addEventListener('shop', () => {
+      for (const fn of this.shopListeners) fn();
+    });
+    // staff answered one of the member's suggestions (or another of their tabs read the answer)
+    live.addEventListener('suggestions', () => void this.loadSuggestions());
+    live.addEventListener('account', (e) => {
+      const news = parseEvent<AccountNews>(e);
+      if (news) this.applyAccount(news);
+    });
+    // EventSource reconnects on its own (the server closes each stream after a few minutes)
+    this.live = live;
+  }
+
+  private closeLive() {
+    this.live?.close();
+    this.live = null;
+  }
+
+  /** The member's account changed elsewhere: tickets given or taken, staff appointed, the cool-down reset, or the account deleted. */
+  private applyAccount(news: AccountNews) {
+    const user = this._user;
+    if (!user) return;
+    if ('deleted' in news) return this.expire();
+    if (news.role !== (user.role ?? 'player')) this.set({ ...user, role: news.role });
+    const t = this._tickets;
+    if (!t) return;
+    // a new cool-down (or none): the server works out when the next pack is due
+    if (Date.parse(news.lastPurchaseAt ?? '') !== Date.parse(t.lastPurchaseAt ?? '') && (news.lastPurchaseAt || t.lastPurchaseAt)) {
+      void this.loadTickets();
+    } else if (news.balance !== t.balance) {
+      this._tickets = { ...t, balance: news.balance };
+      this.emit();
+    }
   }
 
   private setPark(park: Park) {
@@ -189,7 +295,15 @@ class Session {
         cooldownHours: park.cooldownHours,
       };
     if (JSON.stringify(before) === JSON.stringify(park)) return;
-    if (before?.open !== park.open || before?.message !== park.message || JSON.stringify(before?.maintenance) !== JSON.stringify(park.maintenance))
+    // a new cool-down moves the member's next pack: the server works out when
+    if (before && before.cooldownHours !== park.cooldownHours && this._tickets) void this.loadTickets();
+    if (
+      before?.open !== park.open ||
+      before?.message !== park.message ||
+      before?.underMaintenance !== park.underMaintenance ||
+      before?.maintenanceMessage !== park.maintenanceMessage ||
+      JSON.stringify(before?.maintenance) !== JSON.stringify(park.maintenance)
+    )
       for (const fn of this.parkListeners) fn(park);
     this.emit();
   }
@@ -201,6 +315,179 @@ class Session {
     const next = t.nextPurchaseAt ? Date.parse(t.nextPurchaseAt) : NaN;
     if (Number.isNaN(next)) return t.canBuy || !t.nextPurchaseAt ? 0 : null;
     return Math.max(0, next - now);
+  }
+
+  // ---------- The booth's shop ----------
+
+  /** What the booth sells, once loaded (see `loadCatalog`). */
+  get catalog() {
+    return this._catalog;
+  }
+
+  /** The member's souvenirs, once loaded: [] for a guest. */
+  get souvenirs() {
+    return this._souvenirs ?? [];
+  }
+
+  /** False until the member's souvenirs have been fetched. */
+  get souvenirsKnown() {
+    return this._souvenirs !== null;
+  }
+
+  /** The souvenirs being worn, by catalog id. */
+  get wearing() {
+    return this.souvenirs.filter((s) => s.equipped).map((s) => s.item);
+  }
+
+  owns(item: string) {
+    return this.souvenirs.some((s) => s.item === item);
+  }
+
+  /** The member's latest shop orders (newest first) and how many in all, once loaded (see `loadOrders`). */
+  get orders() {
+    return this._orders;
+  }
+
+  /** Calls `fn` when the booth's prices or stock change (GET /shop has the new ones). Returns an unsubscribe. */
+  onShop(fn: Listener) {
+    this.shopListeners.add(fn);
+    return () => void this.shopListeners.delete(fn);
+  }
+
+  /**
+   * Fetches the shop's catalog: once, or again with `fresh` (prices and stock change). Resolves to
+   * null when the server is away, keeping the last one heard.
+   */
+  loadCatalog(fresh = false) {
+    if (this._catalog && !fresh) return Promise.resolve(this._catalog);
+    this.catalogLoading ??= api
+      .shop()
+      .then(({ items }) => {
+        this._catalog = items;
+        this.emit();
+        return items;
+      })
+      .catch(() => null)
+      .finally(() => (this.catalogLoading = null));
+    return this.catalogLoading;
+  }
+
+  /** Fetches the member's souvenirs (what they wear shows on them in the fair). */
+  async loadSouvenirs() {
+    const id = this._user?.id;
+    if (!id) return null;
+    const res = await this.guard(api.souvenirs());
+    if (!res || this._user?.id !== id) return null;
+    this._souvenirs = res.souvenirs;
+    this.emit();
+    return res.souvenirs;
+  }
+
+  /** Fetches the member's latest shop orders. Resolves to null for guests or when the server is away. */
+  async loadOrders() {
+    const id = this._user?.id;
+    if (!id) return null;
+    const res = await this.guard(api.orders(RECENT_ORDERS));
+    if (!res || this._user?.id !== id) return null;
+    this._orders = res;
+    this.emit();
+    return res;
+  }
+
+  /**
+   * Buys one item from the shop. Throws an ApiError: a NotEnoughTicketsError when the wallet is
+   * short (which also corrects the balance here), a SoldOutError when none are left, a
+   * ParkClosedError while the park is closed.
+   */
+  async buyItem(item: string) {
+    try {
+      const res = await api.buyItem(item);
+      if (this._tickets) this._tickets = { ...this._tickets, balance: res.balance };
+      else void this.loadTickets();
+      this._souvenirs = res.souvenirs;
+      if (this._orders) this._orders = { orders: [res.order, ...this._orders.orders].slice(0, RECENT_ORDERS), total: this._orders.total + 1 };
+      this.setStock(item, (n) => n - 1);
+      this.emit();
+      return res;
+    } catch (err) {
+      if (err instanceof SoldOutError) {
+        this.setStock(item, () => 0);
+        this.emit();
+      }
+      if (err instanceof ParkClosedError) this.noteParkClosed(err);
+      if (err instanceof NotEnoughTicketsError && err.balance !== null && this._tickets) {
+        this._tickets = { ...this._tickets, balance: err.balance };
+        this.emit();
+      }
+      if (err instanceof ApiError && err.status === 401) this.expire();
+      throw err;
+    }
+  }
+
+  /** What's left of an item, until the catalog is fetched again (a limited one only). */
+  private setStock(item: string, next: (n: number) => number) {
+    this._catalog = this._catalog?.map((i) => (i.id === item && typeof i.stock === 'number' ? { ...i, stock: Math.max(0, next(i.stock)) } : i)) ?? null;
+  }
+
+  /** Puts a souvenir on (whatever shared its slot comes off) or takes it off. Throws an ApiError. */
+  async wear(item: string, equipped: boolean) {
+    const { souvenirs } = await api.wear(item, equipped);
+    this._souvenirs = souvenirs;
+    this.emit();
+    return souvenirs;
+  }
+
+  // ---------- The Idea Box ----------
+
+  /** The member's suggestions (newest first), how many in all and how many have unread news, once loaded. */
+  get suggestions() {
+    return this._suggestions;
+  }
+
+  /** Calls `fn` when the member's suggestions change: one left, or news from staff. Returns an unsubscribe. */
+  onSuggestions(fn: Listener) {
+    this.suggestionListeners.add(fn);
+    return () => void this.suggestionListeners.delete(fn);
+  }
+
+  /** Fetches the member's suggestions. Resolves to null for guests or when the server is away. */
+  async loadSuggestions() {
+    const id = this._user?.id;
+    if (!id) return null;
+    const res = await this.guard(api.suggestions());
+    if (!res || this._user?.id !== id) return null;
+    this._suggestions = res;
+    this.emitSuggestions();
+    return res;
+  }
+
+  /** Leaves a suggestion. Throws an ApiError (a SuggestionLimitError after a few in a day). */
+  async suggest(topic: SuggestionTopic, message: string) {
+    try {
+      const created = await api.suggest({ topic, message });
+      const s = this._suggestions;
+      this._suggestions = s
+        ? { suggestions: [created, ...s.suggestions], total: s.total + 1, unread: s.unread }
+        : { suggestions: [created], total: 1, unread: 0 };
+      this.emitSuggestions();
+      return created;
+    } catch (err) {
+      if (err instanceof ApiError && err.status === 401) this.expire();
+      throw err;
+    }
+  }
+
+  /** The member has read staff's news: nothing is unread, here and on the server. */
+  markSuggestionsSeen() {
+    const s = this._suggestions;
+    if (!s?.unread) return;
+    this._suggestions = { ...s, unread: 0, suggestions: s.suggestions.map((x) => (x.unread ? { ...x, unread: false } : x)) };
+    this.emitSuggestions();
+    void this.guard(api.suggestionsSeen());
+  }
+
+  private emitSuggestions() {
+    for (const fn of this.suggestionListeners) fn();
   }
 
   /** Calls `fn` whenever the user, their tickets or their stats change. Returns an unsubscribe. */
@@ -355,10 +642,19 @@ class Session {
     return res;
   }
 
-  /** Downloads everything the fair keeps about the member. Throws an ApiError. */
-  exportData() {
-    return api.exportData();
+  /**
+   * The round's attraction (or the park) closed while it was played: ends it and puts its tickets
+   * back. Resolves to how many came back, or null if the server wouldn't (it opened again, say).
+   */
+  async refund(roundId: string): Promise<number | null> {
+    const res = await this.guard(api.refund(roundId));
+    if (!res) return null;
+    if (this._tickets) this._tickets = { ...this._tickets, balance: res.balance };
+    else void this.loadTickets();
+    this.emit();
+    return res.refunded;
   }
+
 
   /** Deletes the account for good, then carries on as a guest. Throws an ApiError (401 = wrong password). */
   async deleteAccount(password: string) {
@@ -383,12 +679,23 @@ class Session {
       this._tickets = null;
       this._stats = null;
       this._purchases = null;
+      this._souvenirs = null;
+      this._orders = null;
+      this._suggestions = null;
     }
     this._user = user;
     this._known = true;
+    // the stream knows who's listening by the cookie: a new member (or a guest again) reconnects
+    if (switched && this.live) this.openLive();
     if (changed) this.emit();
-    // a new member: their wallet shows in the HUD straight away
-    if (switched && user) void this.loadTickets();
+    // a new member: their wallet shows in the HUD straight away, and their souvenirs on them
+    if (switched && user) {
+      void this.loadTickets();
+      void this.loadSouvenirs();
+      // staff may have answered one of their ideas while they were away
+      void this.loadSuggestions();
+    }
+    if (switched) this.emitSuggestions();
   }
 
   private emit() {
@@ -403,6 +710,15 @@ class Session {
 }
 
 export const session = new Session();
+
+/** The JSON in a server-sent event, or null if it isn't any. */
+function parseEvent<T>(e: Event): T | null {
+  try {
+    return JSON.parse((e as MessageEvent<string>).data) as T;
+  } catch {
+    return null;
+  }
+}
 
 /** GET /park's answer, with anything missing or malformed falling back to the usual rules. */
 function normalisePark(raw: Park): Park {
@@ -421,7 +737,10 @@ function normalisePark(raw: Park): Park {
     const sign = closed[id];
     maintenance[id] = typeof sign === 'string' && sign.trim() ? sign.trim() : null;
   }
-  return { open, message, costs, packSize: num(raw?.packSize, PACK_SIZE), cooldownHours: num(raw?.cooldownHours, COOLDOWN_HOURS), maintenance };
+  const underMaintenance = raw?.underMaintenance === true;
+  const maintenanceMessage =
+    underMaintenance && typeof raw?.maintenanceMessage === 'string' && raw.maintenanceMessage.trim() ? raw.maintenanceMessage.trim() : null;
+  return { open, message, underMaintenance, maintenanceMessage, costs, packSize: num(raw?.packSize, PACK_SIZE), cooldownHours: num(raw?.cooldownHours, COOLDOWN_HOURS), maintenance };
 }
 
 /** "03:12:45" for a wait of that long (the booth's countdown to the next pack). */

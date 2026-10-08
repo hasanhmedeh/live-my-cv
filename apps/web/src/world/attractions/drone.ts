@@ -271,12 +271,14 @@ export class Drone implements Attraction {
     document.body.classList.add('is-flying');
     this.hudTimer = 0;
     this.updateHud(0);
-    this.ctx.ui.panel(
+    // the intro opens by itself the first time (then steps aside); after that it's behind the ℹ️
+    const shown = this.ctx.ui.setIntro(
       'drone-intro',
+      'Drone Flights',
       `<p class="eyebrow">Drone Flights · ${fmt(seconds)} of battery</p><h2>Cleared for take-off!</h2><p>${this.controlsHtml()}</p>`,
       { accent: PALETTE.teal, left: true },
     );
-    this.introTimer = 9;
+    this.introTimer = shown ? 9 : 0;
     this.ctx.sfx.chime();
   }
 

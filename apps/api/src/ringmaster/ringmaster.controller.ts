@@ -3,21 +3,27 @@ import { CurrentUser } from '../auth/current-user.decorator.js';
 import { SessionGuard } from '../auth/session.guard.js';
 import { ParseLimitPipe } from '../common/parse-limit.pipe.js';
 import { ParseOffsetPipe } from '../common/parse-offset.pipe.js';
-import type { Attraction, User } from '../generated/prisma/client.js';
+import { SuggestionStatus, type Attraction, type User } from '../generated/prisma/client.js';
 import { ParseRidePipe } from '../rides/parse-ride.pipe.js';
 import { ANALYTICS_DAYS, AnalyticsService, type AnalyticsDays, type Overview } from './analytics.service.js';
 import { UpdateAttractionDto } from './dto/update-attraction.dto.js';
 import { UpdateParkDto } from './dto/update-park.dto.js';
+import { UpdateShopItemDto } from './dto/update-shop-item.dto.js';
+import { UpdateSuggestionDto } from './dto/update-suggestion.dto.js';
 import { UpdateUserDto } from './dto/update-user.dto.js';
 import {
   RingmasterService,
   type AdminActionJson,
   type AdminPurchaseJson,
   type AdminRoundJson,
+  type AdminShopItemJson,
+  type AdminShopOrderJson,
+  type AdminSuggestionJson,
   type AdminUserDetail,
   type AdminUserJson,
   type AttractionJson,
   type ParkSettingsJson,
+  type VisitorsJson,
 } from './ringmaster.service.js';
 import { StaffGuard } from './staff.guard.js';
 
@@ -37,6 +43,12 @@ export class RingmasterController {
   @Get('overview')
   overview(@Query('days') days?: string): Promise<Overview> {
     return this.analytics.overview(parseDays(days));
+  }
+
+  /** Who's in the fair right now: members, guests, and visitors still at the entrance. */
+  @Get('visitors')
+  visitors(): Promise<VisitorsJson> {
+    return this.office.visitors();
   }
 
   @Get('park')
@@ -63,6 +75,17 @@ export class RingmasterController {
     @Body() body: UpdateAttractionDto,
   ): Promise<AttractionJson> {
     return this.office.updateAttraction(actor, ride, body);
+  }
+
+  @Get('shop')
+  shopItems(): Promise<{ items: AdminShopItemJson[] }> {
+    return this.office.shopItems();
+  }
+
+  /** Sets a shop item's price, or how many are left to sell (null for no limit). */
+  @Patch('shop/:item')
+  updateShopItem(@CurrentUser() actor: User, @Param('item') item: string, @Body() body: UpdateShopItemDto): Promise<AdminShopItemJson> {
+    return this.office.updateShopItem(actor, item, body);
   }
 
   @Get('users')
@@ -98,6 +121,14 @@ export class RingmasterController {
     return this.office.purchases({ limit, offset });
   }
 
+  @Get('shop-orders')
+  shopOrders(
+    @Query('limit', new ParseLimitPipe(25, 100)) limit: number,
+    @Query('offset', ParseOffsetPipe) offset: number,
+  ): Promise<{ orders: AdminShopOrderJson[]; total: number }> {
+    return this.office.shopOrders({ limit, offset });
+  }
+
   @Get('rounds')
   rounds(
     @Query('ride') ride: string | undefined,
@@ -106,6 +137,22 @@ export class RingmasterController {
   ): Promise<{ rounds: AdminRoundJson[]; total: number }> {
     const only = ride ? new ParseRidePipe().transform(ride) : undefined;
     return this.office.rounds({ ride: only, limit, offset });
+  }
+
+  /** The Idea Box, newest first. `?status=` shows one status only; `counts` has every status either way. */
+  @Get('suggestions')
+  suggestions(
+    @Query('status') status: string | undefined,
+    @Query('limit', new ParseLimitPipe(25, 100)) limit: number,
+    @Query('offset', ParseOffsetPipe) offset: number,
+  ): Promise<{ suggestions: AdminSuggestionJson[]; total: number; counts: Record<SuggestionStatus, number> }> {
+    return this.office.suggestions({ status: parseStatus(status), limit, offset });
+  }
+
+  /** Answers a suggestion (once: 409 if it has an answer already), or changes its status. */
+  @Patch('suggestions/:id')
+  updateSuggestion(@CurrentUser() actor: User, @Param('id') id: string, @Body() body: UpdateSuggestionDto): Promise<AdminSuggestionJson> {
+    return this.office.updateSuggestion(actor, id, body);
   }
 
   @Get('actions')
@@ -122,4 +169,12 @@ function parseDays(value: string | undefined): AnalyticsDays {
   const days = Number(value);
   if (!(ANALYTICS_DAYS as readonly number[]).includes(days)) throw new BadRequestException(`days must be one of ${ANALYTICS_DAYS.join(', ')}`);
   return days as AnalyticsDays;
+}
+
+/** `?status=`: one of the statuses, or nothing for all of them. */
+function parseStatus(value: string | undefined): SuggestionStatus | undefined {
+  if (value === undefined || value === '') return undefined;
+  const statuses = Object.values(SuggestionStatus) as string[];
+  if (!statuses.includes(value)) throw new BadRequestException(`status must be one of ${statuses.join(', ')}`);
+  return value as SuggestionStatus;
 }

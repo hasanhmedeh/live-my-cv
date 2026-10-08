@@ -56,6 +56,12 @@
             <p class="intro-closed-message" id="intro-closed-message"></p>
             <p class="intro-closed-staff" id="intro-closed-staff" hidden>🎩 Park is closed — staff only. You can still go in to test the rides.</p>
           </div>
+          <div class="intro-closed intro-works" id="intro-works" role="status" hidden>
+            <p class="intro-closed-sign" aria-hidden="true">🛠️ Under maintenance 🛠️</p>
+            <p class="intro-closed-title">The fair is under maintenance</p>
+            <p class="intro-closed-message" id="intro-works-message"></p>
+            <p class="intro-closed-staff" id="intro-works-staff" hidden>🎩 Staff only: you can still go in, to check on things.</p>
+          </div>
           <div class="intro-actions">
             <button id="enter" class="btn btn-primary" type="button" disabled>
               <span class="btn-label">Building the fair…</span>
@@ -104,9 +110,12 @@
         <p class="account-tickets"></p>
         <p class="account-rides" aria-live="polite"></p>
         <ul class="account-list" aria-label="Completed rounds per attraction" hidden></ul>
+        <p class="account-rides account-orders-head" aria-live="polite"></p>
+        <ul class="account-list account-orders" aria-label="Your latest orders at the shop" hidden></ul>
+        <p class="account-rides account-wear-head" aria-live="polite"></p>
+        <ul class="account-list account-wear" aria-label="Your souvenirs: put them on or take them off" hidden></ul>
         <a class="account-staff" href="/ringmaster" target="_blank" rel="noopener" hidden>🎩 Ringmaster's Office <span aria-hidden="true">↗</span><span class="visually-hidden"> (opens in a new tab)</span></a>
         <div class="time-actions">
-          <button type="button" class="time-btn" data-account-export>⬇️ My data</button>
           <button type="button" class="time-btn" data-account-logout>Log out</button>
         </div>
         <p class="account-note" role="status" hidden></p>
@@ -192,7 +201,52 @@
       </div>
       <div id="gloc" class="gloc" aria-hidden="true"></div>
       <div id="ride-exit" class="ride-exit" hidden><button type="button" class="btn btn-small btn-cream">Exit ride <kbd>Esc</kbd></button></div>
+      <!-- the guide to the fair, or to the ride you're on: opens by itself the first time, then only from here (or I) -->
+      <button type="button" id="info-toggle" class="hud-icon hud-info" aria-controls="panel" aria-expanded="false" aria-label="Info (I)" title="Info (I)">i</button>
       <aside id="panel" class="panel" aria-live="polite" hidden></aside>
+      <!-- treats running (cotton candy, popcorn, soda from the booth): see world/perks.ts -->
+      <div id="perks" class="perks" aria-live="polite" hidden></div>
+      <!-- the Ticket Booth's shop: Rosa at the counter, and the aisles (world/shop.ts) -->
+      <div id="shop" class="shop" hidden>
+        <div class="shop-talk" aria-hidden="true">
+          <p class="shop-talk-name">Rosa · <span>Ticket Booth</span></p>
+          <p class="shop-talk-line" data-shop-line></p>
+        </div>
+        <p class="visually-hidden" aria-live="polite" data-shop-said></p>
+        <section class="shop-sheet" role="dialog" aria-modal="false" aria-labelledby="shop-title">
+          <header class="shop-head">
+            <div class="shop-title">
+              <p class="eyebrow">The Ticket Booth</p>
+              <h2 id="shop-title">What can I get you?</h2>
+            </div>
+            <div class="shop-wallet" data-shop-wallet></div>
+            <button type="button" class="shop-leave" data-shop-leave>Leave the counter <kbd>Esc</kbd></button>
+          </header>
+          <div class="shop-aisles" role="tablist" aria-label="Aisles">
+            <button type="button" role="tab" id="aisle-tickets" aria-controls="shop-shelf" data-aisle="tickets">🎟️ Tickets</button>
+            <button type="button" role="tab" id="aisle-treats" aria-controls="shop-shelf" data-aisle="treats">🍭 Treats</button>
+            <button type="button" role="tab" id="aisle-souvenirs" aria-controls="shop-shelf" data-aisle="souvenirs">🎈 Souvenirs</button>
+          </div>
+          <div class="shop-shelf" id="shop-shelf" role="tabpanel" tabindex="0" data-shop-shelf></div>
+        </section>
+      </div>
+      <!-- the Idea Box: leave a suggestion for the park, and see what staff answered (world/ideas.ts) -->
+      <div id="ideas" class="shop ideas" hidden>
+        <section class="shop-sheet ideas-sheet" role="dialog" aria-modal="false" aria-labelledby="ideas-title">
+          <header class="shop-head">
+            <div class="shop-title">
+              <p class="eyebrow">The Idea Box</p>
+              <h2 id="ideas-title">Got a bright idea?</h2>
+            </div>
+            <button type="button" class="shop-leave" data-ideas-leave>Back to the fair <kbd>Esc</kbd></button>
+          </header>
+          <div class="shop-aisles" role="tablist" aria-label="Idea Box">
+            <button type="button" role="tab" id="ideas-tab-new" aria-controls="ideas-panel" data-ideas-tab="new">✍️ Share an idea</button>
+            <button type="button" role="tab" id="ideas-tab-mine" aria-controls="ideas-panel" data-ideas-tab="mine">📬 My ideas <span class="ideas-count" data-ideas-count hidden></span></button>
+          </div>
+          <div class="shop-shelf" id="ideas-panel" role="tabpanel" tabindex="0" data-ideas-panel></div>
+        </section>
+      </div>
 
       <div id="minimap" class="minimap" title="Open the park map (M)">
         <canvas aria-hidden="true"></canvas>

@@ -924,8 +924,9 @@ export class Speedway implements Attraction {
     document.body.classList.add('is-racing');
     this.hudTimer = 0;
     this.updateHud(0);
-    this.ctx.ui.panel('speedway-intro', this.introHtml(), { accent: PALETTE.candy });
-    this.introTimer = 8;
+    // the intro opens by itself the first time (then steps aside); after that it's behind the ℹ️
+    const shown = this.ctx.ui.setIntro('speedway-intro', 'Turbo Speedway', this.introHtml(), { accent: PALETTE.candy });
+    this.introTimer = shown ? 8 : 0;
     this.ctx.sfx.chime();
   }
 

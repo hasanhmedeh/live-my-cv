@@ -10,6 +10,7 @@ export const LAYOUT = {
   crates: { x: 34, z: -12 },
   striker: { x: -20, z: -40 },
   booth: { x: 20, z: 12 },
+  ideas: { x: -11.5, z: 9 }, // the Idea Box, on the entrance plaza's west side, its slot facing east
   drone: { x: 12, z: -49 }, // the rental kiosk, beside the boulevard's north plaza
   dronePad: { x: 12, z: -57.5 },
   flip: { x: -52, z: -70 }, // the Sky Flip's tower, in the park's north-west corner
@@ -30,7 +31,7 @@ export function flipLocal(x: number, z: number): [number, number] {
   return [dx * c - dz * s, dx * s + dz * c];
 }
 
-export type ZoneId = 'entrance' | 'coaster' | 'falcon' | 'rocket' | 'crates' | 'striker' | 'ferris' | 'booth' | 'drone' | 'flip' | 'ship' | 'speedway';
+export type ZoneId = 'entrance' | 'coaster' | 'falcon' | 'rocket' | 'crates' | 'striker' | 'ferris' | 'booth' | 'ideas' | 'drone' | 'flip' | 'ship' | 'speedway';
 
 /** Where the visitor is placed when teleporting to a zone, and the zone trigger. */
 export const ZONES: Record<ZoneId, { x: number; z: number; radius: number; title: string; action: string; heading: number }> = {
@@ -43,7 +44,9 @@ export const ZONES: Record<ZoneId, { x: number; z: number; radius: number; title
   striker: { x: -20, z: -33, radius: 3.4, title: 'High Striker', action: 'Swing the hammer', heading: 0 },
   // at the wheel's boarding terminal, at the far end of the road out of the park
   ferris: { x: 0, z: -181, radius: 3.6, title: 'Giant Wheel', action: 'Ride the 250 m wheel', heading: 0 },
-  booth: { x: 20, z: 18, radius: 3.4, title: 'Ticket Booth', action: 'Get your tickets', heading: 0 },
+  booth: { x: 20, z: 18, radius: 3.4, title: 'Ticket Booth', action: 'Step up to the counter', heading: 0 },
+  // in front of the Idea Box, facing west at its slot
+  ideas: { x: -8, z: 9, radius: 2.6, title: 'Idea Box', action: 'Share an idea', heading: Math.PI / 2 },
   // at the kiosk counter, facing east
   drone: { x: 7, z: -49, radius: 3.2, title: 'Drone Flights', action: 'Rent a drone', heading: -Math.PI / 2 },
   // outside the Sky Flip's gate, facing the tower
