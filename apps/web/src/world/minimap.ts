@@ -205,6 +205,8 @@ export class Minimap {
   private size = 0;
   private dpr = 1;
   private centre = { x: 0, z: 0 };
+  /** Attractions closed for maintenance: their icon sits on a red disc. */
+  closed: ReadonlySet<ZoneId> = new Set();
   onOpen: (() => void) | null = null;
 
   constructor(root: HTMLElement) {
@@ -284,10 +286,16 @@ export class Minimap {
     for (const { id, icon } of MAP_PLACES) {
       const p = this.toMap(ZONES[id].x, ZONES[id].z);
       if (p.x < -10 || p.y < -10 || p.x > S + 10 || p.y > S + 10) continue;
-      g.fillStyle = 'rgba(255, 245, 227, 0.92)';
+      const shut = this.closed.has(id);
+      g.fillStyle = shut ? 'rgba(255, 77, 109, 0.95)' : 'rgba(255, 245, 227, 0.92)';
       g.beginPath();
       g.arc(p.x, p.y, iconSize * 0.72, 0, Math.PI * 2);
       g.fill();
+      if (shut) {
+        g.strokeStyle = PALETTE.cream;
+        g.lineWidth = 2;
+        g.stroke();
+      }
       g.fillStyle = '#000';
       g.fillText(icon, p.x, p.y + 1);
     }

@@ -40,6 +40,8 @@ export class WorldMap {
   private selected: ZoneId | null = null;
   private hovered: ZoneId | null = null;
   private near: ZoneId | null = null;
+  /** Attractions closed for maintenance, each with its sign (null for the default wording). */
+  private closed = new Map<ZoneId, string | null>();
   private pointers = new Map<number, { x: number; y: number }>();
   private dragDist = 0;
   private pinch: { d: number; ppm: number } | null = null;
@@ -88,7 +90,7 @@ export class WorldMap {
       pin.className = 'wm-pin';
       pin.tabIndex = -1; // the legend is the keyboard route; pins are for pointing
       pin.setAttribute('aria-label', p.label);
-      pin.innerHTML = `<span class="wm-pin-icon">${p.icon}</span><span class="wm-pin-label">${escapeHtml(p.label)}</span>`;
+      pin.innerHTML = `<span class="wm-pin-icon">${p.icon}<span class="wm-pin-badge" aria-hidden="true">🚧</span></span><span class="wm-pin-label">${escapeHtml(p.label)}</span>`;
       pin.addEventListener('pointerdown', (e) => e.stopPropagation());
       pin.addEventListener('click', () => this.pick(p.id, false));
       pin.addEventListener('pointerenter', () => (this.hovered = p.id));
@@ -99,7 +101,7 @@ export class WorldMap {
       const li = document.createElement('li');
       const item = document.createElement('button');
       item.type = 'button';
-      item.innerHTML = `<span class="wm-item-icon">${p.icon}</span><span class="wm-item-label">${escapeHtml(p.label)}</span><span class="wm-item-here">Here</span>`;
+      item.innerHTML = `<span class="wm-item-icon">${p.icon}</span><span class="wm-item-label">${escapeHtml(p.label)}</span><span class="wm-item-closed">Maintenance</span><span class="wm-item-here">Here</span>`;
       item.addEventListener('click', () => this.pick(p.id, true));
       item.addEventListener('pointerenter', () => (this.hovered = p.id));
       item.addEventListener('pointerleave', () => this.hovered === p.id && (this.hovered = null));
@@ -152,6 +154,19 @@ export class WorldMap {
     if (this.isOpen) this.renderCard();
   }
 
+  /** Attractions closed for maintenance get a 🚧 on their pin, a tag in the legend, and their sign on the card. */
+  setClosed(closed: ReadonlyMap<ZoneId, string | null>) {
+    this.closed = new Map(closed);
+    for (const p of MAP_PLACES) {
+      const shut = this.closed.has(p.id);
+      const label = shut ? `${p.label}, under maintenance` : p.label;
+      this.pins.get(p.id)?.classList.toggle('is-closed', shut);
+      this.pins.get(p.id)?.setAttribute('aria-label', label);
+      this.items.get(p.id)?.classList.toggle('is-closed', shut);
+    }
+    if (this.isOpen) this.renderCard();
+  }
+
   private travel(id: ZoneId) {
     this.close();
     this.onTravel?.(id);
@@ -184,13 +199,16 @@ export class WorldMap {
     const z = ZONES[id];
     const here = this.near === id;
     const d = Math.hypot(z.x - this.visitor.x, z.z - this.visitor.z);
+    const sign = this.closed.get(id);
     const dist = here ? 'You are here' : d < 1000 ? `${Math.round(d / 5) * 5} m away` : `${(d / 1000).toFixed(1)} km away`;
     this.card.innerHTML = `
       <span class="wm-card-icon" aria-hidden="true">${p.icon}</span>
       <div class="wm-card-text">
         <p class="wm-card-dist">${dist}</p>
         <h3>${escapeHtml(p.label)}</h3>
-        <p>${escapeHtml(p.blurb)}</p>
+        <p>${escapeHtml(p.blurb)}</p>${
+          this.closed.has(id) ? `<p class="wm-card-closed">🚧 Under maintenance${sign ? `: ${escapeHtml(sign)}` : '. Back soon!'}</p>` : ''
+        }
       </div>
       <button type="button" class="btn btn-primary wm-travel" data-wm-travel>Fast travel <kbd>Enter</kbd></button>`;
     this.card.hidden = false;

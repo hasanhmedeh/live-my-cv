@@ -1,6 +1,7 @@
 import * as THREE from 'three';
 import type { Ctx } from './context';
 import { ZONES, type ZoneId } from './layout';
+import { MaintenanceSite } from './maintenance';
 import { floatingTextTexture, hdr, makeSprite, PALETTE } from './textures';
 
 interface Marker {
@@ -10,6 +11,8 @@ interface Marker {
   label: THREE.Sprite;
   baseY: number;
   closed: boolean;
+  /** Built the first time the attraction closes. */
+  site: MaintenanceSite | null;
 }
 
 /** Glowing ground rings: step onto one to get the "Press E" prompt. */
@@ -17,7 +20,7 @@ export class Zones {
   private markers: Marker[] = [];
   active: ZoneId | null = null;
 
-  constructor(ctx: Ctx) {
+  constructor(private ctx: Ctx) {
     for (const [id, z] of Object.entries(ZONES) as [ZoneId, (typeof ZONES)[ZoneId]][]) {
       if (!z.radius) continue;
       const ring = new THREE.Mesh(
@@ -35,11 +38,11 @@ export class Zones {
       const label = makeSprite(floatingTextTexture(z.title, z.action), 7);
       label.position.set(z.x, 3.4, z.z);
       ctx.scene.add(ring, fill, label);
-      this.markers.push({ id, ring, fill, label, baseY: 3.4, closed: false });
+      this.markers.push({ id, ring, fill, label, baseY: 3.4, closed: false, site: null });
     }
   }
 
-  /** Attractions closed for maintenance get a red ring and an "Under maintenance" label. */
+  /** Attractions closed for maintenance get a red ring, an "Under maintenance" label, and roadworks (a barricade, beacons, cones). */
   setClosed(closed: ReadonlySet<ZoneId>) {
     for (const m of this.markers) {
       const now = closed.has(m.id);
@@ -53,6 +56,8 @@ export class Zones {
       mat.map?.dispose();
       mat.map = now ? floatingTextTexture(z.title, '🚧 Under maintenance') : floatingTextTexture(z.title, z.action);
       mat.needsUpdate = true;
+      if (now && !m.site) this.ctx.scene.add((m.site = new MaintenanceSite(m.id)).group);
+      if (m.site) m.site.group.visible = now;
     }
   }
 
@@ -73,6 +78,7 @@ export class Zones {
       // fade labels that are far away so the scene stays readable
       const d = Math.hypot(carPos.x - z.x, carPos.z - z.z);
       (m.label.material as THREE.SpriteMaterial).opacity = THREE.MathUtils.clamp(1.4 - d / 45, 0.25, 1);
+      if (m.closed && d < 120) m.site?.update(t);
     }
     this.active = found;
     return found;

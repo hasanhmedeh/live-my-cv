@@ -483,7 +483,7 @@ export class Game {
     setInterval(() => this.tickCountdowns(), 1000);
     this.sessionUser = session.user?.id ?? null;
     session.onChange(() => this.onSessionChange());
-    // the gates: a closed park gets its banner, an attraction under maintenance its red ring
+    // the gates: a closed park gets its banner, an attraction under maintenance its red ring, roadworks and map badges
     session.onPark(() => this.onParkChange());
     this.parkBanner.querySelector('.park-banner-close')!.addEventListener('click', () => {
       this.parkBannerDismissed = true;
@@ -752,7 +752,10 @@ export class Game {
       ? ''
       : (session.park?.message ?? (session.isStaff ? 'Staff can still ride, to test.' : 'Look around as much as you like; the rides and the Ticket Booth are paused.'));
     this.parkBanner.hidden = open || this.parkBannerDismissed || this.ui.hud.hidden;
-    this.zones?.setClosed(new Set(ATTRACTION_IDS.filter((id) => session.maintenance(id) !== undefined)));
+    const closed = new Map(ATTRACTION_IDS.flatMap((id) => (session.maintenance(id) === undefined ? [] : [[id, session.maintenance(id) ?? null] as const])));
+    this.zones?.setClosed(new Set(closed.keys()));
+    this.worldMap?.setClosed(closed);
+    if (this.minimap) this.minimap.closed = new Set(closed.keys());
     // a maintenance or closed sign that's open while the gate reopens is stale
     const key = this.ui.panelOpenKey;
     if (this.mode === 'drive' && (key.startsWith('maintenance-') || key.startsWith('closed-'))) {
