@@ -1,0 +1,27 @@
+{
+  "name": "@funfair/web",
+  "version": "1.0.0",
+  "private": true,
+  "description": "A 3D funfair in the browser",
+  "type": "module",
+  "scripts": {
+    "dev": "vite",
+    "build": "tsc --noEmit && vite build",
+    "typecheck": "tsc --noEmit",
+    "preview": "vite preview"
+  },
+  "dependencies": {
+    "@funfair/api": "workspace:*",
+    "cannon-es": "^0.20.0",
+    "n8ao": "^2.0.1",
+    "postprocessing": "^6.39.5",
+    "three": "^0.186.1"
+  },
+  "devDependencies": {
+    "@types/node": "^26.6.4",
+    "@types/three": "^0.186.0",
+    "opentype.js": "^2.0.0",
+    "typescript": "^7.0.2",
+    "vite": "^8.3.3"
+  }
+}

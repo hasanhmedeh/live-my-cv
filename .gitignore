@@ -1,4 +1,8 @@
 node_modules
 dist
 .vercel
+.turbo
 *.log
+.env
+.env.*
+!.env.example
