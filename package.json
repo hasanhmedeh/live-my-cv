@@ -7,7 +7,9 @@
   "scripts": {
     "dev": "turbo run dev",
     "build": "turbo run build",
-    "typecheck": "turbo run typecheck"
+    "typecheck": "turbo run typecheck",
+    "studio:dev": "pnpm --filter @funfair/api studio:dev",
+    "studio:prod": "pnpm --filter @funfair/api studio:prod"
   },
   "devDependencies": {
     "turbo": "^2.11.7"
