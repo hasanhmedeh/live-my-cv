@@ -16,7 +16,8 @@
     "db:generate": "prisma generate",
     "db:deploy": "prisma migrate deploy",
     "db:migrate": "prisma migrate dev",
-    "db:studio": "prisma studio"
+    "studio:dev": "node scripts/studio.mjs dev",
+    "studio:prod": "node scripts/studio.mjs prod"
   },
   "dependencies": {
     "@nestjs/common": "^12.1.2",

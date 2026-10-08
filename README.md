@@ -85,7 +85,8 @@ pnpm build                                  # type-check + production builds (ap
 pnpm typecheck                              # type-check both apps
 pnpm --filter @funfair/api db:migrate       # after editing prisma/schema.prisma: write and apply a migration (add --name <change>)
 pnpm --filter @funfair/api db:generate      # regenerate the Prisma client (pnpm dev/build/typecheck do this for you)
-pnpm --filter @funfair/api db:studio        # browse the database in Prisma Studio
+pnpm studio:dev                             # Prisma Studio on the local database (apps/api/.env), port 5555
+pnpm studio:prod                            # Prisma Studio on production (apps/api/.env.production), port 5556
 pnpm --filter @funfair/web preview          # serve the web production build
 ```
 
