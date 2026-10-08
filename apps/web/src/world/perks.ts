@@ -3,7 +3,7 @@
 // reload, kept in this browser. Little chips at the top of the HUD count them down.
 import type { Perk } from '../account/api';
 
-/** Running and walking speed with a sugar rush. */
+/** Running and walking speed with a sugar rush (scales both, so 9.8 m/s walking, 15.4 m/s sprinting). */
 export const SPEED_BOOST = 1.4;
 /** How much harder a kick sends things flying. */
 export const KICK_BOOST = 2;

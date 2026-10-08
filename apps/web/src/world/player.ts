@@ -10,10 +10,10 @@ import { perks } from './perks';
 // animation library as every guest, with a fixed outfit. Idle / walk / jog / sprint blend by
 // speed; rolling, kicking, waving and reaching out are layered on top.
 
-const WALK_SPEED = 2.4; // m/s, a brisk stroll
-const RUN_SPEED = 7;
-const ROLL_SPEED = 7.5;
-const ACCEL = 16;
+const WALK_SPEED = 7; // m/s: the park is big, so plain walking already moves at a run
+const RUN_SPEED = 11; // holding Shift: a flat-out sprint
+const ROLL_SPEED = 12; // faster than the sprint, so a roll still lunges forward
+const ACCEL = 24;
 const BODY_R = 0.42; // lower collision sphere: its centre sits this high when standing
 const KICK_TIME = 0.55;
 
