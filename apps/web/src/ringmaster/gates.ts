@@ -1,15 +1,34 @@
-// The whole park's switches (open or closed, and maintenance), their signs, and the free-ticket rules.
-import { ringmaster, type ParkSettings } from '../account/api';
+// The whole park's switches (open or closed, and maintenance), their signs, the free-ticket rules,
+// and private access (only the addresses on a list can reach the site).
+import { ringmaster, type Access, type ParkSettings } from '../account/api';
 import { ask } from './dialog';
 import { busy, esc, onApiError, toast, when } from './util';
 
+const LABEL_MAX = 60;
+
 export class GatesView {
   private park: ParkSettings | null = null;
+  private access: Access | null = null;
 
   constructor(private el: HTMLElement) {
     el.addEventListener('submit', (e) => {
       e.preventDefault();
-      void this.save(e.target as HTMLFormElement);
+      const form = e.target as HTMLFormElement;
+      if (form.matches('.access-add')) void this.addIp(form);
+      else void this.save(form);
+    });
+    el.addEventListener('click', (e) => {
+      const target = e.target as HTMLElement;
+      const toggle = target.closest<HTMLButtonElement>('[data-access-toggle]');
+      if (toggle) return void this.toggleAccess(toggle);
+      const remove = target.closest<HTMLButtonElement>('[data-remove-ip]');
+      if (remove) return void this.removeIp(remove);
+      // fills in the visitor's own address, to add with a label (or widen to a range first)
+      if (target.closest('[data-fill-mine]') && this.access?.you.ip) {
+        const form = el.querySelector<HTMLFormElement>('.access-add')!;
+        (form.elements.namedItem('ip') as HTMLInputElement).value = this.access.you.ip;
+        (form.elements.namedItem('label') as HTMLInputElement).focus();
+      }
     });
     el.addEventListener('change', (e) => {
       const input = e.target as HTMLInputElement;
@@ -27,7 +46,7 @@ export class GatesView {
   async show() {
     if (!this.park) this.el.innerHTML = `${head()}<p class="empty">Checking the gates…</p>`;
     try {
-      this.park = await ringmaster.park();
+      [this.park, this.access] = await Promise.all([ringmaster.park(), ringmaster.access()]);
       this.render();
     } catch (err) {
       onApiError(err);
@@ -60,7 +79,116 @@ export class GatesView {
           <span class="hint">0 means no wait.</span></label>
       </div>
       <div class="form-actions"><button type="submit" class="btn btn-primary">Save</button></div>
-    </form></div>`;
+    </form></div><div class="card" id="access-card"></div>`;
+    this.renderAccess();
+  }
+
+  /** Private access has a card of its own: its buttons act at once, without touching the form above. */
+  private renderAccess() {
+    const a = this.access;
+    const card = this.el.querySelector('#access-card');
+    if (!a || !card) return;
+    const [icon, status, sub] = a.enabled
+      ? ['🔒', 'The fair is private', 'Only the addresses below can open the site.']
+      : ['🌍', 'Open to everyone', 'Anyone can visit. Switch this on to let in only the addresses below.'];
+    const you = a.you.ip
+      ? `<code>${esc(a.you.ip)}</code> ${a.you.allowed ? '<span class="pill pill-good">On the list</span>' : '<span class="pill pill-muted">Not on the list</span>'}`
+      : '<span class="hint">The site can’t tell.</span>';
+    const rows = a.entries
+      .map(
+        (e) => `<tr><td><code>${esc(e.ip)}</code></td><td>${esc(e.label ?? '—')}</td><td><span class="cell-sub">${esc(when(e.createdAt))} · ${esc(e.addedBy)}</span></td>
+          <td class="r"><button type="button" class="btn btn-small btn-danger" data-remove-ip="${esc(e.id)}" data-ip="${esc(e.ip)}">Remove</button></td></tr>`,
+      )
+      .join('');
+    card.innerHTML = `<div class="gates-form">
+      <h3>Private access</h3>
+      <div class="big-status"><span aria-hidden="true" style="font-size:2rem">${icon}</span><div><strong>${status}</strong><p class="hint">${sub}</p></div></div>
+      <p class="hint">While it's on, every visitor whose address isn't listed gets a “private” page instead of the fair: the game, this office and the API, staff included. Switching it on adds your own address first (for IPv6, your whole home network, as its /64), so you can't shut yourself out.</p>
+      <p>Your address: ${you}</p>
+      <div class="form-actions"><button type="button" class="btn ${a.enabled ? 'btn-danger' : 'btn-primary'}" data-access-toggle>${a.enabled ? 'Open the fair to everyone' : 'Make the fair private'}</button></div>
+      <h3>Allowed addresses</h3>
+      ${
+        rows
+          ? `<div class="table-wrap"><table><thead><tr><th>Address</th><th>Whose</th><th>Added</th><th class="r" aria-label="Remove"></th></tr></thead><tbody>${rows}</tbody></table></div>`
+          : '<p class="empty">Nobody yet. Your own address is added when you make the fair private.</p>'
+      }
+      <form class="access-add gates-pair" novalidate>
+        <label>Address or range <input type="text" name="ip" maxlength="64" placeholder="203.0.113.7 or 203.0.113.0/24" autocapitalize="off" spellcheck="false" required />
+          ${a.you.ip ? '<span class="hint"><button type="button" class="btn btn-ghost btn-small" data-fill-mine>Use my address</button></span>' : ''}</label>
+        <label>Whose <input type="text" name="label" maxlength="${LABEL_MAX}" placeholder="e.g. Sam at home" />
+          <span class="hint">Optional, to remember who it lets in.</span></label>
+        <div class="form-actions"><button type="submit" class="btn btn-primary btn-small">Add</button></div>
+      </form>
+    </div>`;
+  }
+
+  private async toggleAccess(button: HTMLButtonElement) {
+    const a = this.access!;
+    const enabled = !a.enabled;
+    const confirmed = enabled
+      ? await ask({
+          icon: '🔒',
+          title: 'Make the fair private?',
+          body: `Only the addresses on the list can reach the site, and everyone else is turned away at once, staff included. ${
+            a.you.allowed ? 'Your address is on the list already.' : `Your address (${a.you.ip ?? 'unknown'}) is added now, so you stay in.`
+          }`,
+          confirm: 'Make it private',
+        })
+      : await ask({
+          icon: '🌍',
+          title: 'Open the fair to everyone?',
+          body: 'Anyone can visit again. The list is kept for next time.',
+          confirm: 'Open it',
+        });
+    if (!confirmed) return;
+    const saved = await busy(button, () => ringmaster.updateAccess(enabled));
+    if (!saved) return;
+    this.access = saved;
+    this.renderAccess();
+    toast(enabled ? '🔒 The fair is private: only the listed addresses can come in.' : '🌍 The fair is open to everyone again.');
+  }
+
+  private async addIp(form: HTMLFormElement) {
+    const data = new FormData(form);
+    const ip = String(data.get('ip') ?? '').trim();
+    const label = String(data.get('label') ?? '').trim() || null;
+    if (!ip) {
+      toast('Type an address, like 203.0.113.7, or a range like 203.0.113.0/24.', true);
+      return (form.elements.namedItem('ip') as HTMLInputElement).focus();
+    }
+    const added = await busy(form.querySelector<HTMLButtonElement>('[type="submit"]'), () => ringmaster.allowIp({ ip, label }));
+    if (!added) return;
+    // the caller's own status may have changed too: the list is read again
+    await this.reloadAccess();
+    toast(`✅ ${added.ip} can come in.`);
+  }
+
+  private async removeIp(button: HTMLButtonElement) {
+    const ip = button.dataset.ip ?? '';
+    const confirmed = await ask({
+      icon: '🗑️',
+      title: `Remove ${ip}?`,
+      body: this.access?.enabled ? 'Anyone connecting from it is turned away at once.' : 'It won’t be let in when the fair is next made private.',
+      confirm: 'Remove',
+      danger: true,
+    });
+    if (!confirmed) return;
+    const done = await busy(button, async () => {
+      await ringmaster.removeAllowedIp(button.dataset.removeIp!);
+      return true;
+    });
+    if (!done) return;
+    await this.reloadAccess();
+    toast(`Removed ${ip}.`);
+  }
+
+  private async reloadAccess() {
+    try {
+      this.access = await ringmaster.access();
+      this.renderAccess();
+    } catch (err) {
+      onApiError(err);
+    }
   }
 
   private async save(form: HTMLFormElement) {
@@ -123,4 +251,4 @@ export class GatesView {
 }
 
 const head = () =>
-  `<div class="view-head"><div><h2 id="h-gates">Park gates</h2><p class="muted">Open or close the whole fair, put it under maintenance, and set the free-ticket rules. Visitors see changes at once.</p></div></div>`;
+  `<div class="view-head"><div><h2 id="h-gates">Park gates</h2><p class="muted">Open or close the whole fair, put it under maintenance, set the free-ticket rules, and make the fair private. Visitors see changes at once.</p></div></div>`;

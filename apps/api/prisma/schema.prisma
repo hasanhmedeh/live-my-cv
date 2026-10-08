@@ -1,8 +1,8 @@
 // Accounts, tickets and ride rounds for The Funfair.
 // After editing: `pnpm db:migrate --name <change>` to write a migration, then `pnpm db:generate`.
-// Ticket prices and each attraction's open/maintenance switch (attraction_settings), and the pack
-// size, purchase cooldown and park-wide open/closed switch (park_settings) are rows, edited in The
-// Ringmaster's Office (/ringmaster) or Prisma Studio.
+// Ticket prices and each attraction's open/maintenance switch (attraction_settings), the pack
+// size, purchase cooldown, park-wide open/closed switch and private access (park_settings, with
+// allowed_ips) are rows, edited in The Ringmaster's Office (/ringmaster) or Prisma Studio.
 
 generator client {
   provider            = "prisma-client"
@@ -143,6 +143,9 @@ model ParkSettings {
   packSize           Int      @default(20) @map("pack_size")
   /// Hours between two purchases, counted from the last one: 0 (no wait) to 168 (a CHECK constraint).
   cooldownHours      Int      @default(5) @map("cooldown_hours")
+  /// Private access: only the addresses in allowed_ips can reach the site at all (the pages, the
+  /// API, staff included). Locked out? Switch it off here with `pnpm studio:prod`.
+  allowlistOnly      Boolean  @default(false) @map("allowlist_only")
   updatedAt          DateTime @default(now()) @updatedAt @map("updated_at")
 
   @@map("park_settings")
@@ -178,12 +181,13 @@ model AdminAction {
   actor     User?    @relation(fields: [actorId], references: [id], onDelete: SetNull)
   /// The actor's username at the time, or "cli" for the staff scripts.
   actorName String   @map("actor_name")
-  /// What happened: park.open, park.close, park.maintenance.on, park.maintenance.off, settings.update, attraction.open, attraction.close,
+  /// What happened: park.open, park.close, park.maintenance.on, park.maintenance.off, settings.update,
+  /// access.on, access.off, access.ip.add, access.ip.remove, attraction.open, attraction.close,
   /// price.update, attraction.update, shop.price, shop.stock, shop.update, user.tickets, user.role,
   /// user.cooldown, user.delete, suggestion.reply or suggestion.status.
   action    String
-  /// What it happened to: an attraction id, a shop item id or a user's email (for a suggestion, its
-  /// author's). Null for the park's settings.
+  /// What it happened to: an attraction id, a shop item id, an allowed address or a user's email (for
+  /// a suggestion, its author's). Null for the park's settings.
   target    String?
   /// Before and after, e.g. { "before": { "tickets": 5 }, "after": { "tickets": 3 } }.
   details   Json?
@@ -191,6 +195,21 @@ model AdminAction {
 
   @@index([createdAt])
   @@map("admin_actions")
+}
+
+/// The addresses that can reach the site while park_settings.allowlist_only is on. The member of
+/// staff who switches it on is added automatically. Matched in src/access/allowlist.ts.
+model AllowedIp {
+  id        String   @id @default(cuid())
+  /// An address ("203.0.113.7") or a range in CIDR notation ("2001:db8:1:2::/64").
+  ip        String   @unique
+  /// Whose it is, e.g. "Hasan at home". Up to 60 characters.
+  label     String?
+  /// The username of the member of staff who added it, or "cli".
+  addedBy   String   @map("added_by")
+  createdAt DateTime @default(now()) @map("created_at")
+
+  @@map("allowed_ips")
 }
 
 /// Who's in the fair right now: one row per open game tab (its own random id), written by the live

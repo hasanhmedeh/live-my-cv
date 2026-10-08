@@ -1,6 +1,7 @@
 import path from 'node:path';
 import { Module } from '@nestjs/common';
 import { ConfigModule } from '@nestjs/config';
+import { AccessModule } from './access/access.module.js';
 import { AuthModule } from './auth/auth.module.js';
 import { validateEnv } from './config/env.js';
 import { HealthModule } from './health/health.module.js';
@@ -22,6 +23,7 @@ import { TicketsModule } from './tickets/tickets.module.js';
       validate: validateEnv,
     }),
     PrismaModule,
+    AccessModule,
     ParkModule,
     AuthModule,
     TicketsModule,

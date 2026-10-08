@@ -3,6 +3,7 @@ import {
   ApiError,
   LIVE_URL,
   COOLDOWN_HOURS,
+  onAccessBlocked,
   DEFAULT_COSTS,
   NotEnoughTicketsError,
   PACK_SIZE,
@@ -74,6 +75,11 @@ class Session {
   private suggestionListeners = new Set<Listener>();
   private _inFair = false;
   private liveHidden: ReturnType<typeof setTimeout> | null = null;
+  private _blocked: { message: string; ip: string | null } | null = null;
+
+  constructor() {
+    onAccessBlocked((err) => this.noteBlocked(err.message, err.ip));
+  }
 
   get user() {
     return this._user;
@@ -99,9 +105,26 @@ class Session {
     return this._park?.underMaintenance ?? false;
   }
 
-  /** Kept out of the fair: it's under maintenance and this visitor isn't staff. */
+  /**
+   * The site is private and this visitor's address isn't on the list (staff or not): the private
+   * sign, and the address the server saw. Null otherwise. It lasts until the page is reloaded.
+   */
+  get blocked() {
+    return this._blocked;
+  }
+
+  /** Kept out of the fair: the site is private to other addresses, or it's under maintenance and this visitor isn't staff. */
   get shutOut() {
-    return this.parkUnderMaintenance && !this.isStaff;
+    return !!this._blocked || (this.parkUnderMaintenance && !this.isStaff);
+  }
+
+  /** Turned away by private access (a request, or the live stream): out of the fair, and the stream stays closed. */
+  private noteBlocked(message: string, ip: string | null) {
+    if (this._blocked) return;
+    this._blocked = { message, ip };
+    this.closeLive();
+    for (const fn of this.parkListeners) fn(this._park);
+    this.emit();
   }
 
   /**
@@ -239,7 +262,7 @@ class Session {
 
   /** Opens the live stream. It says who's listening by the session cookie, so a new member reopens it. */
   private openLive() {
-    if (typeof EventSource === 'undefined') return;
+    if (typeof EventSource === 'undefined' || this._blocked) return;
     this.closeLive();
     const live = new EventSource(`${LIVE_URL}?visitor=${encodeURIComponent(VISITOR_ID)}&in=${this._inFair ? 1 : 0}`, { withCredentials: true });
     live.addEventListener('park', (e) => {
@@ -257,6 +280,11 @@ class Session {
     live.addEventListener('account', (e) => {
       const news = parseEvent<AccountNews>(e);
       if (news) this.applyAccount(news);
+    });
+    // private access was switched on (or this address taken off the list) in the office
+    live.addEventListener('blocked', (e) => {
+      const b = parseEvent<{ message?: unknown; ip?: unknown }>(e);
+      this.noteBlocked(typeof b?.message === 'string' ? b.message : 'The fair is private right now.', typeof b?.ip === 'string' ? b.ip : null);
     });
     // EventSource reconnects on its own (the server closes each stream after a few minutes)
     this.live = live;

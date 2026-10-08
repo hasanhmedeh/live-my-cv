@@ -3,6 +3,7 @@ import { Injectable, Logger, type OnModuleDestroy } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import type { Response } from 'express';
 import pg from 'pg';
+import { AccessService, IP_BLOCKED_MESSAGE } from '../access/access.service.js';
 import type { Env } from '../config/env.js';
 import type { User } from '../generated/prisma/client.js';
 import { isStaff, ParkService } from '../park/park.service.js';
@@ -36,6 +37,8 @@ export interface Presence {
 interface Stream {
   res: Response;
   userId: string | null;
+  /** Where it's connected from, so private access can turn it away when that changes. */
+  ip: string | null;
   /** Staff also hear what happens in the game and the office, for The Ringmaster's Office. */
   staff: boolean;
   /** A game tab, counted in the office's "in the fair" (the office's own stream isn't). */
@@ -67,20 +70,22 @@ export class LiveService implements OnModuleDestroy {
     private readonly config: ConfigService<Env, true>,
     private readonly park: ParkService,
     private readonly prisma: PrismaService,
+    private readonly access: AccessService,
   ) {}
 
   /**
    * Opens a stream: the park as it is now (and the member's account), then every change. A game
-   * tab passes its `presence`, and counts as a visitor while it's connected.
+   * tab passes its `presence`, and counts as a visitor while it's connected. `ip` is where it
+   * connects from (it got past private access: AccessGuard runs first).
    */
-  async open(res: Response, user: User | null, presence: Presence | null = null): Promise<void> {
+  async open(res: Response, user: User | null, ip: string | null, presence: Presence | null = null): Promise<void> {
     res.writeHead(200, {
       'content-type': 'text/event-stream; charset=utf-8',
       'cache-control': 'no-store, no-transform',
       connection: 'keep-alive',
       'x-accel-buffering': 'no',
     });
-    const stream: Stream = { res, userId: user?.id ?? null, staff: !!user && isStaff(user), presence: presence && { ...presence, token: randomUUID() } };
+    const stream: Stream = { res, userId: user?.id ?? null, ip, staff: !!user && isStaff(user), presence: presence && { ...presence, token: randomUUID() } };
     this.streams.add(stream);
     if (stream.presence) void this.arrived(stream.userId, stream.presence);
     if (this.idleTimer) clearTimeout(this.idleTimer);
@@ -211,6 +216,9 @@ export class LiveService implements OnModuleDestroy {
         this.parkTimer = null;
         void this.broadcastPark();
       }, DEBOUNCE_MS);
+    } else if (notice.t === 'access') {
+      this.access.forget();
+      void this.turnAway();
     } else if (notice.t === 'shop') {
       // just the word: tabs with the shop open fetch GET /shop, the rest when they next open it
       this.shopTimer ??= setTimeout(() => {
@@ -236,6 +244,25 @@ export class LiveService implements OnModuleDestroy {
         s.staff = 'role' in news && news.role === 'admin';
         send(s.res, 'account', news);
       }
+    }
+  }
+
+  /**
+   * Private access was switched on, or an address taken off the list: the streams from anywhere no
+   * longer allowed are told (the page shows the private sign) and closed. Their reconnects get a 403.
+   */
+  private async turnAway() {
+    if (!this.streams.size) return;
+    try {
+      const rules = await this.access.rules();
+      if (!rules.on) return;
+      for (const s of this.streams) {
+        if (rules.allows(s.ip)) continue;
+        send(s.res, 'blocked', { message: IP_BLOCKED_MESSAGE, ip: s.ip });
+        s.res.end();
+      }
+    } catch (err) {
+      this.logger.warn(`Couldn't read private access for live updates: ${err instanceof Error ? err.message : String(err)}`);
     }
   }
 

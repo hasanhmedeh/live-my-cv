@@ -40,6 +40,7 @@ The fair's back office lives at **`/ringmaster`**. Staff log in with their norma
 - **🍭 Shop:** set the price of each treat and souvenir at the Ticket Booth, and how many are in stock (or no limit). Each order takes one; at 0 it's sold out, and players see "Only 3 left!" and "Sold out" on the shelf as it happens. Quick +10 / +50 buttons for restocking, and how many of each have sold.
 - **💡 Ideas:** what members left at the Idea Box, filtered by status (with counts; the tab's badge shows how many are waiting). Answer each suggestion **once** (a confirmation says so: the answer can't be changed afterwards) and set its status (waiting, accepted, in development, done, declined) as often as it moves along. The member sees both at once, live if they're in the fair. Two staff answering at the same moment can't both get through.
 - **🚧 Park gates:** close the whole park with a sign on the gate (visitors can still walk around, but nobody can board or pick up tickets). Separately, put the park **under maintenance** with its own sign: nobody but staff can come into the fair at all, visitors already inside are sent back to the entrance (any round in progress is stopped and refunded), and the way in reopens by itself when it's switched off. Set the pack size and the hours between packs.
+- **🔒 Private access** (in Park gates): make the whole site reachable only from a list of IP addresses (or CIDR ranges like `203.0.113.0/24`), each with an optional label. Turning it on adds **your own address automatically** (for IPv6, your network's `/64`, since devices rotate their IPv6 address within it), so you can't shut yourself out; the office also refuses to remove the last entry that lets you in. Everyone else, staff included, gets a "private" page instead of the game, the office and the API, and anyone already in the fair is turned out at once. Locked out anyway (say your home IP changed)? Switch `allowlist_only` off in `park_settings` with `pnpm studio:prod`.
 - **👥 Members:** search, set a balance, reset the pack cooldown, make someone staff or a player again, delete an account.
 - **🎟️ Ledger / 📜 Logbook:** every round and pack; every change made by staff, with before and after.
 
@@ -98,6 +99,8 @@ node -e "console.log(require('crypto').randomBytes(48).toString('base64url'))"
 
 If something is missing or wrong, the API lists every problem at startup and exits.
 
+**Private access on Vercel.** The pages are served by the CDN, so `apps/web/middleware.js` (Vercel Routing Middleware, Node.js runtime) checks the allowlist before each one, reading `DATABASE_URL` like the API functions do. It and the API both take the visitor's address from `x-real-ip`, which Vercel sets and won't let the browser override. Elsewhere the API uses Express's `req.ip`, so set `TRUST_PROXY` to match your proxy. In local dev (Vite, no middleware) only the API is guarded: the game and the office show the private sign as soon as the API turns them away.
+
 ### Other scripts
 
 Run from the repo root:
@@ -135,6 +138,7 @@ apps/api/
   src/config/env.ts         validates the environment at startup
   src/auth/                 signup (terms), login, logout, me, account deletion; scrypt passwords, JWT session cookie, rate limits
   src/park/                 the live rules (prices, open/closed, maintenance, pack rules) and GET /api/park
+  src/access/               private access: the IP allowlist, the global guard on every route, and the check the page middleware uses
   src/live/                 GET /api/live: the office's changes pushed to the game (Server-Sent Events over Postgres LISTEN/NOTIFY)
   src/tickets/              ticket balance, packs, cooldown, purchase history
   src/rides/                attractions + default costs, boarding (spends tickets), rounds and their stats
@@ -146,7 +150,7 @@ apps/api/
 
 ## API
 
-Every route is under `/api`. The session is an httpOnly, `SameSite=Lax` cookie named `funfair_session` holding a 30-day JWT. Errors use Nest's usual body, `{ statusCode, message, error }`, where `message` is a string or, for validation errors, a list of strings.
+Every route is under `/api`. While private access is on, every route but `/api/health` answers **403** `{ code: 'ip_blocked', ip }` to an address that isn't on the list (staff too: it goes by address). The session is an httpOnly, `SameSite=Lax` cookie named `funfair_session` holding a 30-day JWT. Errors use Nest's usual body, `{ statusCode, message, error }`, where `message` is a string or, for validation errors, a list of strings.
 
 | Method | Path | Auth | Answers |
 | --- | --- | --- | --- |
@@ -172,10 +176,10 @@ Every route is under `/api`. The session is an httpOnly, `SameSite=Lax` cookie n
 | `POST` | `/api/suggestions` | ✔ | Body `{ topic, message }` (`topic`: `attraction`, `shop`, `park`, `problem` or `other`; `message`: 1–500 characters) → **201** the suggestion. **429** `{ code: 'suggestion_limit', nextAt }` after 5 in 24 hours |
 | `POST` | `/api/suggestions/seen` | ✔ | **204**: the member has read staff's news (nothing is `unread` any more) |
 | `GET` | `/api/park` | | **200** `{ open, message, underMaintenance, maintenanceMessage, costs, packSize, cooldownHours, maintenance }`, where `maintenance` maps each closed attraction to its sign and `underMaintenance` keeps everyone but staff out of the fair |
-| `GET` | `/api/live` | | **200** `text/event-stream`: a `park` event (as `GET /api/park`) on connect and on every change made in the office; with a session, also `account` events `{ balance, role, lastPurchaseAt }` or `{ deleted: true }`; `suggestions` events when staff answer one of the member's suggestions (the game then fetches `GET /api/suggestions`); for staff, also `office` events `{ kinds }` (`members`, `purchases`, `rounds`, `logbook`, `visitors`, `suggestions`: what changed, never who), at most one a second. Closed after 4 minutes; the browser reconnects |
+| `GET` | `/api/live` | | **200** `text/event-stream`: a `park` event (as `GET /api/park`) on connect and on every change made in the office; with a session, also `account` events `{ balance, role, lastPurchaseAt }` or `{ deleted: true }`; `suggestions` events when staff answer one of the member's suggestions (the game then fetches `GET /api/suggestions`); for staff, also `office` events `{ kinds }` (`members`, `purchases`, `rounds`, `logbook`, `visitors`, `suggestions`, `access`: what changed, never who), at most one a second; and a `blocked` event `{ message, ip }`, then the stream closes, when private access turns this address away. Closed after 4 minutes; the browser reconnects |
 | `GET` | `/api/ringmaster/visitors` | staff | **200** `{ inFair, members, guests, atEntrance }`: game tabs connected to `/api/live` in the last minute (a member counts once however many tabs they have open) |
 | `GET` | `/api/health` | | **200** `{ ok: true, db: 'up' }`, or **503** if the database is unreachable |
-| | `/api/ringmaster/*` | staff | The office: `GET overview?days=7\|30\|90`, `GET`/`PATCH park`, `GET attractions`, `PATCH attractions/:ride` `{ tickets?, open?, closedMessage? }`, `GET shop`, `PATCH shop/:item` `{ tickets?, stock? }` (`stock: null` for no limit), `GET users?q=&limit=&offset=`, `GET`/`PATCH`/`DELETE users/:id`, `GET purchases`, `GET rounds?ride=`, `GET suggestions?status=&limit=&offset=` (→ `{ suggestions, total, counts }`), `PATCH suggestions/:id` `{ status?, reply? }` (the reply only once: **409** if it has one), `GET actions`. **401** for guests, **403** for players |
+| | `/api/ringmaster/*` | staff | The office: `GET overview?days=7\|30\|90`, `GET`/`PATCH park`, `GET attractions`, `PATCH attractions/:ride` `{ tickets?, open?, closedMessage? }`, `GET shop`, `PATCH shop/:item` `{ tickets?, stock? }` (`stock: null` for no limit), `GET users?q=&limit=&offset=`, `GET`/`PATCH`/`DELETE users/:id`, `GET purchases`, `GET rounds?ride=`, `GET suggestions?status=&limit=&offset=` (→ `{ suggestions, total, counts }`), `PATCH suggestions/:id` `{ status?, reply? }` (the reply only once: **409** if it has one), `GET access` (→ `{ enabled, entries, you: { ip, allowed } }`), `PATCH access` `{ enabled }` (switching on adds the caller's address), `POST access/ips` `{ ip, label? }`, `DELETE access/ips/:id` (**409** for the last entry letting the caller in while it's on), `GET actions`. **401** for guests, **403** for players |
 
 `user` is `{ id, email, username, role, createdAt }` (`role` is `player` or `admin`, i.e. staff). Attraction ids are `coaster`, `falcon`, `rocket`, `ferris`, `flip`, `ship`, `speedway`, `drone`, `crates` and `striker`. Prices, maintenance, the pack size and the cooldown are rows in `attraction_settings` and `park_settings`; the defaults for a missing row live in `apps/api/src/rides/attractions.ts`. Signup, login and account deletion are each limited to 10 requests a minute per IP (**429**, with `Retry-After`).
 

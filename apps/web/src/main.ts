@@ -14,6 +14,7 @@ const memberRow = document.getElementById('intro-member')!;
 const logoutBtn = document.getElementById('intro-logout') as HTMLButtonElement;
 const closedCard = document.getElementById('intro-closed')!;
 const worksCard = document.getElementById('intro-works')!;
+const privateCard = document.getElementById('intro-private')!;
 
 let worldReady = false;
 let closed = false;
@@ -28,24 +29,32 @@ void session.loadPark(true);
  * The card follows the session: guests are offered an account, members are greeted. While the park
  * is closed it shows the sign (visitors can still walk in and look around; staff can still ride).
  * While it's under maintenance it shows that sign instead, and the way in stays shut to everyone
- * but staff (the account buttons stay, so staff can log in).
+ * but staff (the account buttons stay, so staff can log in). While the site is private and this
+ * address isn't let in, it shows the private sign, and the way in stays shut to everyone.
  */
 function renderAccount() {
   const user = session.user;
-  guestRow.hidden = closed || !session.known || !!user;
-  memberRow.hidden = closed || !user;
+  const blocked = session.blocked;
+  guestRow.hidden = closed || !session.known || !!user || !!blocked;
+  memberRow.hidden = closed || !user || !!blocked;
   if (user) document.getElementById('intro-username')!.textContent = user.username;
   document.getElementById('intro-guest-text')!.textContent =
     `Walk in as a guest, or sign up for free tickets: ${session.packSize} ${everyHours(session.cooldownHours)}, for every ride and game.`;
 
-  const works = session.parkUnderMaintenance;
+  privateCard.hidden = closed || !blocked;
+  document.getElementById('intro-private-message')!.textContent = blocked?.message ?? '';
+  const ipNote = document.getElementById('intro-private-ip')!;
+  ipNote.hidden = !blocked?.ip;
+  ipNote.textContent = blocked?.ip ? `If you were invited, ask the park's staff to let in your address: ${blocked.ip}` : '';
+
+  const works = session.parkUnderMaintenance && !blocked;
   worksCard.hidden = closed || !works;
   document.getElementById('intro-works-message')!.textContent = works
     ? (session.park?.maintenanceMessage ?? "We're giving the fair some care, so nobody can come in for now. Come back soon!")
     : '';
   document.getElementById('intro-works-staff')!.hidden = !session.isStaff;
 
-  const parkClosed = !session.parkOpen && !works;
+  const parkClosed = !session.parkOpen && !works && !blocked;
   closedCard.hidden = closed || !parkClosed;
   document.getElementById('intro-closed-message')!.textContent = parkClosed
     ? (session.park?.message ?? 'The rides and the Ticket Booth are paused for now. Come back soon!')
@@ -54,13 +63,15 @@ function renderAccount() {
 
   if (worldReady) {
     enterBtn.disabled = session.shutOut;
-    enterLabel.textContent = session.shutOut
-      ? 'Under maintenance 🛠️'
-      : parkClosed && !session.isStaff
-        ? 'Look around 🎪'
-        : session.known && !user
-          ? 'Continue as guest 🎪'
-          : 'Enter the fair 🎪';
+    enterLabel.textContent = blocked
+      ? 'Private 🔒'
+      : session.shutOut
+        ? 'Under maintenance 🛠️'
+        : parkClosed && !session.isStaff
+          ? 'Look around 🎪'
+          : session.known && !user
+            ? 'Continue as guest 🎪'
+            : 'Enter the fair 🎪';
   }
 }
 session.onChange(renderAccount);

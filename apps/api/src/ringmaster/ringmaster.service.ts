@@ -1,5 +1,7 @@
 import { BadRequestException, ConflictException, Injectable, NotFoundException } from '@nestjs/common';
-import { Prisma, SuggestionStatus, type Attraction, type Gender, type Role, type Suggestion, type User } from '../generated/prisma/client.js';
+import { AccessService, type AccessRules } from '../access/access.service.js';
+import { allowlist, ownEntry, parseEntry } from '../access/allowlist.js';
+import { Prisma, SuggestionStatus, type AllowedIp, type Attraction, type Gender, type Role, type Suggestion, type User } from '../generated/prisma/client.js';
 import { ParkService, toAttractionRules, type AttractionRules, type ParkRules } from '../park/park.service.js';
 import { accountNews, announce } from '../live/announce.js';
 import { shopItem, SHOP_ITEMS, type ShopItem, type ShopItemJson } from '../shop/catalog.js';
@@ -9,6 +11,7 @@ import { DEFAULT_TICKET_COSTS } from '../rides/attractions.js';
 import { toRoundJson, type RoundJson } from '../rides/round-json.js';
 import { toPurchaseJson, type PurchaseJson } from '../tickets/purchase-json.js';
 import { toSuggestionJson, type SuggestionJson } from '../suggestions/suggestion-json.js';
+import type { AddAllowedIpDto, UpdateAccessDto } from './dto/update-access.dto.js';
 import type { UpdateAttractionDto } from './dto/update-attraction.dto.js';
 import type { UpdateParkDto } from './dto/update-park.dto.js';
 import type { UpdateShopItemDto } from './dto/update-shop-item.dto.js';
@@ -23,6 +26,24 @@ export interface ParkSettingsJson {
   packSize: number;
   cooldownHours: number;
   updatedAt: string | null;
+}
+
+/** One address (or range) let in while the site is private. */
+export interface AllowedIpJson {
+  id: string;
+  ip: string;
+  label: string | null;
+  addedBy: string;
+  createdAt: string;
+}
+
+/** Private access, as staff see it. */
+export interface AccessJson {
+  /** Only the addresses on the list can reach the site. */
+  enabled: boolean;
+  entries: AllowedIpJson[];
+  /** The caller: where the site sees them connecting from, and whether the list lets them in. */
+  you: { ip: string | null; allowed: boolean };
 }
 
 export interface AttractionJson {
@@ -130,6 +151,7 @@ export class RingmasterService {
   constructor(
     private readonly prisma: PrismaService,
     private readonly park: ParkService,
+    private readonly privateAccess: AccessService,
   ) {}
 
   async parkSettings(): Promise<ParkSettingsJson> {
@@ -170,6 +192,89 @@ export class RingmasterService {
       return row;
     });
     return toParkJson(row);
+  }
+
+  /** Private access: the switch, the list, and whether the caller (at `ip`) is on it. */
+  async access(ip: string | null): Promise<AccessJson> {
+    return toAccessJson(await this.privateAccess.rules(), ip);
+  }
+
+  /**
+   * Switches private access on or off. Switching it on adds the caller's own address (their IPv6
+   * network's /64) unless the list already lets them in, so nobody locks themselves out by
+   * switching it on. Logged as access.on (with what was added) or access.off.
+   */
+  async updateAccess(actor: User, ip: string | null, dto: UpdateAccessDto): Promise<AccessJson> {
+    await this.prisma.$transaction(async (tx) => {
+      const settings = await tx.parkSettings.findUnique({ where: { id: 1 }, select: { allowlistOnly: true } });
+      const was = settings?.allowlistOnly ?? false;
+      if (was === dto.enabled) return;
+      let added: string | null = null;
+      if (dto.enabled) {
+        if (!ip) throw new BadRequestException("Can't tell which address you're connecting from, so switching private access on would lock you out too.");
+        const entries = await tx.allowedIp.findMany({ select: { ip: true } });
+        if (!allowlist(entries.map((e) => e.ip))(ip)) {
+          added = ownEntry(ip);
+          await tx.allowedIp.create({ data: { ip: added, label: `${actor.username} (switched private access on)`, addedBy: actor.username } });
+        }
+      }
+      await tx.parkSettings.upsert({ where: { id: 1 }, create: { id: 1, allowlistOnly: dto.enabled }, update: { allowlistOnly: dto.enabled } });
+      await log(tx, actor, dto.enabled ? 'access.on' : 'access.off', null, {
+        before: { enabled: was },
+        after: { enabled: dto.enabled },
+        ...(added ? { added } : {}),
+      });
+      await announce(tx, { t: 'access' });
+      await announce(tx, { t: 'office', kind: 'access' });
+    });
+    this.privateAccess.forget();
+    return this.access(ip);
+  }
+
+  /** Lets one more address (or range) in. Logged as access.ip.add. */
+  async allowIp(actor: User, dto: AddAllowedIpDto): Promise<AllowedIpJson> {
+    const ip = parseEntry(dto.ip);
+    if (!ip) throw new BadRequestException('That isn’t an IP address, or a range like 203.0.113.0/24.');
+    try {
+      const row = await this.prisma.$transaction(async (tx) => {
+        const row = await tx.allowedIp.create({ data: { ip, label: dto.label ?? null, addedBy: actor.username } });
+        await log(tx, actor, 'access.ip.add', ip, { after: { ip, label: row.label } });
+        await announce(tx, { t: 'access' });
+        await announce(tx, { t: 'office', kind: 'access' });
+        return row;
+      });
+      this.privateAccess.forget();
+      return toAllowedIpJson(row);
+    } catch (err) {
+      if (err instanceof Prisma.PrismaClientKnownRequestError && err.code === 'P2002') throw new ConflictException(`${ip} is on the list already`);
+      throw err;
+    }
+  }
+
+  /**
+   * Takes an address off the list. While private access is on, not the last entry that lets the
+   * caller (at `ip`) in: that would shut them out mid-click. Logged as access.ip.remove.
+   */
+  async removeAllowedIp(actor: User, ip: string | null, id: string): Promise<void> {
+    await this.prisma.$transaction(async (tx) => {
+      const row = await tx.allowedIp.findUnique({ where: { id } });
+      if (!row) throw new NotFoundException('That address isn’t on the list');
+      const settings = await tx.parkSettings.findUnique({ where: { id: 1 }, select: { allowlistOnly: true } });
+      if (settings?.allowlistOnly) {
+        const rest = await tx.allowedIp.findMany({ where: { id: { not: id } }, select: { ip: true } });
+        if (!allowlist(rest.map((r) => r.ip))(ip)) {
+          throw new ConflictException(
+            `That would lock you out: you're connecting from ${ip ?? 'an address the site can’t tell'}, and nothing else on the list lets you in. Add another entry first, or switch private access off.`,
+          );
+        }
+      }
+      await tx.allowedIp.delete({ where: { id } });
+      await log(tx, actor, 'access.ip.remove', row.ip, { before: { ip: row.ip, label: row.label } });
+      // anyone connected from that address is turned away at once
+      await announce(tx, { t: 'access' });
+      await announce(tx, { t: 'office', kind: 'access' });
+    });
+    this.privateAccess.forget();
   }
 
   /** Who's in the fair right now, from the live streams' presence rows (see LiveService). */
@@ -482,6 +587,14 @@ function toParkJson(
     cooldownHours: rules.cooldownHours,
     updatedAt: rules.updatedAt?.toISOString() ?? null,
   };
+}
+
+function toAccessJson(rules: AccessRules, ip: string | null): AccessJson {
+  return { enabled: rules.on, entries: rules.entries.map(toAllowedIpJson), you: { ip, allowed: rules.allows(ip) } };
+}
+
+function toAllowedIpJson(row: AllowedIp): AllowedIpJson {
+  return { id: row.id, ip: row.ip, label: row.label, addedBy: row.addedBy, createdAt: row.createdAt.toISOString() };
 }
 
 function toAttractionJson(rules: AttractionRules): AttractionJson {

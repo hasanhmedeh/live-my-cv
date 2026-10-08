@@ -1,7 +1,10 @@
 import { Controller, Get, ServiceUnavailableException } from '@nestjs/common';
+import { OpenToAll } from '../access/access.guard.js';
 import { PrismaService } from '../prisma/prisma.service.js';
 
+/** Open to all even while the site is private, so uptime monitors keep working. */
 @Controller('health')
+@OpenToAll()
 export class HealthController {
   constructor(private readonly prisma: PrismaService) {}
 

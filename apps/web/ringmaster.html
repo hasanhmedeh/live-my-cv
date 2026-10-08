@@ -68,6 +68,14 @@
         <p><a class="btn btn-primary" href="/">Back to the fair 🎪</a></p>
       </section>
 
+      <!-- Private access is on, and this address isn't on the list -->
+      <section class="gate" id="gate-private" hidden>
+        <p class="gate-sign" aria-hidden="true">🔒</p>
+        <h1>The fair is private</h1>
+        <p class="muted" id="private-text">Only the addresses on the list can come in right now, and this one isn't on it.</p>
+        <p class="muted" id="private-ip" hidden></p>
+      </section>
+
       <!-- The server is away -->
       <section class="gate" id="gate-offline" hidden>
         <p class="gate-sign" aria-hidden="true">🔌</p>

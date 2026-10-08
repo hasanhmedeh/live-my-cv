@@ -5,8 +5,10 @@
     "underMaintenance": false,
     "maintenanceMessage": null,
     "packSize": 20,
-    "cooldownHours": 1
+    "cooldownHours": 1,
+    "allowlistOnly": false
   },
+  "allowedIps": [],
   "attractions": {
     "coaster": {
       "tickets": 1,

@@ -5,7 +5,8 @@
   "description": "Accounts and ride tickets for The Funfair",
   "type": "module",
   "exports": {
-    "./serverless": "./dist/serverless.js"
+    "./serverless": "./dist/serverless.js",
+    "./access-gate": "./dist/access/gate.js"
   },
   "scripts": {
     "dev": "nest start --watch --preserveWatchOutput",

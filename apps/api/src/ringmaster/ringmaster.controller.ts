@@ -1,4 +1,5 @@
-import { BadRequestException, Body, Controller, Delete, Get, HttpCode, HttpStatus, Param, Patch, Query, UseGuards } from '@nestjs/common';
+import { BadRequestException, Body, Controller, Delete, Get, HttpCode, HttpStatus, Param, Patch, Post, Query, UseGuards } from '@nestjs/common';
+import { ClientIp } from '../access/access.guard.js';
 import { CurrentUser } from '../auth/current-user.decorator.js';
 import { SessionGuard } from '../auth/session.guard.js';
 import { ParseLimitPipe } from '../common/parse-limit.pipe.js';
@@ -6,6 +7,7 @@ import { ParseOffsetPipe } from '../common/parse-offset.pipe.js';
 import { SuggestionStatus, type Attraction, type User } from '../generated/prisma/client.js';
 import { ParseRidePipe } from '../rides/parse-ride.pipe.js';
 import { ANALYTICS_DAYS, AnalyticsService, type AnalyticsDays, type Overview } from './analytics.service.js';
+import { AddAllowedIpDto, UpdateAccessDto } from './dto/update-access.dto.js';
 import { UpdateAttractionDto } from './dto/update-attraction.dto.js';
 import { UpdateParkDto } from './dto/update-park.dto.js';
 import { UpdateShopItemDto } from './dto/update-shop-item.dto.js';
@@ -13,6 +15,7 @@ import { UpdateSuggestionDto } from './dto/update-suggestion.dto.js';
 import { UpdateUserDto } from './dto/update-user.dto.js';
 import {
   RingmasterService,
+  type AccessJson,
   type AdminActionJson,
   type AdminPurchaseJson,
   type AdminRoundJson,
@@ -21,6 +24,7 @@ import {
   type AdminSuggestionJson,
   type AdminUserDetail,
   type AdminUserJson,
+  type AllowedIpJson,
   type AttractionJson,
   type ParkSettingsJson,
   type VisitorsJson,
@@ -60,6 +64,30 @@ export class RingmasterController {
   @Patch('park')
   updatePark(@CurrentUser() actor: User, @Body() body: UpdateParkDto): Promise<ParkSettingsJson> {
     return this.office.updatePark(actor, body);
+  }
+
+  /** Private access: whether only the allowed addresses can reach the site, the list, and the caller's own address. */
+  @Get('access')
+  access(@ClientIp() ip: string | null): Promise<AccessJson> {
+    return this.office.access(ip);
+  }
+
+  /** Switches private access on (adding the caller's address) or off. */
+  @Patch('access')
+  updateAccess(@CurrentUser() actor: User, @ClientIp() ip: string | null, @Body() body: UpdateAccessDto): Promise<AccessJson> {
+    return this.office.updateAccess(actor, ip, body);
+  }
+
+  @Post('access/ips')
+  allowIp(@CurrentUser() actor: User, @Body() body: AddAllowedIpDto): Promise<AllowedIpJson> {
+    return this.office.allowIp(actor, body);
+  }
+
+  /** 409 when it's the last entry letting the caller in while private access is on. */
+  @Delete('access/ips/:id')
+  @HttpCode(HttpStatus.NO_CONTENT)
+  removeAllowedIp(@CurrentUser() actor: User, @ClientIp() ip: string | null, @Param('id') id: string): Promise<void> {
+    return this.office.removeAllowedIp(actor, ip, id);
   }
 
   @Get('attractions')

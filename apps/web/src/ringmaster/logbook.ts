@@ -69,6 +69,17 @@ function describe(a: AdminAction): [string, string] {
       return ['🎪', `Opened the park.${rules(after)}`];
     case 'settings.update':
       return ['⚙️', `Changed the park's settings.${rules(after)}${'closedMessage' in after && !sign ? ' Cleared the closed sign.' : sign ? ` Sign: “${esc(after.closedMessage)}”.` : ''}`];
+    case 'access.on': {
+      const { added } = d as { added?: unknown };
+      const own = typeof added === 'string' ? ` Let in their own address, <strong>${esc(added)}</strong>.` : '';
+      return ['🔒', `Made the fair private: only the allowed addresses can come in.${own}`];
+    }
+    case 'access.off':
+      return ['🌍', 'Opened the fair to everyone again (private access off).'];
+    case 'access.ip.add':
+      return ['➕', `Let in <strong>${target}</strong>${typeof after.label === 'string' ? ` (${esc(after.label)})` : ''}.`];
+    case 'access.ip.remove':
+      return ['➖', `Took <strong>${target}</strong>${typeof before.label === 'string' ? ` (${esc(before.label)})` : ''} off the allowed addresses.`];
     case 'attraction.close':
       return ['🔧', `Closed <strong>${ride}</strong> for maintenance${sign}.${price(before, after)}`];
     case 'attraction.open':

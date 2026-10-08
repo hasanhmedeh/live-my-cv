@@ -3,7 +3,7 @@
 // decides what to show. While staff are in, the page keeps a live stream open (GET /api/live):
 // what players do in the fair, and what other staff change here, refreshes the view on screen.
 import './ringmaster.css';
-import { api, ApiError, LIVE_URL, ringmaster, type AccountNews, type User, type Visitors } from '../account/api';
+import { AccessBlockedError, api, ApiError, LIVE_URL, onAccessBlocked, ringmaster, type AccountNews, type User, type Visitors } from '../account/api';
 import { AttractionsView } from './attractions';
 import { GatesView } from './gates';
 import { IdeasView } from './ideas';
@@ -16,7 +16,7 @@ import { errorText, isEditing, num, setApiErrorHandler, toast } from './util';
 
 type Tab = 'overview' | 'attractions' | 'shop' | 'ideas' | 'gates' | 'members' | 'ledger' | 'logbook';
 const TABS: Tab[] = ['overview', 'attractions', 'shop', 'ideas', 'gates', 'members', 'ledger', 'logbook'];
-type Gate = 'loading' | 'login' | 'denied' | 'offline';
+type Gate = 'loading' | 'login' | 'denied' | 'offline' | 'private';
 
 const $ = <T extends HTMLElement = HTMLElement>(id: string) => document.getElementById(id) as T;
 const tabsNav = $('tabs');
@@ -50,6 +50,7 @@ const AFFECTS: Record<string, Tab[]> = {
   park: ['overview', 'attractions', 'gates'],
   shop: ['shop'],
   suggestions: ['ideas'],
+  access: ['gates'],
 };
 /** News is gathered this long, then the view is refreshed once. */
 const SETTLE_MS = 800;
@@ -92,6 +93,11 @@ function openLive() {
   });
   // a price or the stock changed (here, or an item sold)
   source.addEventListener('shop', () => touched(['shop']));
+  // private access was switched on, or this address taken off the list, by another member of staff
+  source.addEventListener('blocked', (e) => {
+    const b = parse<{ message?: unknown; ip?: unknown }>(e);
+    shutOut(typeof b?.message === 'string' ? b.message : null, typeof b?.ip === 'string' ? b.ip : null);
+  });
   // made a player (or deleted) by another member of staff: the door closes at once
   source.addEventListener('account', (e) => {
     const news = parse<AccountNews>(e);
@@ -217,7 +223,7 @@ function showGate(gate: Gate | null) {
     openLive();
     void views.ideas.loadCounts();
   } else closeLive();
-  for (const g of ['loading', 'login', 'denied', 'offline'] as const) $(`gate-${g}`).hidden = g !== gate;
+  for (const g of ['loading', 'login', 'denied', 'offline', 'private'] as const) $(`gate-${g}`).hidden = g !== gate;
   tabsNav.hidden = gate !== null;
   if (gate !== null) for (const v of document.querySelectorAll<HTMLElement>('.view')) v.hidden = true;
 }
@@ -239,12 +245,23 @@ async function knock() {
     showGate(null);
     route();
   } catch (err) {
+    if (err instanceof AccessBlockedError) return; // the private door is showing
     setUser(null);
     if (err instanceof ApiError && err.status === 401) return showGate('login');
     $('offline-text').textContent = errorText(err);
     showGate('offline');
   }
 }
+
+/** Private access turned this address away (staff or not): the private door, for good until a reload. */
+function shutOut(message: string | null, ip: string | null) {
+  if (message) $('private-text').textContent = message;
+  const note = $('private-ip');
+  note.hidden = !ip;
+  note.textContent = ip ? `This address: ${ip}. Another member of staff can add it in Park gates, or switch private access off.` : '';
+  showGate('private');
+}
+onAccessBlocked((err) => shutOut(err.message, err.ip));
 
 function deny(user: User) {
   $('denied-text').textContent = `You're signed in as ${user.username}, a player. This door is for the people who run the fair.`;
@@ -270,6 +287,7 @@ function route() {
 
 // A lost session or role mid-visit sends staff back to the door; anything else is a toast.
 setApiErrorHandler((err) => {
+  if (err instanceof AccessBlockedError) return; // the private door is showing
   if (err instanceof ApiError && err.status === 401) {
     setUser(null);
     toast('Your session ended. Log in again.', true);

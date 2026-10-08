@@ -222,6 +222,23 @@ export interface ParkSettings {
   updatedAt: string | null;
 }
 
+/** One address (or CIDR range) let in while the site is private. */
+export interface AllowedIp {
+  id: string;
+  ip: string;
+  label: string | null;
+  addedBy: string;
+  createdAt: string;
+}
+
+/** Private access, as staff see it: only the addresses on the list can reach the site while it's on. */
+export interface Access {
+  enabled: boolean;
+  entries: AllowedIp[];
+  /** Where the site sees the caller connecting from, and whether the list lets them in. */
+  you: { ip: string | null; allowed: boolean };
+}
+
 /** Days the overview can look back over. */
 export const OVERVIEW_DAYS = [7, 30, 90] as const;
 export type OverviewDays = (typeof OVERVIEW_DAYS)[number];
@@ -485,6 +502,30 @@ export class SuggestionLimitError extends ApiError {
   }
 }
 
+/**
+ * 403 with code 'ip_blocked': the site is private (switched on in the office) and this visitor's
+ * address isn't on the list. Staff too: it goes by address, not by account.
+ */
+export class AccessBlockedError extends ApiError {
+  /** The address the server saw, so the visitor can ask to be let in. */
+  readonly ip: string | null;
+
+  constructor(message: string, data: unknown) {
+    super(403, message, data);
+    this.name = 'AccessBlockedError';
+    const ip = (data as { ip?: unknown } | null)?.ip;
+    this.ip = typeof ip === 'string' ? ip : null;
+  }
+
+  override get unavailable() {
+    return false;
+  }
+}
+
+/** The fair turned this visitor away (private access): the page shows the private sign. */
+const blockedListeners = new Set<(err: AccessBlockedError) => void>();
+export const onAccessBlocked = (fn: (err: AccessBlockedError) => void) => void blockedListeners.add(fn);
+
 const closedCode = (status: number, data: unknown) => (status === 503 ? (data as { code?: unknown } | null)?.code : undefined);
 
 /** The server's own words, as they are (the closed sign is written by staff). */
@@ -519,6 +560,11 @@ async function request<T>(method: 'GET' | 'POST' | 'PUT' | 'PATCH' | 'DELETE', p
   if (res.status === 204) return undefined as T;
   const data: unknown = await res.json().catch(() => null);
   if (!res.ok) {
+    if (res.status === 403 && (data as { code?: unknown } | null)?.code === 'ip_blocked') {
+      const err = new AccessBlockedError(rawMessage(data) ?? 'The fair is private right now.', data);
+      for (const fn of blockedListeners) fn(err);
+      throw err;
+    }
     const code = closedCode(res.status, data);
     if (code === 'park_closed') throw new ParkClosedError(rawMessage(data) ?? 'The park is closed right now.', data);
     if (code === 'park_maintenance') throw new ParkClosedError(rawMessage(data) ?? 'The fair is under maintenance.', data, true);
@@ -601,6 +647,13 @@ export const ringmaster = {
   park: () => request<ParkSettings>('GET', '/ringmaster/park'),
   visitors: () => request<Visitors>('GET', '/ringmaster/visitors'),
   updatePark: (body: Partial<Pick<ParkSettings, 'open' | 'closedMessage' | 'underMaintenance' | 'maintenanceMessage' | 'packSize' | 'cooldownHours'>>) => request<ParkSettings>('PATCH', '/ringmaster/park', body),
+  /** Private access: the switch, the list, and the caller's own address. */
+  access: () => request<Access>('GET', '/ringmaster/access'),
+  /** Switching it on adds the caller's own address (their IPv6 network) if the list doesn't let them in yet. */
+  updateAccess: (enabled: boolean) => request<Access>('PATCH', '/ringmaster/access', { enabled }),
+  allowIp: (body: { ip: string; label?: string | null }) => request<AllowedIp>('POST', '/ringmaster/access/ips', body),
+  /** A 409 for the last entry that lets the caller in, while private access is on. */
+  removeAllowedIp: (id: string) => request<void>('DELETE', `/ringmaster/access/ips/${encodeURIComponent(id)}`),
   attractions: () => request<{ attractions: AttractionSettings[] }>('GET', '/ringmaster/attractions'),
   updateAttraction: (attraction: AttractionId, body: Partial<Pick<AttractionSettings, 'tickets' | 'open' | 'closedMessage'>>) =>
     request<AttractionSettings>('PATCH', `/ringmaster/attractions/${attraction}`, body),

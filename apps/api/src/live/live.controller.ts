@@ -1,5 +1,6 @@
 import { Controller, Get, Query, Req, Res } from '@nestjs/common';
 import type { Request, Response } from 'express';
+import { ClientIp } from '../access/access.guard.js';
 import { AuthService } from '../auth/auth.service.js';
 import { SESSION_COOKIE } from '../auth/session.js';
 import { LiveService, type Presence } from './live.service.js';
@@ -26,11 +27,12 @@ export class LiveController {
     @Res() res: Response,
     @Query('visitor') visitor: unknown,
     @Query('in') inFair: unknown,
+    @ClientIp() ip: string | null,
   ): Promise<void> {
     const token: unknown = req.cookies?.[SESSION_COOKIE];
     // an expired session just listens as a guest; the game's own requests sort the cookie out
     const user = typeof token === 'string' && token ? await this.auth.userFromToken(token) : null;
     const presence: Presence | null = typeof visitor === 'string' && VISITOR_ID.test(visitor) ? { visitor, inFair: inFair === '1' } : null;
-    await this.live.open(res, user, presence);
+    await this.live.open(res, user, ip, presence);
   }
 }
