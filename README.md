@@ -212,7 +212,7 @@ On each deployment, `apps/web/vercel.json`'s build command runs from the repo ro
 
 ### Notes
 
-- **Rate limits** (signup, login, account deletion) are counted in each function instance's memory, so on serverless they're per instance and looser than locally. Swap the throttler's storage for a shared one (e.g. Upstash Redis) if you need them strict.
+- **Rate limits** (signup, login, account deletion) are counted in each function instance's memory, so on serverless they're per instance and looser than locally. Move the counters in `apps/api/src/auth/auth-throttler.guard.ts` to a shared store (e.g. Upstash Redis) if you need them strict.
 - **Elsewhere:** the API also runs as a normal Node server (`pnpm build --filter=@funfair/api`, `pnpm --filter @funfair/api db:deploy`, `pnpm --filter @funfair/api start`). Put it behind the site's origin with a rewrite of `/api/*`; a separate origin would need cross-site (`SameSite=None`) cookies.
 - **Before launch**, fill in the highlighted placeholders in `apps/web/terms.html` and `apps/web/privacy.html`.
 

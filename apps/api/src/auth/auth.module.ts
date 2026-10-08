@@ -1,10 +1,10 @@
 import { Module } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import { JwtModule } from '@nestjs/jwt';
-import { minutes, ThrottlerModule } from '@nestjs/throttler';
 import type { Env } from '../config/env.js';
 import { AccountService } from './account.service.js';
 import { AuthController } from './auth.controller.js';
+import { AuthThrottlerGuard } from './auth-throttler.guard.js';
 import { AuthService } from './auth.service.js';
 import { SESSION_TTL_SECONDS } from './session.js';
 import { SessionGuard } from './session.guard.js';
@@ -19,13 +19,11 @@ import { SessionGuard } from './session.guard.js';
         verifyOptions: { algorithms: ['HS256'] },
       }),
     }),
-    // Applied per route with @UseGuards(AuthThrottlerGuard): signup, login and account deletion
-    // (each asks for a password), 10 a minute per IP each.
-    // Left unnamed so the 429 carries the standard Retry-After header (named ones get a suffix).
-    ThrottlerModule.forRoot({ throttlers: [{ ttl: minutes(1), limit: 10 }] }),
   ],
   controllers: [AuthController],
-  providers: [AuthService, AccountService, SessionGuard],
+  // AuthThrottlerGuard is a provider (one instance, one set of counters) applied per route with
+  // @UseGuards: signup, login and account deletion, each asking for a password.
+  providers: [AuthService, AccountService, SessionGuard, AuthThrottlerGuard],
   exports: [AuthService, SessionGuard],
 })
 export class AuthModule {}
