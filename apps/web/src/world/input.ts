@@ -73,7 +73,11 @@ export class Input {
     if (e.code === 'KeyR') this.emit('reset');
     if (e.code === 'KeyH') this.emit('honk');
     if (e.code === 'KeyC') this.emit('camera');
-    if (e.code === 'Escape') this.emit('escape');
+    if (e.code === 'Escape') {
+      // Esc may open "leave early?" (a modal <dialog>): left uncancelled, this same key press would close it straight away
+      e.preventDefault();
+      this.emit('escape');
+    }
     if (e.code === 'KeyI') this.emit('info');
   };
 
