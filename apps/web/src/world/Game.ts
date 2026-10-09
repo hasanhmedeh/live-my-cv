@@ -249,6 +249,7 @@ export class Game {
         cars: 4,
         leadRows: 1, // 2 + 4 + 4 + 4 = 14 riders, like the real Exa trains
         tunnel: 'rock',
+        tunnelClip: this.mountain.tunnelPlanes,
         trackside: [
           new THREE.Vector3(54, 6, 34), // station
           atS(110, [0, 8, 45]), // the LSM lift hill

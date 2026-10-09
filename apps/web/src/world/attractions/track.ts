@@ -221,6 +221,15 @@ export function zoneAt(d: TrackData, s: number): Zone | null {
   return d.zone[(((Math.round(s / DS) % n) + n) % n)];
 }
 
+/** A tunnel's bore: a tube of this radius around the track, its axis `lift` metres above the
+ *  heartline (so it clears the riders' heads and the track beam alike). */
+export const TUNNEL_BORE = { radius: 2.9, lift: 0.1 };
+
+/** The tunnel bore's axis at track sample i. */
+export function boreAxis(d: TrackData, i: number, out = new THREE.Vector3()) {
+  return out.copy(d.pos[i]).addScaledVector(d.up[i], TUNNEL_BORE.lift);
+}
+
 // ---------------------------------------------------------------------------------------
 // The layout of "Thunder Loop", the drive-it-yourself coaster. Station on x = -26, trains depart south
 // and come home from the north, so the circuit never has to cross itself at ground level.

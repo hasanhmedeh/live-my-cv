@@ -1,5 +1,6 @@
 import * as THREE from 'three';
 import type { Ctx } from './context';
+import { boreAxis, TUNNEL_BORE } from './attractions/track';
 import { FALCON_TRACK, nearTrack } from './rides';
 import { withFogSun } from './fog';
 import { WHEEL_LAWN } from './layout';
@@ -18,20 +19,44 @@ const NZ = Math.round((Z1 - Z0) / STEP);
 /** The lawn around the road to the giant wheel (with a margin): kept exactly level with the park. */
 const lawnZone = (x: number, z: number) => Math.abs(x) < WHEEL_LAWN.half + 3 && z > WHEEL_LAWN.z0 - 3;
 
-/** A tunnel portal's opening and facade, in metres relative to the riders' heartline. */
+/**
+ * A tunnel portal, in metres relative to the riders' heartline: an opening (an arch of radius R
+ * centred at cy over a slot reaching down to `bottom`, or lower if the track needs it) in a
+ * facade `half` wide either side, from `base` up to `top`, running `depth` back into the hill,
+ * then (optionally) a block with a plain hole for the bore, running on to `block`.
+ */
 interface PortalSpec {
   R: number;
   cy: number;
   slot: number;
   bottom: number;
+  half: number;
+  base: number;
   top: number;
   depth: number;
+  block?: number;
   sunburst: boolean;
 }
-/** Where the steeply diving track crosses the facade, the bore needs a tall keyhole. */
-const ENTRY: PortalSpec = { R: 3.1, cy: 2.2, slot: 1.9, bottom: -3.6, top: 15, depth: 2.4, sunburst: true };
-/** The level exit only needs an arch over the bore (radius 2.9, centred 0.1 m above the heartline). */
-const EXIT: PortalSpec = { R: 3.3, cy: 0.1, slot: 3.3, bottom: -3.6, top: 9, depth: 3.6, sunburst: false };
+/** Where the steeply diving track crosses the facade, the bore needs a tall keyhole; it only stays
+ *  a keyhole through a shallow facade, so a block behind takes the rest of the depth. */
+const ENTRY: PortalSpec = { R: 3.1, cy: 2.2, slot: 1.9, bottom: -3.6, half: 13, base: -18, top: 15, depth: 2.4, block: 7.5, sunburst: true };
+/** The level exit only needs an arch over the bore, in a headwall a little higher than the hill. */
+const EXIT: PortalSpec = { R: 3.3, cy: 0.1, slot: 3.3, bottom: -3.6, half: 11, base: -16, top: 7, depth: 7.5, sunburst: false };
+/** Rock is cut away this far outside the bore's shell (so none can show inside it). */
+const BORE_MARGIN = 0.12;
+/**
+ * Behind each portal the hill only starts MOUTH_DEPTH back from the facade, across a mouth either
+ * side of the track. A heightfield climbs over a whole grid cell (up to 3.54 m on the diagonal),
+ * so this keeps the climb from standing in front of the opening; the facades, deeper than
+ * MOUTH_DEPTH plus a cell, hide where it happens instead. At the entry the mouth just clears the
+ * keyhole (the hill either side holds the tall facade up); at the exit it spans the whole
+ * headwall, which then stands at the end of the ridge rather than behind rock wedges.
+ */
+const MOUTH_DEPTH = 3.6;
+/** …and the hill rises back to full height over this far (still within the facades). */
+const MOUTH_FADE = 3.8;
+const ENTRY_MOUTH = 7;
+const EXIT_MOUTH = EXIT.half + 3.6;
 
 /** Smooth value noise (deterministic). */
 function makeNoise(seed: number) {
@@ -64,6 +89,10 @@ export class Mountain {
   portal!: { index: number; along: THREE.Vector2 };
   /** Where the track leaves the tunnel, and the direction it is heading. */
   exit!: { index: number; along: THREE.Vector2 };
+  /** The portal facades' planes, each facing into the tunnel: the bore runs between them. */
+  tunnelPlanes!: THREE.Plane[];
+  /** The bore's axis, every few metres from portal to portal. */
+  private bore: THREE.Vector3[] = [];
 
   constructor(ctx: Ctx) {
     const d = FALCON_TRACK;
@@ -121,10 +150,14 @@ export class Mountain {
       const r = railAt(i);
       channel.push({ x: r.x, z: r.z, h: r.h - 2.2, r: i < foot ? 3.4 : 0.5 });
     }
+    // (it runs on through the entry facade, so the rock under the track doesn't fall away into
+    // the mouth behind it: inside the bore the shader cuts it away, and the facade hides the rest)
     const spine: { x: number; z: number; h: number; a: number }[] = [];
-    for (let i = foot; i <= tunnelStart; i += 2) {
+    for (let i = foot; i < n; i += 2) {
       const r = railAt(i);
-      spine.push({ x: r.x, z: r.z, h: r.h - 1.5, a: along(r.x, r.z) });
+      const ra = along(r.x, r.z);
+      if (ra > portalA + (ENTRY.block ?? ENTRY.depth)) break;
+      spine.push({ x: r.x, z: r.z, h: r.h - 1.5, a: ra });
     }
     // the exit: a plane across the track where it leaves the hill (the hill ends in a rock face
     // there, behind a second portal, rather than slumping down over the end of the tunnel)
@@ -133,6 +166,15 @@ export class Mountain {
     const pastExit = (x: number, z: number) => (x - exitP.x) * exitDir.x + (z - exitP.z) * exitDir.y;
     this.portal = { index: tunnelStart, along: dropDir.clone() };
     this.exit = { index: tunnelEnd, along: exitDir.clone() };
+    // The bore runs from facade to facade, and no rock may stand inside it. The terrain is a
+    // heightfield, so where the hill closes over the bore (just behind each facade) its surface
+    // has to pass through it: the shader cuts that part away, and the facades hide the rest.
+    this.tunnelPlanes = [
+      new THREE.Plane().setFromNormalAndCoplanarPoint(new THREE.Vector3(dropDir.x, 0, dropDir.y), portal),
+      new THREE.Plane().setFromNormalAndCoplanarPoint(new THREE.Vector3(-exitDir.x, 0, -exitDir.y), exitP),
+    ];
+    for (let i = tunnelStart; i < tunnelEnd; i += 12) this.bore.push(boreAxis(d, i));
+    this.bore.push(boreAxis(d, tunnelEnd));
     // everything after the edge (and before the climb) must clear the rock
     const clear: { x: number; z: number; h: number }[] = [];
     for (let i = 0; i < n; i += 3) {
@@ -183,10 +225,16 @@ export class Mountain {
         }
         // ---- the buttress around the tunnel (after erosion, so its roof stays whole) ----
         const a = along(x, z);
-        if (a > portalA - 0.5)
+        // (none at all in the mouths behind the portals, rising back to full height a few metres
+        // further out: a square-cut notch would leave spikes of rock at its corners)
+        const off = Math.abs(across(x, z));
+        const inEntry = (1 - THREE.MathUtils.smoothstep(off, ENTRY_MOUTH, ENTRY_MOUTH + MOUTH_FADE)) * (1 - THREE.MathUtils.smoothstep(a - portalA, MOUTH_DEPTH, MOUTH_DEPTH + MOUTH_FADE));
+        const inExit = (1 - THREE.MathUtils.smoothstep(off, EXIT_MOUTH, EXIT_MOUTH + MOUTH_FADE)) * (1 - THREE.MathUtils.smoothstep(-pastExit(x, z), MOUTH_DEPTH, MOUTH_DEPTH + MOUTH_FADE));
+        const mouthCut = 60 * Math.max(inEntry, inExit);
+        if (a > portalA - 0.5 && mouthCut < 59.9)
           for (const c of mound) {
             const dd = Math.hypot(x - c.x, z - c.z);
-            if (dd < 60) h = Math.max(h, c.h - Math.max(0, dd - 7) * 1.3 - Math.max(0, pastExit(x, z)) * 4);
+            if (dd < 60) h = Math.max(h, c.h - Math.max(0, dd - 7) * 1.3 - Math.max(0, pastExit(x, z)) * 4 - mouthCut);
           }
         // ---- the buttress under the pull-out, running back to the foot of the wall ----
         // (it falls away gently to the sides and behind, but steeply ahead, where the rails dive)
@@ -258,8 +306,48 @@ export class Mountain {
           '#include <worldpos_vertex>',
           '#include <worldpos_vertex>\nvW = aW;\nvWorld = (modelMatrix * vec4(transformed, 1.0)).xyz;\nvWN = normalize(mat3(modelMatrix) * objectNormal);',
         );
+      const r = TUNNEL_BORE.radius + BORE_MARGIN;
+      const box = new THREE.Box3().setFromPoints(this.bore).expandByScalar(r);
+      const [pIn, pOut] = this.tunnelPlanes;
+      Object.assign(shader.uniforms, {
+        uBore: { value: this.bore },
+        uBoreR: { value: r },
+        uBoreIn: { value: new THREE.Vector4(pIn.normal.x, pIn.normal.y, pIn.normal.z, pIn.constant) },
+        uBoreOut: { value: new THREE.Vector4(pOut.normal.x, pOut.normal.y, pOut.normal.z, pOut.constant) },
+        uBoreMin: { value: box.min },
+        uBoreMax: { value: box.max },
+      });
       shader.fragmentShader = shader.fragmentShader
-        .replace('#include <common>', '#include <common>\nvarying vec3 vW;\nvarying vec3 vWorld;\nvarying vec3 vWN;')
+        .replace(
+          '#include <common>',
+          `#include <common>
+          varying vec3 vW;
+          varying vec3 vWorld;
+          varying vec3 vWN;
+          #define BORE_N ${this.bore.length}
+          uniform vec3 uBore[BORE_N];
+          uniform float uBoreR;
+          uniform vec4 uBoreIn;
+          uniform vec4 uBoreOut;
+          uniform vec3 uBoreMin;
+          uniform vec3 uBoreMax;`,
+        )
+        .replace(
+          '#include <clipping_planes_fragment>',
+          /* glsl */ `#include <clipping_planes_fragment>
+          // the tunnel bore, between the two portal facades: no rock inside it
+          if (all(greaterThan(vWorld, uBoreMin)) && all(lessThan(vWorld, uBoreMax)) &&
+              dot(uBoreIn.xyz, vWorld) + uBoreIn.w > 0.0 && dot(uBoreOut.xyz, vWorld) + uBoreOut.w > 0.0) {
+            float d2 = 1e9;
+            for (int k = 0; k < BORE_N - 1; k++) {
+              vec3 ab = uBore[k + 1] - uBore[k];
+              vec3 ap = vWorld - uBore[k];
+              vec3 q = ap - ab * clamp(dot(ap, ab) / dot(ab, ab), 0.0, 1.0);
+              d2 = min(d2, dot(q, q));
+            }
+            if (d2 < uBoreR * uBoreR) discard;
+          }`,
+        )
         .replace(
           '#include <color_fragment>',
           /* glsl */ `#include <color_fragment>
@@ -336,8 +424,8 @@ export class Mountain {
   /**
    * Lowers any terrain vertex the train could touch: every corner of the grid cell under each
    * point of the train's envelope (track beam to riders' heads, car shell wide) is capped just
-   * below it, so the mesh triangle there lies below too. The tunnel is the only place the train
-   * goes under the rock; everywhere else this guarantees clearance, whatever the shaping above.
+   * below it, so the mesh triangle there lies below too. Inside the tunnel bore the shader cuts
+   * the rock away instead; everywhere else this guarantees clearance, whatever the shaping above.
    */
   private carveClearance() {
     const d = FALCON_TRACK;
@@ -348,6 +436,7 @@ export class Mountain {
       for (const s of [-0.8, -0.4, 0, 0.4, 0.8])
         for (const u of [-1.55, -0.8, 0, 0.7]) {
           p.copy(d.pos[i]).addScaledVector(d.right[i], s).addScaledVector(d.up[i], u);
+          if (this.inBore(p)) continue; // (the shader cuts the rock away there)
           const ci = Math.floor((p.x - X0) / STEP);
           const cj = Math.floor((p.z - Z0) / STEP);
           if (ci < 0 || cj < 0 || ci >= NX || cj >= NZ) continue;
@@ -363,8 +452,9 @@ export class Mountain {
    * opening framed in bronze. The entry (in the buttress at the foot of the drop) has a keyhole
    * opening sized to the bore where the steeply diving track crosses the vertical facade, and a
    * sunburst of rods; the exit is a plain arch over the level track. The facade faces `facing`
-   * and runs `depth` metres back into the hill, hiding where the rock closes over the bore.
-   * Everything is in metres relative to the riders' heartline.
+   * and runs `depth` metres back into the hill; behind a shallow facade, a block runs on to
+   * `block` with a plain hole wherever the bore passes. Together they hide where the rock closes
+   * over the bore. Everything is in metres relative to the riders' heartline.
    */
   private buildPortal(ctx: Ctx, index: number, facing: THREE.Vector2, o: PortalSpec) {
     const d = FALCON_TRACK;
@@ -375,9 +465,43 @@ export class Mountain {
     const g = new THREE.Group();
     g.matrixAutoUpdate = false;
     g.matrix.makeBasis(xAxis, yAxis, zAxis).setPosition(P);
+    const toLocal = g.matrix.clone().invert();
+    const BEVEL = 0.25;
 
-    // an arch of radius R over a slot (narrower for a keyhole) reaching below the rails
-    const { R, cy, slot, bottom, depth } = o;
+    // the track (and the tube around it) in the facade's frame, for every sample within `from`…`to`
+    // metres behind its face (searching both ways from the portal: the exit's track runs out of it)
+    const inside = (from: number, to: number, visit: (i: number, q: THREE.Vector3) => void) => {
+      const q = new THREE.Vector3();
+      for (const step of [1, -1])
+        for (let i = index; i >= 0 && i < d.pos.length; i += step) {
+          const z = -q.copy(d.pos[i]).applyMatrix4(toLocal).z;
+          if (z < from - 6 || z > to + 6) break;
+          if (z >= from && z <= to) visit(i, q);
+        }
+    };
+
+    // the bore's outline in the facade's frame, over the part of it `from`…`to` metres behind the
+    // face (where the track dives, each ring of the tube leans, so look a radius either side)
+    const boreOutline = (from: number, to: number, box: THREE.Box2) => {
+      const ring = new THREE.Vector3();
+      const Rb = TUNNEL_BORE.radius;
+      inside(from - Rb, to + Rb, (i) => {
+        const c = boreAxis(d, i);
+        for (let k = 0; k < 24; k++) {
+          const a = (k / 24) * Math.PI * 2;
+          ring.copy(c).addScaledVector(d.right[i], Math.cos(a) * Rb).addScaledVector(d.up[i], Math.sin(a) * Rb);
+          ring.applyMatrix4(toLocal);
+          if (-ring.z >= from && -ring.z <= to) box.expandByPoint(new THREE.Vector2(ring.x, ring.y));
+        }
+      });
+      return box;
+    };
+
+    // an arch of radius R over a slot (narrower for a keyhole) reaching below the rails: where the
+    // track dives through, the slot reaches down below the bore's floor at the facade's back (or
+    // the slot's floor would stand in the tube as a ledge)
+    const { R, cy, slot, depth } = o;
+    const bottom = Math.min(o.bottom, boreOutline(-BEVEL, depth + BEVEL, new THREE.Box2()).min.y - 0.3);
     const joinY = cy - Math.sqrt(R * R - slot * slot);
     const a0 = Math.atan2(joinY - cy, slot);
     const hole = new THREE.Path();
@@ -387,16 +511,41 @@ export class Mountain {
     hole.absarc(0, cy, R, a0, Math.PI - a0, false);
     hole.lineTo(-slot, bottom);
     const face = new THREE.Shape();
-    face.moveTo(-13, -18);
-    face.lineTo(13, -18);
-    face.lineTo(13, o.top);
-    face.lineTo(-13, o.top);
+    face.moveTo(-o.half, o.base);
+    face.lineTo(o.half, o.base);
+    face.lineTo(o.half, o.top);
+    face.lineTo(-o.half, o.top);
     face.closePath();
     face.holes.push(hole);
-    const facadeGeo = new THREE.ExtrudeGeometry(face, { depth, bevelEnabled: true, bevelThickness: 0.25, bevelSize: 0.25, bevelSegments: 2, curveSegments: 40 });
+    const facadeGeo = new THREE.ExtrudeGeometry(face, { depth, bevelEnabled: true, bevelThickness: BEVEL, bevelSize: BEVEL, bevelSegments: 2, curveSegments: 40 });
     facadeGeo.translate(0, 0, -depth);
-    const facade = new THREE.Mesh(facadeGeo, new THREE.MeshStandardMaterial({ color: '#c9a37a', roughness: 0.92 }));
-    g.add(facade);
+    const sandstone = new THREE.MeshStandardMaterial({ color: '#c9a37a', roughness: 0.92 });
+    g.add(new THREE.Mesh(facadeGeo, sandstone));
+
+    // the block behind it: its hole takes in the opening and the whole bore as it passes through
+    if (o.block) {
+      // (only the bore: where the opening is wider, the tube hides the block's face anyway, and a
+      // taller hole would break out of the hill behind)
+      const box = boreOutline(depth - 0.5, o.block + 0.5, new THREE.Box2()).expandByScalar(0.25);
+      // (the facade's sides stand a bevel proud of its outline: the block lines up with them)
+      const blockFace = new THREE.Shape();
+      blockFace.moveTo(-o.half - BEVEL, o.base - BEVEL);
+      blockFace.lineTo(o.half + BEVEL, o.base - BEVEL);
+      blockFace.lineTo(o.half + BEVEL, o.top + BEVEL);
+      blockFace.lineTo(-o.half - BEVEL, o.top + BEVEL);
+      blockFace.closePath();
+      const bore = new THREE.Path();
+      bore.moveTo(box.min.x, box.min.y);
+      bore.lineTo(box.max.x, box.min.y);
+      bore.lineTo(box.max.x, box.max.y);
+      bore.lineTo(box.min.x, box.max.y);
+      bore.closePath();
+      blockFace.holes.push(bore);
+      // (it starts inside the facade, so the two read as one solid)
+      const blockGeo = new THREE.ExtrudeGeometry(blockFace, { depth: o.block - depth, bevelEnabled: false });
+      blockGeo.translate(0, 0, -o.block);
+      g.add(new THREE.Mesh(blockGeo, sandstone));
+    }
 
     // bronze frame: the arch and the slot's edges
     const bronze = new THREE.MeshStandardMaterial({ color: '#7a5f42', metalness: 0.65, roughness: 0.45 });
@@ -438,6 +587,17 @@ export class Mountain {
     });
     g.updateMatrixWorld(true);
     ctx.scene.add(g);
+  }
+
+  /** True inside the tunnel bore (the rock the shader cuts away), between the portal facades. */
+  private inBore(p: THREE.Vector3) {
+    if (this.tunnelPlanes.some((pl) => pl.distanceToPoint(p) <= 0)) return false;
+    const r = TUNNEL_BORE.radius + BORE_MARGIN;
+    const seg = new THREE.Line3();
+    const q = new THREE.Vector3();
+    for (let k = 0; k + 1 < this.bore.length; k++)
+      if (seg.set(this.bore[k], this.bore[k + 1]).closestPointToPoint(p, true, q).distanceToSquared(p) < r * r) return true;
+    return false;
   }
 
   /** Terrain height at (x, z); 0 outside the mountain window. */

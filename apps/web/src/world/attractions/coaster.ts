@@ -3,7 +3,7 @@ import { mergeGeometries } from 'three/addons/utils/BufferGeometryUtils.js';
 import { shadowed, staticBox, staticCylinder, std, type Attraction, type Ctx } from '../context';
 import type { Input } from '../input';
 import { hdr, PALETTE, signMaterial, signTexture, stripeTexture } from '../textures';
-import { DS, sampleTrack, stepRide, zoneAt, type Phys, type RideState, type TrackData, type Zone } from './track';
+import { boreAxis, DS, sampleTrack, stepRide, TUNNEL_BORE, zoneAt, type Phys, type RideState, type TrackData, type Zone } from './track';
 
 /** Riders' hearts sit this far above the rails. */
 const HEART = 1.0;
@@ -62,6 +62,8 @@ export interface CoasterConfig {
   ground?: (x: number, z: number) => number;
   /** Tunnel look: neon tube (default) or a dark rock bore with warm lamps. */
   tunnel?: 'neon' | 'rock';
+  /** Portal facades the tunnel shell ends flush with: each plane keeps its positive side. */
+  tunnelClip?: THREE.Plane[];
   /** Places where a support column may not land (attractions, other tracks). */
   keepOut?: (x: number, z: number) => boolean;
 }
@@ -382,43 +384,70 @@ export class Coaster implements Attraction {
     this.ctx.scene.add(g);
   }
 
-  /** A lit tunnel shell swept along the tunnel zone. */
+  /**
+   * A lit tunnel shell swept along the tunnel zone. The neon tube is an open arch over the track;
+   * the rock bore is a closed tube (a floor too, so nothing outside the hill shows below the
+   * track), trimmed flush with the portal facades given as `tunnelClip`.
+   */
   private buildTunnel() {
     const d = this.d;
     const idx: number[] = [];
     for (let i = 0; i < d.pos.length; i++) if (d.zone[i] === 'tunnel') idx.push(i);
     if (idx.length < 4) return;
-    const R = 2.9;
-    const segs = 16;
+    const rock = this.cfg.tunnel === 'rock';
+    const clip = this.cfg.tunnelClip ?? [];
+    const R = TUNNEL_BORE.radius;
+    const segs = rock ? 32 : 16;
+    // the closed tube's seam runs along the floor, under the track
+    const a0 = rock ? -Math.PI / 2 : -0.2;
+    const span = rock ? Math.PI * 2 : Math.PI + 0.4;
     const pos: number[] = [];
+    const nrm: number[] = [];
     const uv: number[] = [];
     const ind: number[] = [];
+    const cut: boolean[] = [];
     const c = new THREE.Vector3();
+    const radial = new THREE.Vector3();
+    const p = new THREE.Vector3();
     idx.forEach((i, row) => {
-      this.railCenter(i, c);
-      const center = c.clone().addScaledVector(d.up[i], 1.1);
+      boreAxis(d, i, c);
       for (let k = 0; k <= segs; k++) {
-        const a = -0.2 + (k / segs) * (Math.PI + 0.4);
-        const p = center
-          .clone()
-          .addScaledVector(d.right[i], Math.cos(a) * R)
-          .addScaledVector(d.up[i], Math.sin(a) * R);
+        const a = a0 + (k / segs) * span;
+        radial.copy(d.right[i]).multiplyScalar(Math.cos(a)).addScaledVector(d.up[i], Math.sin(a));
+        p.copy(c).addScaledVector(radial, R);
+        // a portal facade stands across the bore here: slide the vertex along the track onto it
+        let clipped = false;
+        for (const pl of clip) {
+          const s = pl.distanceToPoint(p);
+          const along = pl.normal.dot(d.tan[i]);
+          if (s < 0 && along > 0.05) {
+            p.addScaledVector(d.tan[i], -s / along);
+            clipped = true;
+          }
+        }
         pos.push(p.x, p.y, p.z);
+        cut.push(clipped);
+        // (the shell's front faces look outward; DoubleSide flips the normal for the inside)
+        nrm.push(radial.x, radial.y, radial.z);
         uv.push(k / segs, row * 0.25);
       }
     });
+    // (triangles flattened onto a facade entirely would only leave slivers in its plane)
+    const tri = (u: number, v: number, w: number) => {
+      if (!(cut[u] && cut[v] && cut[w])) ind.push(u, v, w);
+    };
     for (let r = 0; r < idx.length - 1; r++)
       for (let k = 0; k < segs; k++) {
         const a = r * (segs + 1) + k;
         const b = a + segs + 1;
-        ind.push(a, b, a + 1, a + 1, b, b + 1);
+        tri(a, b, a + 1);
+        tri(a + 1, b, b + 1);
       }
     const geo = new THREE.BufferGeometry();
     geo.setAttribute('position', new THREE.Float32BufferAttribute(pos, 3));
+    geo.setAttribute('normal', new THREE.Float32BufferAttribute(nrm, 3));
     geo.setAttribute('uv', new THREE.Float32BufferAttribute(uv, 2));
     geo.setIndex(ind);
-    geo.computeVertexNormals();
-    const rock = this.cfg.tunnel === 'rock';
     const shellMat = rock
       ? std('#5a4636', { side: THREE.DoubleSide, roughness: 0.95 })
       : std('#ffffff', { map: stripeTexture(PALETTE.violet, '#2a1f45', 8, true), side: THREE.DoubleSide, roughness: 0.8 });
@@ -432,10 +461,12 @@ export class Coaster implements Attraction {
     const back = new THREE.Vector3();
     for (let k = 0; k < idx.length; k += rock ? 24 : 8) {
       const i = idx[k];
-      this.railCenter(i, c);
+      boreAxis(d, i, c);
+      // (none where a ring would poke out through a portal)
+      if (clip.some((pl) => pl.distanceToPoint(c) < R + 0.3)) continue;
       const ring = new THREE.Mesh(ringGeo, ringMat);
       back.copy(d.tan[i]).negate();
-      ring.matrix.makeBasis(d.right[i], d.up[i], back).setPosition(c.clone().addScaledVector(d.up[i], 1.1));
+      ring.matrix.makeBasis(d.right[i], d.up[i], back).setPosition(c);
       ring.matrix.multiply(new THREE.Matrix4().makeRotationZ(-0.2));
       ring.matrixAutoUpdate = false;
       this.ctx.scene.add(ring);
