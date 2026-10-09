@@ -76,6 +76,8 @@ export interface Park {
   costs: Partial<Record<AttractionId, number>>;
   packSize: number;
   cooldownHours: number;
+  /** The most a free pack tops a balance up to (null for no ceiling). */
+  ticketCap: number | null;
   /** Attractions closed for maintenance, each with its sign (null for the default wording). Open ones are left out. */
   maintenance: Partial<Record<AttractionId, string | null>>;
 }
@@ -149,6 +151,8 @@ export interface Tickets {
   balance: number;
   packSize: number;
   cooldownHours: number;
+  /** The most a pack tops the balance up to (null for no ceiling): at or above it, a pack gives nothing. */
+  ticketCap: number | null;
   lastPurchaseAt: string | null;
   nextPurchaseAt: string | null;
   canBuy: boolean;
@@ -219,6 +223,8 @@ export interface ParkSettings {
   maintenanceMessage: string | null;
   packSize: number;
   cooldownHours: number;
+  /** The most a free pack tops a balance up to; null for no ceiling. */
+  ticketCap: number | null;
   updatedAt: string | null;
 }
 
@@ -437,6 +443,19 @@ export class PurchaseCooldownError extends ApiError {
   }
 }
 
+/** 409 with code 'ticket_cap' on a purchase: the member already holds the most free tickets allowed. */
+export class TicketCapError extends ApiError {
+  readonly ticketCap: number | null;
+  readonly balance: number | null;
+
+  constructor(message: string, data: unknown) {
+    super(409, message, data);
+    this.name = 'TicketCapError';
+    this.ticketCap = numberIn(data, 'ticketCap');
+    this.balance = numberIn(data, 'balance');
+  }
+}
+
 /**
  * 503 with code 'park_closed' (the park is closed, so no boarding and no packs) or, with
  * `underMaintenance`, 'park_maintenance' (nobody in the fair at all). Staff are let through both.
@@ -603,13 +622,23 @@ export const api = {
   tickets: () => request<Tickets>('GET', '/tickets'),
   purchase: () =>
     request<{ balance: number; purchase: Purchase; nextPurchaseAt: string | null; canBuy: boolean }>('POST', '/tickets/purchase').catch((err: unknown) => {
-      throw err instanceof ApiError && err.status === 409 ? new PurchaseCooldownError(err.message, err.data) : err;
+      if (!(err instanceof ApiError && err.status === 409)) throw err;
+      throw (err.data as { code?: unknown } | null)?.code === 'ticket_cap' ? new TicketCapError(err.message, err.data) : new PurchaseCooldownError(err.message, err.data);
     }),
   purchases: (limit = 50) => request<{ purchases: Purchase[] }>('GET', `/tickets/purchases?limit=${limit}`),
 
   /** Pays for one round (the tickets are spent now) and opens it. */
   board: (ride: AttractionId) => request<{ round: Round; balance: number }>('POST', `/rides/${ride}/board`),
   finish: (id: string, body: { completed: boolean; stats: RoundStats }) => request<FinishedRound>('POST', `/rides/rounds/${encodeURIComponent(id)}/finish`, body),
+  /** The same, sent as the page closes: a keepalive request that outlives the tab, with nothing waiting for its answer. */
+  finishOnExit: (id: string, body: { completed: boolean; stats: RoundStats }) =>
+    void fetch(`${BASE}/rides/rounds/${encodeURIComponent(id)}/finish`, {
+      method: 'POST',
+      credentials: 'include',
+      keepalive: true,
+      headers: { Accept: 'application/json', 'Content-Type': 'application/json' },
+      body: JSON.stringify(body),
+    }).catch(() => {}),
   /** Ends a round whose attraction (or the park) closed while it was played, and gives its tickets back. */
   refund: (id: string) => request<{ refunded: number; balance: number }>('POST', `/rides/rounds/${encodeURIComponent(id)}/refund`),
   stats: () => request<RideStats>('GET', '/rides/stats'),
@@ -646,7 +675,7 @@ export const ringmaster = {
   overview: (days: OverviewDays) => request<Overview>('GET', `/ringmaster/overview${query({ days })}`),
   park: () => request<ParkSettings>('GET', '/ringmaster/park'),
   visitors: () => request<Visitors>('GET', '/ringmaster/visitors'),
-  updatePark: (body: Partial<Pick<ParkSettings, 'open' | 'closedMessage' | 'underMaintenance' | 'maintenanceMessage' | 'packSize' | 'cooldownHours'>>) => request<ParkSettings>('PATCH', '/ringmaster/park', body),
+  updatePark: (body: Partial<Pick<ParkSettings, 'open' | 'closedMessage' | 'underMaintenance' | 'maintenanceMessage' | 'packSize' | 'cooldownHours' | 'ticketCap'>>) => request<ParkSettings>('PATCH', '/ringmaster/park', body),
   /** Private access: the switch, the list, and the caller's own address. */
   access: () => request<Access>('GET', '/ringmaster/access'),
   /** Switching it on adds the caller's own address (their IPv6 network) if the list doesn't let them in yet. */

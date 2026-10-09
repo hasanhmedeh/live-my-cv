@@ -82,14 +82,33 @@ export class Mountain {
     const fill: { x: number; z: number; h: number }[] = [];
     for (let i = tunnelEnd + 1; i <= fillEnd; i += 4) fill.push({ x: d.pos[i].x, z: d.pos[i].z, h: rail(i) - 1.3 });
     const ridges = climb.concat(fill);
-    // the drop: the cliff juts forward to the tunnel portal, and the track falls down a narrow
-    // channel cut into that rock, straight into the portal at the foot of the channel
+    // the drop: the train tips over the lip and falls clear of a sheer wall (nothing but air in
+    // front of the riders), then pulls out along the crest of a rock buttress standing at the
+    // foot of the cliff, straight into the portal
     const along = (x: number, z: number) => (x - edgeP.x) * dropDir.x + (z - edgeP.z) * dropDir.y;
     const across = (x: number, z: number) => (x - edgeP.x) * -dropDir.y + (z - edgeP.z) * dropDir.x;
     const portal = d.pos[tunnelStart];
     const portalA = along(portal.x, portal.z);
-    const channel: { x: number; z: number; h: number }[] = [];
-    for (let i = edgeIdx + 1; i <= tunnelStart; i += 2) channel.push({ x: d.pos[i].x, z: d.pos[i].z, h: rail(i) - 2.2 });
+    const railAt = (i: number) => ({ x: d.pos[i].x - d.up[i].x, z: d.pos[i].z - d.up[i].z, h: rail(i) });
+    // the lip: where the rails have dipped a little below the plateau
+    let lip = edgeIdx;
+    while (lip < tunnelStart && rail(lip) > top - 2.5) lip++;
+    const lipA = along(railAt(lip).x, railAt(lip).z);
+    // the foot of the vertical, where the pull-out (and the buttress under it) begins
+    let foot = tunnelStart;
+    while (foot > edgeIdx && d.tan[foot].y > -0.999) foot--;
+    // (along the steep pull-out only a hair's width is cut, or the lower rails ahead would
+    // trench the rock out from under the higher ones)
+    const channel: { x: number; z: number; h: number; r: number }[] = [];
+    for (let i = edgeIdx + 1; i <= tunnelStart; i += 2) {
+      const r = railAt(i);
+      channel.push({ x: r.x, z: r.z, h: r.h - 2.2, r: i < foot ? 3.4 : 0.5 });
+    }
+    const spine: { x: number; z: number; h: number; a: number }[] = [];
+    for (let i = foot; i <= tunnelStart; i += 2) {
+      const r = railAt(i);
+      spine.push({ x: r.x, z: r.z, h: r.h - 1.5, a: along(r.x, r.z) });
+    }
     this.portal = { index: tunnelStart, along: dropDir.clone() };
     // everything after the edge (and before the climb) must clear the rock
     const clear: { x: number; z: number; h: number }[] = [];
@@ -113,20 +132,25 @@ export class Mountain {
         // ---- mesa: flat top, steep flanks, a sheer wall along the edge plane ----
         const wob = (noise(x * 0.012, z * 0.012) - 0.5) * 70;
         const dc = Math.hypot(x - mesaC.x, z - mesaC.y) + wob;
-        // around the drop the cliff face stands forward, level with the tunnel portal
-        const jut = portalA * (1 - THREE.MathUtils.smoothstep(Math.abs(across(x, z)), 45, 80));
-        const planeDist = along(x, z) - jut + (noise2(x * 0.03, z * 0.03) - 0.5) * (jut > 1 ? 3 : 10);
+        // around the drop the wall is sheer and starts right at the lip, so the vertical hangs
+        // clear of it
+        const sheer = 1 - THREE.MathUtils.smoothstep(Math.abs(across(x, z)), 45, 80);
+        const jut = lipA * sheer;
+        const planeDist = along(x, z) - jut + (noise2(x * 0.03, z * 0.03) - 0.5) * (10 - 9 * sheer);
         let mesa = top - 1.3 - 2.4 * Math.max(0, dc - jut - 150);
-        mesa = Math.min(mesa, top - 1.3 - 4.5 * Math.max(0, planeDist));
+        mesa = Math.min(mesa, top - 1.3 - (4.5 + 17.5 * sheer) * Math.max(0, planeDist));
         // talus apron at the foot of the walls
         const apron = top * 0.22 * (1 - THREE.MathUtils.smoothstep(Math.max(dc - 150, planeDist), 0, 90));
         let h = Math.max(base, mesa, apron);
         // ---- the spur under the launch climb, and the embankment after the tunnel ----
-        for (const c of ridges) {
+        // (the spur and plateau stop dead at the wall above the drop, rather than bulging past it)
+        const pastWall = 17.5 * sheer * Math.max(0, planeDist);
+        for (let k = 0; k < ridges.length; k++) {
+          const c = ridges[k];
           const dd = Math.hypot(x - c.x, z - c.z);
           // a knife-edge ridge whose flanks wobble, so it reads as rock rather than a ramp
           const flank = 1.7 + (noise(c.x * 0.05 + x * 0.02, c.z * 0.05 + z * 0.02) - 0.5) * 1.2;
-          if (dd < 120) h = Math.max(h, c.h - flank * Math.max(0, dd - 5));
+          if (dd < 120) h = Math.max(h, c.h - flank * Math.max(0, dd - 5) - (k < climb.length ? pastWall : 0));
         }
         // ---- erosion: gullies and ledges, strongest on high ground ----
         if (h > 3) {
@@ -141,11 +165,20 @@ export class Mountain {
             const dd = Math.hypot(x - c.x, z - c.z);
             if (dd < 60) h = Math.max(h, c.h - Math.max(0, dd - 7) * 1.3);
           }
-        // ---- the drop channel: a narrow, steep-walled slot from the rim down to the portal ----
+        // ---- the buttress under the pull-out, running back to the foot of the wall ----
+        // (it falls away gently to the sides and behind, but steeply ahead, where the rails dive)
+        const ac = across(x, z);
+        const spineFlank = 1.4 + (noise(x * 0.08, z * 0.08) - 0.5) * 0.8;
+        for (const c of spine) {
+          const ahead = a - c.a;
+          const side = Math.hypot(ac, Math.min(0, ahead));
+          if (side < 70) h = Math.max(h, c.h - Math.max(0, side - 3) * spineFlank - Math.max(0, ahead) * 20);
+        }
+        // ---- a notch through the lip and a clear path down to the portal ----
         if (a < portalA + 0.5)
           for (const c of channel) {
             const dd = Math.hypot(x - c.x, z - c.z);
-            if (dd < 40) h = Math.min(h, c.h + Math.max(0, dd - 3.4) * 5);
+            if (dd < 20) h = Math.min(h, c.h + Math.max(0, dd - c.r) * 14);
           }
         // ---- a solid track bed along the embankment ----
         for (const c of fill) {
@@ -271,7 +304,7 @@ export class Mountain {
   }
 
   /**
-   * The tunnel portal at the foot of the drop channel, after the real ride's: a sandstone
+   * The tunnel portal in the buttress at the foot of the drop, after the real ride's: a sandstone
    * facade with a keyhole-shaped opening, framed by a bronze arch and a sunburst of rods.
    * The opening is sized to the tunnel bore where the steeply diving track crosses the
    * (vertical) facade: everything is in metres relative to the riders' heartline.

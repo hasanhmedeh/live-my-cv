@@ -6,6 +6,7 @@
     "maintenanceMessage": null,
     "packSize": 20,
     "cooldownHours": 1,
+    "ticketCap": null,
     "allowlistOnly": false
   },
   "allowedIps": [],

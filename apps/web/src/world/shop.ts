@@ -3,7 +3,7 @@
 // pack of tickets, treats (eaten on the spot, each with a perk) and souvenirs (kept and worn).
 // Rosa talks you through it: what you look at, what you buy, and what you can't afford yet.
 import * as THREE from 'three';
-import { ApiError, NotEnoughTicketsError, ParkClosedError, PurchaseCooldownError, SoldOutError, type ShopItem } from '../account/api';
+import { ApiError, NotEnoughTicketsError, ParkClosedError, PurchaseCooldownError, SoldOutError, TicketCapError, type ShopItem } from '../account/api';
 import type { AuthMode } from '../account/auth-dialog';
 import { everyHours, formatWait, session } from '../account/session';
 import type { Sfx } from './audio';
@@ -240,7 +240,9 @@ export class Shop {
           ? `A free account gets you ${session.packSize} tickets ${everyHours(session.cooldownHours)}. Takes a minute to sign up!`
           : wait
             ? `Your next free pack will be ready in ${formatWait(wait)}. I'll keep it warm for you.`
-            : `${session.packSize} tickets, on the house. Go on, take them!`,
+            : session.packNow === 0
+              ? `You've got all the free tickets you can hold, ${session.ticketCap}. Go spend a few first!`
+              : `${ticketsText(session.packNow)}, on the house. Go on, take them!`,
       );
     }
     const line = PITCH[id];
@@ -304,9 +306,19 @@ export class Shop {
       pack = '<p class="shop-note">Counting your tickets…</p>';
     } else {
       const wait = session.msUntilPurchase() ?? 0;
-      const label = this.busy === 'pack' ? 'Printing your tickets…' : wait > 0 ? `Next pack in <span data-clock>${formatWait(wait)}</span>` : `Take ${ticketsText(t.packSize)} · free`;
-      pack = `<p>One free pack of <strong>${ticketsText(t.packSize)}</strong> ${everyHours(t.cooldownHours)}. Leftover tickets carry over.</p>
-        <p class="shop-actions"><button type="button" class="btn btn-primary" data-shop-pack ${wait > 0 || this.closed ? 'disabled' : ''} ${this.busy === 'pack' ? 'aria-busy="true"' : ''}>${label}</button></p>`;
+      const cap = session.ticketCap;
+      const full = session.packNow === 0;
+      const label =
+        this.busy === 'pack'
+          ? 'Printing your tickets…'
+          : wait > 0
+            ? `Next pack in <span data-clock>${formatWait(wait)}</span>`
+            : full
+              ? `Wallet full · ${cap} max`
+              : `Take ${ticketsText(session.packNow)} · free`;
+      const capNote = cap === null ? '' : ` Free packs top you up to <strong>${ticketsText(cap)}</strong> at most.`;
+      pack = `<p>One free pack of <strong>${ticketsText(t.packSize)}</strong> ${everyHours(t.cooldownHours)}. Leftover tickets carry over.${capNote}</p>
+        <p class="shop-actions"><button type="button" class="btn btn-primary" data-shop-pack ${wait > 0 || full || this.closed ? 'disabled' : ''} ${this.busy === 'pack' ? 'aria-busy="true"' : ''}>${label}</button></p>`;
     }
     const flash = this.flash?.id === 'pack' ? `<p class="shop-flash" role="status">${escapeHtml(this.flash.text)}</p>` : '';
     return `<article class="shop-pack" data-card="pack">
@@ -466,6 +478,7 @@ export class Shop {
     if (err instanceof SoldOutError && item) return soldOutLine(item);
     if (err instanceof NotEnoughTicketsError && item) return shortLine(item, (err.needed ?? item.tickets) - (err.balance ?? 0));
     if (err instanceof ParkClosedError) return err.underMaintenance ? 'The whole fair’s under maintenance, love. I have to close up.' : 'The park’s just closed, so I can’t sell anything right now. Sorry!';
+    if (err instanceof TicketCapError) return `You've got all the free tickets you can hold, ${err.ticketCap ?? session.ticketCap}. Spend a few on the rides first!`;
     if (err instanceof PurchaseCooldownError) return 'You’ve had this round’s free pack already. The next one’s on the clock!';
     if (err instanceof ApiError && err.status === 409 && item) return `You’ve already got the ${item.name.toLowerCase()}! Have a look at the others.`;
     if (err instanceof ApiError && err.status === 401) return 'Looks like your session ran out. Log in again and I’ll serve you!';

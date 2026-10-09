@@ -133,4 +133,5 @@ const rules = (after: Record<string, unknown>) =>
   [
     'packSize' in after ? ` Packs now hold ${esc(after.packSize)} tickets.` : '',
     'cooldownHours' in after ? ` One pack every ${esc(after.cooldownHours)} h.` : '',
+    'ticketCap' in after ? (after.ticketCap === null ? ' No limit on free tickets.' : ` Free packs top up to ${esc(after.ticketCap)} tickets at most.`) : '',
   ].join('');

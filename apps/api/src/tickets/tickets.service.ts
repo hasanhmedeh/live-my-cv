@@ -10,8 +10,10 @@ export interface TicketStatus {
   balance: number;
   packSize: number;
   cooldownHours: number;
+  /** The most a pack tops the balance up to (null for no ceiling): at or above it, a pack gives nothing. */
+  ticketCap: number | null;
   lastPurchaseAt: string | null;
-  /** Null when a purchase is allowed now. */
+  /** Null when a purchase is allowed now (by the clock; the cap is checked against the balance). */
   nextPurchaseAt: string | null;
   canBuy: boolean;
   costs: Record<Attraction, number>;
@@ -42,6 +44,7 @@ export class TicketsService {
       balance: user.ticketBalance,
       packSize: rules.packSize,
       cooldownHours: rules.cooldownHours,
+      ticketCap: rules.ticketCap,
       lastPurchaseAt: user.lastPurchaseAt?.toISOString() ?? null,
       nextPurchaseAt: next?.toISOString() ?? null,
       canBuy: next === null,
@@ -51,7 +54,9 @@ export class TicketsService {
 
   /**
    * Adds one pack (park_settings.pack_size) to the balance, at most once per cooldown, and not while
-   * the park is closed (staff excepted). The cooldown check, the increment and
+   * the park is closed (staff excepted). Under a ticket cap the pack only tops the balance up to it
+   * (40 held under a cap of 45 gets 5), and a balance already at the cap is turned away without
+   * starting the cooldown. The cooldown and cap checks, the increment and
    * the new lastPurchaseAt are a single conditional UPDATE: of two concurrent purchases, the second
    * waits on the row lock, then re-checks the condition against the updated row and matches nothing.
    * The purchase row is written in the same transaction, so the two never disagree.
@@ -60,21 +65,31 @@ export class TicketsService {
     const rules = await this.park.rules();
     this.park.assertParkOpen(rules, user);
     const userId = user.id;
-    const packSize = rules.packSize;
+    const { packSize, ticketCap } = rules;
     const cooldownMs = hoursMs(rules.cooldownHours);
     const now = new Date();
     const result = await this.prisma.$transaction(async (tx) => {
       const { count } = await tx.user.updateMany({
-        where: { id: userId, OR: [{ lastPurchaseAt: null }, { lastPurchaseAt: { lte: new Date(now.getTime() - cooldownMs) } }] },
+        where: {
+          id: userId,
+          OR: [{ lastPurchaseAt: null }, { lastPurchaseAt: { lte: new Date(now.getTime() - cooldownMs) } }],
+          ...(ticketCap === null ? {} : { ticketBalance: { lt: ticketCap } }),
+        },
         data: { ticketBalance: { increment: packSize }, lastPurchaseAt: now },
       });
       if (count === 0) return null;
       // Still inside the transaction that holds the row lock, so this is the balance this purchase produced.
-      const { ticketBalance } = await tx.user.findUniqueOrThrow({ where: { id: userId }, select: { ticketBalance: true } });
+      let { ticketBalance } = await tx.user.findUniqueOrThrow({ where: { id: userId }, select: { ticketBalance: true } });
+      // the whole pack went on: take back what overshoots the cap (the balance was under it, so some stays)
+      const over = ticketCap === null ? 0 : ticketBalance - ticketCap;
+      if (over > 0) {
+        await tx.user.update({ where: { id: userId }, data: { ticketBalance: { decrement: over } } });
+        ticketBalance -= over;
+      }
       const purchase = await tx.ticketPurchase.create({
         data: {
           userId,
-          quantity: packSize,
+          quantity: packSize - Math.max(0, over),
           priceCents: PACK_PRICE_CENTS,
           currency: PACK_CURRENCY,
           provider: PACK_PROVIDER,
@@ -86,8 +101,17 @@ export class TicketsService {
     });
 
     if (!result) {
-      const fresh = await this.prisma.user.findUnique({ where: { id: userId }, select: { lastPurchaseAt: true } });
-      const next = nextPurchaseAt(fresh?.lastPurchaseAt ?? null, rules.cooldownHours, new Date()) ?? new Date();
+      const fresh = await this.prisma.user.findUnique({ where: { id: userId }, select: { lastPurchaseAt: true, ticketBalance: true } });
+      const due = nextPurchaseAt(fresh?.lastPurchaseAt ?? null, rules.cooldownHours, new Date());
+      // the clock allows it, so it was the cap that said no
+      if (!due && ticketCap !== null && fresh && fresh.ticketBalance >= ticketCap)
+        throw new ConflictException({
+          ...ConflictException.createBody(`You have the most free tickets you can hold (${ticketCap}). Spend some first!`, 'Conflict', HttpStatus.CONFLICT),
+          code: 'ticket_cap',
+          ticketCap,
+          balance: fresh.ticketBalance,
+        });
+      const next = due ?? new Date();
       throw new ConflictException({
         ...ConflictException.createBody('You can buy your next pack later', 'Conflict', HttpStatus.CONFLICT),
         nextPurchaseAt: next.toISOString(),

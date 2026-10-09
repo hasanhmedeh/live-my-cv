@@ -46,6 +46,7 @@ import { everyHours, formatWait, session } from '../account/session';
 import { authDialog, type AuthMode } from '../account/auth-dialog';
 import { AccountMenu } from '../account/account-menu';
 import { results, type ResultsChoice, type RoundResult } from '../account/results';
+import { leaveEarly } from '../account/leave-early';
 import { cleanStats } from '../account/stats';
 import { STATUSES } from '../account/ideas';
 import { accountButtons, legalLinksHtml, packText, ticketsText, waitHtml } from './ticket-counter';
@@ -120,8 +121,8 @@ export class Game {
   private cratesDismissed = false;
   /** The attraction whose round is being paid for (the board request is in flight). */
   private boarding: AttractionId | null = null;
-  /** The round being played: the server's id for it, and the attraction. */
-  private round: { id: string; ride: AttractionId } | null = null;
+  /** The round being played: the server's id for it, the attraction, and what it cost. */
+  private round: { id: string; ride: AttractionId; tickets: number } | null = null;
   /** The attraction is on its way out (fading); `leaveCompleted` says whether its round ran to the end. */
   private leaving = false;
   /** The round's attraction (or the park) closed while it was played: it ends with the sign and a refund, not the results. */
@@ -494,11 +495,24 @@ export class Game {
       if (b.dataset.auth) void this.signIn(b.dataset.auth as AuthMode, ride);
       else if (b.dataset.goto === 'booth') this.goToBooth();
       else if (b.dataset.goto === 'ideas') this.goToIdeas();
-      else if (b.hasAttribute('data-stop')) this.leave(false);
+      else if (b.hasAttribute('data-stop')) this.askToLeave();
       else if (ride) this.board(ride);
     });
-    // the sign-up form and the results screen have the keyboard while they're open
-    for (const dialog of [authDialog, results]) {
+    // closing the tab (or leaving the page) mid-round: the browser asks first, as the tickets aren't given back
+    addEventListener('beforeunload', (e) => {
+      if (!this.round || this.lockedOut) return;
+      e.preventDefault();
+      e.returnValue = '';
+    });
+    // and once the page really goes, the round is closed as left early
+    addEventListener('pagehide', () => {
+      const round = this.round;
+      if (!round || this.lockedOut) return;
+      this.round = null;
+      session.finishOnExit(round.id, false, this.measuredStats(round.ride));
+    });
+    // the sign-up form, the results screen and "leave early?" have the keyboard while they're open
+    for (const dialog of [authDialog, results, leaveEarly]) {
       let pausedBefore = false;
       dialog.onToggle((open) => {
         if (open) pausedBefore = this.input.paused;
@@ -681,7 +695,7 @@ export class Game {
     session.board(ride).then(
       ({ round }) => {
         this.boarding = null;
-        this.begin(ride, round.id);
+        this.begin(ride, round.id, round.ticketsSpent);
       },
       (err: unknown) => {
         this.boarding = null;
@@ -691,7 +705,7 @@ export class Game {
   }
 
   /** The round is paid for (the tickets are spent): on with the attraction. */
-  private begin(ride: AttractionId, id: string) {
+  private begin(ride: AttractionId, id: string, tickets: number) {
     if (this.mode !== 'drive' || this.round) {
       // can't happen in normal play; the round is closed rather than left open
       void session.finish(id, false, {}).catch(() => {});
@@ -700,7 +714,7 @@ export class Game {
     // the map (or an old results screen) may have opened while the ticket printed
     this.worldMap.close();
     results.close(null);
-    this.round = { id, ride };
+    this.round = { id, ride, tickets };
     // closed while the ticket printed: the round ends before it starts, and the tickets come back
     if (session.shutOut || (!session.isStaff && (!session.parkOpen || session.maintenance(ride) !== undefined))) {
       this.lockedOut = true;
@@ -1155,10 +1169,21 @@ export class Game {
   private onEscape() {
     if (this.mode === 'shop') return this.leaveShop();
     if (this.mode === 'ideas') return this.leaveIdeas();
-    if (this.mode !== 'drive' || this.round?.ride === 'crates') return this.leave(false);
+    if (this.mode !== 'drive' || this.round?.ride === 'crates') return this.askToLeave();
     if (this.zones.active === 'crates') this.cratesDismissed = true;
     this.ui.hidePanel();
     this.panelZone = null;
+  }
+
+  /** Esc, the exit button or "Stop the round" mid-round: its tickets aren't given back, so the visitor is asked first. */
+  private askToLeave() {
+    const round = this.round;
+    // nothing to lose (no round, or one already on its way out): straight out as before
+    if (!round || this.leaving || this.lockedOut) return this.leave(false);
+    if (leaveEarly.isOpen) return;
+    void leaveEarly.ask(ZONES[round.ride].title, round.tickets, round.ride === 'crates' || round.ride === 'striker').then((go) => {
+      if (go && this.round === round) this.leave(false);
+    });
   }
 
   /**
@@ -1168,6 +1193,8 @@ export class Game {
    */
   private leave(completed: boolean) {
     if (this.leaving) return;
+    // the round ended on its own (or was closed) while "leave early?" was up: the question is moot
+    leaveEarly.close(false);
     if (this.mode === 'drive') {
       // the crates are played on foot: stopping the clock is all it takes
       if (this.round?.ride !== 'crates') return;
@@ -1223,25 +1250,14 @@ export class Game {
     const round = this.round;
     if (!round) return;
     this.round = null;
+    leaveEarly.close(false);
     if (this.lockedOut) {
       this.lockedOut = false;
       this.ui.hidePanel();
       this.panelZone = null;
       return void this.showLockedOut(round.ride, round.id);
     }
-    const measured: Record<AttractionId, Measured> = {
-      coaster: this.stack,
-      falcon: this.falcon,
-      rocket: this.rocket,
-      ferris: this.wheel,
-      flip: this.flip,
-      ship: this.ship,
-      speedway: this.speedway,
-      drone: this.drone,
-      crates: this.crates,
-      striker: this.striker,
-    };
-    const stats = cleanStats(measured[round.ride].roundStats());
+    const stats = this.measuredStats(round.ride);
     // the attraction's own card is done with: the results screen takes over
     this.ui.hidePanel();
     this.panelZone = null;
@@ -1254,6 +1270,23 @@ export class Game {
         results.failed(result, err);
       },
     );
+  }
+
+  /** What the attraction measured of its round, ready for the server. */
+  private measuredStats(ride: AttractionId) {
+    const measured: Record<AttractionId, Measured> = {
+      coaster: this.stack,
+      falcon: this.falcon,
+      rocket: this.rocket,
+      ferris: this.wheel,
+      flip: this.flip,
+      ship: this.ship,
+      speedway: this.speedway,
+      drone: this.drone,
+      crates: this.crates,
+      striker: this.striker,
+    };
+    return cleanStats(measured[ride].roundStats());
   }
 
   /** The results screen's buttons: another round, or the way to more tickets. */

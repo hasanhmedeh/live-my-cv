@@ -28,7 +28,9 @@ export function waitHtml(ms: number, id = '') {
   const attrs = `class="ticket-wait"${id ? ` id="${id}"` : ''}`;
   return ms > 0
     ? `<p ${attrs}>Your next free pack is ready in <b data-countdown>${formatWait(ms)}</b>.</p>`
-    : `<p ${attrs}>Your free pack of ${session.packSize} is ready at the Ticket Booth.</p>`;
+    : session.packNow === 0
+      ? `<p ${attrs}>You hold the most free tickets allowed (${session.ticketCap}).</p>`
+      : `<p ${attrs}>Your free pack of ${session.packNow} is ready at the Ticket Booth.</p>`;
 }
 
 /** Every attraction and what a round costs (the server's prices once they're in). */

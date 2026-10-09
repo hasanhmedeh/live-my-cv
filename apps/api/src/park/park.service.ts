@@ -12,6 +12,8 @@ export interface ParkRules {
   maintenanceMessage: string | null;
   packSize: number;
   cooldownHours: number;
+  /** The most a free pack tops a balance up to; null for no ceiling. */
+  ticketCap: number | null;
   updatedAt: Date | null;
 }
 
@@ -36,6 +38,8 @@ export interface PublicPark {
   costs: Record<Attraction, number>;
   packSize: number;
   cooldownHours: number;
+  /** The most a free pack tops a balance up to; null for no ceiling. */
+  ticketCap: number | null;
   /** The attractions closed for maintenance, each with its sign (null for the default wording). Open ones are left out. */
   maintenance: Partial<Record<Attraction, string | null>>;
 }
@@ -64,6 +68,7 @@ export class ParkService {
       maintenanceMessage: row?.maintenanceMessage ?? null,
       packSize: row?.packSize ?? DEFAULT_PACK_SIZE,
       cooldownHours: row?.cooldownHours ?? DEFAULT_COOLDOWN_HOURS,
+      ticketCap: row?.ticketCap ?? null,
       updatedAt: row?.updatedAt ?? null,
     };
   }
@@ -96,6 +101,7 @@ export class ParkService {
       costs: costsOf(attractions),
       packSize: rules.packSize,
       cooldownHours: rules.cooldownHours,
+      ticketCap: rules.ticketCap,
       maintenance,
     };
   }

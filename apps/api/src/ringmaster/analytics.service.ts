@@ -279,6 +279,7 @@ export class AnalyticsService {
         maintenanceMessage: rules.maintenanceMessage,
         packSize: rules.packSize,
         cooldownHours: rules.cooldownHours,
+        ticketCap: rules.ticketCap,
         updatedAt: rules.updatedAt?.toISOString() ?? null,
       },
     };

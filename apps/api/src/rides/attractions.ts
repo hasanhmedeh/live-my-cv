@@ -30,6 +30,7 @@ export const DEFAULT_COOLDOWN_HOURS = 5;
 /** The limits the migrations' CHECK constraints enforce, so a bad value is a 400 rather than a 500. */
 export const PACK_SIZE_RANGE = { min: 1, max: 1000 } as const;
 export const COOLDOWN_HOURS_RANGE = { min: 0, max: 168 } as const;
+export const TICKET_CAP_RANGE = { min: 1, max: 100000 } as const;
 export const TICKETS_RANGE = { min: 1, max: 1000 } as const;
 /** The longest closed sign, for the park and for an attraction. */
 export const CLOSED_MESSAGE_MAX = 200;

@@ -47,7 +47,7 @@ try {
 
 async function snapshot() {
   const park = await client.query(
-    `SELECT open, closed_message, under_maintenance, maintenance_message, pack_size, cooldown_hours, allowlist_only FROM park_settings WHERE id = 1`,
+    `SELECT open, closed_message, under_maintenance, maintenance_message, pack_size, cooldown_hours, ticket_cap, allowlist_only FROM park_settings WHERE id = 1`,
   );
   const allowed = await client.query(`SELECT ip, label, added_by FROM allowed_ips ORDER BY created_at, id`);
   const attractions = await client.query(`SELECT attraction, tickets, open, closed_message FROM attraction_settings ORDER BY attraction`);
@@ -62,6 +62,7 @@ async function snapshot() {
           maintenanceMessage: park.rows[0].maintenance_message,
           packSize: park.rows[0].pack_size,
           cooldownHours: park.rows[0].cooldown_hours,
+          ticketCap: park.rows[0].ticket_cap,
           allowlistOnly: park.rows[0].allowlist_only,
         }
       : null,
@@ -100,11 +101,11 @@ async function seed() {
     if (data.park) {
       const p = data.park;
       await client.query(
-        `INSERT INTO park_settings (id, open, closed_message, under_maintenance, maintenance_message, pack_size, cooldown_hours, allowlist_only, updated_at)
-         VALUES (1, $1, $2, $3, $4, $5, $6, $7, ${now})
+        `INSERT INTO park_settings (id, open, closed_message, under_maintenance, maintenance_message, pack_size, cooldown_hours, ticket_cap, allowlist_only, updated_at)
+         VALUES (1, $1, $2, $3, $4, $5, $6, $7, $8, ${now})
          ON CONFLICT (id) DO UPDATE SET open = $1, closed_message = $2, under_maintenance = $3,
-           maintenance_message = $4, pack_size = $5, cooldown_hours = $6, allowlist_only = $7, updated_at = ${now}`,
-        [p.open, p.closedMessage, p.underMaintenance, p.maintenanceMessage, p.packSize, p.cooldownHours, allowlistOnly],
+           maintenance_message = $4, pack_size = $5, cooldown_hours = $6, ticket_cap = $7, allowlist_only = $8, updated_at = ${now}`,
+        [p.open, p.closedMessage, p.underMaintenance, p.maintenanceMessage, p.packSize, p.cooldownHours, p.ticketCap ?? null, allowlistOnly],
       );
     }
     if (data.allowedIps) {

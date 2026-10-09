@@ -143,6 +143,9 @@ model ParkSettings {
   packSize           Int      @default(20) @map("pack_size")
   /// Hours between two purchases, counted from the last one: 0 (no wait) to 168 (a CHECK constraint).
   cooldownHours      Int      @default(5) @map("cooldown_hours")
+  /// The most tickets a free pack tops a balance up to, 1 to 100000 (a CHECK constraint): with 45,
+  /// a member holding 40 gets 5, one holding 45 or more gets none. Null means no ceiling.
+  ticketCap          Int?     @map("ticket_cap")
   /// Private access: only the addresses in allowed_ips can reach the site at all (the pages, the
   /// API, staff included). Locked out? Switch it off here with `pnpm studio:prod`.
   allowlistOnly      Boolean  @default(false) @map("allowlist_only")

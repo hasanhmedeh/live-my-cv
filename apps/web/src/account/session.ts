@@ -9,6 +9,7 @@ import {
   PACK_SIZE,
   ParkClosedError,
   PurchaseCooldownError,
+  TicketCapError,
   RideClosedError,
   SoldOutError,
   type AccountNews,
@@ -146,6 +147,19 @@ class Session {
     return this._tickets?.cooldownHours ?? this._park?.cooldownHours ?? COOLDOWN_HOURS;
   }
 
+  /** The most a free pack tops a balance up to (the live rule once known); null for no ceiling. */
+  get ticketCap() {
+    return this._tickets?.ticketCap ?? this._park?.ticketCap ?? null;
+  }
+
+  /** Tickets the next pack gives: the whole pack, or only what tops the balance up to the cap (0 when at it). */
+  get packNow() {
+    const cap = this.ticketCap;
+    const balance = this._tickets?.balance;
+    if (cap === null || balance === undefined) return this.packSize;
+    return Math.max(0, Math.min(this.packSize, cap - balance));
+  }
+
   /** False until the first check against the server has settled (either way). */
   get known() {
     return this._known;
@@ -224,7 +238,7 @@ class Session {
   }
 
   private parkOrDefaults(): Park {
-    return this._park ?? { open: true, message: null, underMaintenance: false, maintenanceMessage: null, costs: {}, packSize: this.packSize, cooldownHours: this.cooldownHours, maintenance: {} };
+    return this._park ?? { open: true, message: null, underMaintenance: false, maintenanceMessage: null, costs: {}, packSize: this.packSize, cooldownHours: this.cooldownHours, ticketCap: this.ticketCap, maintenance: {} };
   }
 
   /**
@@ -322,6 +336,7 @@ class Session {
         costs: { ...this._tickets.costs, ...park.costs },
         packSize: park.packSize,
         cooldownHours: park.cooldownHours,
+        ticketCap: park.ticketCap,
       };
     if (JSON.stringify(before) === JSON.stringify(park)) return;
     // a new cool-down moves the member's next pack: the server works out when
@@ -642,6 +657,7 @@ class Session {
         balance: res.balance,
         packSize: prev?.packSize ?? this._park?.packSize ?? res.purchase.quantity,
         cooldownHours: prev?.cooldownHours ?? this.cooldownHours,
+        ticketCap: this.ticketCap,
         lastPurchaseAt: res.purchase.createdAt,
         nextPurchaseAt: res.nextPurchaseAt,
         canBuy: res.canBuy,
@@ -654,6 +670,10 @@ class Session {
       if (err instanceof ParkClosedError) this.noteParkClosed(err);
       if (err instanceof PurchaseCooldownError && this._tickets) {
         this._tickets = { ...this._tickets, canBuy: false, nextPurchaseAt: err.nextPurchaseAt ?? this._tickets.nextPurchaseAt };
+        this.emit();
+      }
+      if (err instanceof TicketCapError && this._tickets) {
+        this._tickets = { ...this._tickets, balance: err.balance ?? this._tickets.balance, ticketCap: err.ticketCap ?? this._tickets.ticketCap };
         this.emit();
       }
       if (err instanceof ApiError && err.status === 401) this.expire();
@@ -689,6 +709,11 @@ class Session {
     // the totals and bests changed: refresh them quietly if anything shows them
     if (this._stats) void this.loadStats();
     return res;
+  }
+
+  /** Closes a round as the page goes away (the tab closing): sent without waiting for an answer. */
+  finishOnExit(roundId: string, completed: boolean, stats: RoundStats) {
+    api.finishOnExit(roundId, { completed, stats });
   }
 
   /**
@@ -775,6 +800,7 @@ function parseEvent<T>(e: Event): T | null {
 /** GET /park's answer, with anything missing or malformed falling back to the usual rules. */
 function normalisePark(raw: Park): Park {
   const num = (v: unknown, fallback: number) => (typeof v === 'number' && Number.isFinite(v) && v >= 0 ? v : fallback);
+  const cap = (v: unknown) => (typeof v === 'number' && Number.isInteger(v) && v > 0 ? v : null);
   const costs: Park['costs'] = {};
   for (const id of Object.keys(DEFAULT_COSTS) as AttractionId[]) {
     const c = raw?.costs?.[id];
@@ -792,7 +818,7 @@ function normalisePark(raw: Park): Park {
   const underMaintenance = raw?.underMaintenance === true;
   const maintenanceMessage =
     underMaintenance && typeof raw?.maintenanceMessage === 'string' && raw.maintenanceMessage.trim() ? raw.maintenanceMessage.trim() : null;
-  return { open, message, underMaintenance, maintenanceMessage, costs, packSize: num(raw?.packSize, PACK_SIZE), cooldownHours: num(raw?.cooldownHours, COOLDOWN_HOURS), maintenance };
+  return { open, message, underMaintenance, maintenanceMessage, costs, packSize: num(raw?.packSize, PACK_SIZE), cooldownHours: num(raw?.cooldownHours, COOLDOWN_HOURS), ticketCap: cap(raw?.ticketCap), maintenance };
 }
 
 /** "03:12:45" for a wait of that long (the booth's countdown to the next pack). */

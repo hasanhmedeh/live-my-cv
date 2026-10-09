@@ -78,6 +78,8 @@ export class GatesView {
         <label>Hours between packs <input type="number" name="cooldownHours" min="0" max="168" step="1" inputmode="numeric" value="${p.cooldownHours}" />
           <span class="hint">0 means no wait.</span></label>
       </div>
+      <label>Most free tickets a member can hold <input type="number" name="ticketCap" min="1" max="100000" step="1" inputmode="numeric" placeholder="No limit" value="${p.ticketCap ?? ''}" />
+        <span class="hint">A pack only tops a member up to this: with 45, someone holding 40 gets 5, and someone at 45 gets none until they spend some. Leave blank for no limit.</span></label>
       <div class="form-actions"><button type="submit" class="btn btn-primary">Save</button></div>
     </form></div><div class="card" id="access-card"></div>`;
     this.renderAccess();
@@ -202,6 +204,10 @@ export class GatesView {
     const cooldownHours = Number(data.get('cooldownHours'));
     if (!Number.isInteger(packSize) || packSize < 1 || packSize > 1000) return toast('A pack holds 1 to 1000 tickets.', true);
     if (!Number.isInteger(cooldownHours) || cooldownHours < 0 || cooldownHours > 168) return toast('The wait is 0 to 168 hours.', true);
+    const capText = String(data.get('ticketCap') ?? '').trim();
+    const ticketCap = capText ? Number(capText) : null;
+    if (ticketCap !== null && (!Number.isInteger(ticketCap) || ticketCap < 1 || ticketCap > 100000))
+      return toast('The most a member can hold is 1 to 100000 tickets, or blank for no limit.', true);
 
     const body: Parameters<typeof ringmaster.updatePark>[0] = {};
     if (open !== p.open) body.open = open;
@@ -210,6 +216,7 @@ export class GatesView {
     if (maintenanceMessage !== p.maintenanceMessage) body.maintenanceMessage = maintenanceMessage;
     if (packSize !== p.packSize) body.packSize = packSize;
     if (cooldownHours !== p.cooldownHours) body.cooldownHours = cooldownHours;
+    if (ticketCap !== (p.ticketCap ?? null)) body.ticketCap = ticketCap;
     if (!Object.keys(body).length) return toast('Nothing to save.');
     if (
       body.underMaintenance === true &&

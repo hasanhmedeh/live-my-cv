@@ -25,6 +25,8 @@ export interface ParkSettingsJson {
   maintenanceMessage: string | null;
   packSize: number;
   cooldownHours: number;
+  /** The most a free pack tops a balance up to; null for no ceiling. */
+  ticketCap: number | null;
   updatedAt: string | null;
 }
 
@@ -171,6 +173,7 @@ export class RingmasterService {
       maintenanceMessage: dto.maintenanceMessage,
       packSize: dto.packSize,
       cooldownHours: dto.cooldownHours,
+      ticketCap: dto.ticketCap,
     });
     const changed = changes(before, data);
     if (!changed) return toParkJson(before);
@@ -576,7 +579,7 @@ function changes(current: object, data: Record<string, unknown>) {
 }
 
 function toParkJson(
-  rules: Pick<ParkRules, 'open' | 'closedMessage' | 'underMaintenance' | 'maintenanceMessage' | 'packSize' | 'cooldownHours' | 'updatedAt'>,
+  rules: Pick<ParkRules, 'open' | 'closedMessage' | 'underMaintenance' | 'maintenanceMessage' | 'packSize' | 'cooldownHours' | 'ticketCap' | 'updatedAt'>,
 ): ParkSettingsJson {
   return {
     open: rules.open,
@@ -585,6 +588,7 @@ function toParkJson(
     maintenanceMessage: rules.maintenanceMessage,
     packSize: rules.packSize,
     cooldownHours: rules.cooldownHours,
+    ticketCap: rules.ticketCap,
     updatedAt: rules.updatedAt?.toISOString() ?? null,
   };
 }

@@ -179,7 +179,7 @@ export class AccountMenu {
       return;
     }
     const wait = session.msUntilPurchase() ?? 0;
-    const next = wait > 0 ? `next free pack in ${formatWait(wait)}` : 'a free pack is waiting at the Ticket Booth';
+    const next = wait > 0 ? `next free pack in ${formatWait(wait)}` : session.packNow === 0 ? 'the most free tickets you can hold' : 'a free pack is waiting at the Ticket Booth';
     this.ticketsEl.innerHTML = `🎟️ <strong>${plural(t.balance, 'ticket', 'tickets')}</strong> · ${next}`;
   }
 

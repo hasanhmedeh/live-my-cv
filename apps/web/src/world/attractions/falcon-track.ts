@@ -6,7 +6,7 @@
 // LSM lift right outside the station → 55 m twisted drop → airtime hills, a wave turn and an
 // extreme overbanked turn around the base of the giant hill → out across the desert → 160 km/h
 // LSM launch up the cliff face → slow, twisting clifftop section → brakes at the edge → 90°
-// drop down a channel in the cliff into a keyhole portal → tunnel → LSM launch to 250 km/h
+// drop down the sheer cliff face into a keyhole portal → tunnel → LSM launch to 250 km/h
 // straight back at the park → the 163 m hill (on a lattice tower, trims up and over) right
 // beside the park → back up into a high overbanked turn → dive, wave turn, airtime → banked
 // turnaround that dives under the overbanked turn → speed turns along the park's edge →
@@ -68,8 +68,8 @@ export const FALCON_ELEMENTS: Element[] = [
   { t: 'straight', len: 15, zone: 'lift' },
   // brakes at the very edge: the train creeps over the lip…
   { t: 'straight', len: 25, zone: 'brake' },
-  // …and falls 158 m at 90° down a channel cut into the cliff face, plunging into the
-  // keyhole portal partway through the pull-out (like the real one)
+  // …and falls 158 m at 90° clear of the sheer cliff face, pulling out along a rock buttress
+  // and into the keyhole portal partway through the pull-out (like the real one)
   { t: 'pitch', angle: -90, radius: 20 },
   { t: 'straight', len: 58 },
   { t: 'pitch', angle: 35, radius: 80 },
