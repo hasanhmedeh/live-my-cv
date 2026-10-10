@@ -42,7 +42,7 @@ export class Input {
     if (v) this.keys.clear();
   }
 
-  on(evt: 'action' | 'roll' | 'kick' | 'reset' | 'honk' | 'escape' | 'camera' | 'info' | 'any', fn: () => void) {
+  on(evt: 'action' | 'roll' | 'kick' | 'reset' | 'restart' | 'honk' | 'escape' | 'camera' | 'info' | 'any', fn: () => void) {
     (this.handlers[evt] ??= []).push(fn);
   }
 
@@ -71,6 +71,7 @@ export class Input {
     if (e.code === 'Space') this.emit('roll');
     if (e.code === 'KeyF') this.emit('kick');
     if (e.code === 'KeyR') this.emit('reset');
+    if (e.code === 'KeyT') this.emit('restart');
     if (e.code === 'KeyH') this.emit('honk');
     if (e.code === 'KeyC') this.emit('camera');
     if (e.code === 'Escape') {

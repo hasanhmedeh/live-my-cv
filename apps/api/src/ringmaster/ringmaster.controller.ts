@@ -6,12 +6,15 @@ import { ParseLimitPipe } from '../common/parse-limit.pipe.js';
 import { ParseOffsetPipe } from '../common/parse-offset.pipe.js';
 import { SuggestionStatus, type Attraction, type User } from '../generated/prisma/client.js';
 import { ParseRidePipe } from '../rides/parse-ride.pipe.js';
+import { boardDay, isDay } from '../trail/board-day.js';
+import { TrailService, type TrailOfficeJson } from '../trail/trail.service.js';
 import { ANALYTICS_DAYS, AnalyticsService, type AnalyticsDays, type Overview } from './analytics.service.js';
 import { AddAllowedIpDto, UpdateAccessDto } from './dto/update-access.dto.js';
 import { UpdateAttractionDto } from './dto/update-attraction.dto.js';
 import { UpdateParkDto } from './dto/update-park.dto.js';
 import { UpdateShopItemDto } from './dto/update-shop-item.dto.js';
 import { UpdateSuggestionDto } from './dto/update-suggestion.dto.js';
+import { UpdateTrailRunDto } from './dto/update-trail-run.dto.js';
 import { UpdateUserDto } from './dto/update-user.dto.js';
 import {
   RingmasterService,
@@ -41,6 +44,7 @@ export class RingmasterController {
   constructor(
     private readonly office: RingmasterService,
     private readonly analytics: AnalyticsService,
+    private readonly trail: TrailService,
   ) {}
 
   /** The numbers: members, tickets, rounds, per attraction and per day. `?days=` 7, 30 (default) or 90. */
@@ -183,6 +187,18 @@ export class RingmasterController {
     return this.office.updateSuggestion(actor, id, body);
   }
 
+  /** One of the Rally Trail's daily boards (`?day=YYYY-MM-DD`, today's without one), with the trail's numbers and the last 30 boards. */
+  @Get('trail')
+  trailBoard(@Query('day') day?: string): Promise<TrailOfficeJson> {
+    return this.trail.office(parseBoardDay(day));
+  }
+
+  /** Takes a run off its board (it's kept), or puts it back. */
+  @Patch('trail/runs/:id')
+  updateTrailRun(@CurrentUser() actor: User, @Param('id') id: string, @Body() body: UpdateTrailRunDto): Promise<{ id: string; disqualified: boolean }> {
+    return this.office.updateTrailRun(actor, id, body.disqualified);
+  }
+
   @Get('actions')
   actions(
     @Query('limit', new ParseLimitPipe(25, 100)) limit: number,
@@ -205,4 +221,12 @@ function parseStatus(value: string | undefined): SuggestionStatus | undefined {
   const statuses = Object.values(SuggestionStatus) as string[];
   if (!statuses.includes(value)) throw new BadRequestException(`status must be one of ${statuses.join(', ')}`);
   return value as SuggestionStatus;
+}
+
+/** `?day=`: a board's day, YYYY-MM-DD, no later than today's board; nothing for today's. */
+function parseBoardDay(value: string | undefined): string | undefined {
+  if (value === undefined || value === '') return undefined;
+  if (!isDay(value)) throw new BadRequestException('day must be a date, YYYY-MM-DD');
+  if (value > boardDay()) throw new BadRequestException("That board hasn't started yet");
+  return value;
 }

@@ -1,6 +1,7 @@
 import { ApiError, type AttractionId, type FinishedRound, type RoundStats } from './api';
 import { session } from './session';
-import { ATTRACTION_STATS, formatStat, isPersonalBest, statLabel } from './stats';
+import { ATTRACTION_STATS, formatStat, HIDDEN_STATS, isPersonalBest, statLabel, trailTime } from './stats';
+import { msUntil, resetIn } from './leaderboard';
 import { escapeHtml } from '../world/ui';
 
 /** What the visitor picked on the way out: another round, the way to more tickets, or neither. */
@@ -124,7 +125,9 @@ class ResultsDialog {
     const r = this.result;
     if (!r) return;
     const best = this.status.state === 'saved' ? this.status.res.history?.best : null;
-    const keys = [...ATTRACTION_STATS[r.ride], ...Object.keys(r.stats).filter((k) => !ATTRACTION_STATS[r.ride].includes(k))].filter((k) => r.stats[k] !== undefined);
+    const keys = [...ATTRACTION_STATS[r.ride], ...Object.keys(r.stats).filter((k) => !ATTRACTION_STATS[r.ride].includes(k))].filter(
+      (k) => r.stats[k] !== undefined && !HIDDEN_STATS.has(k),
+    );
     // bests only count for rounds that ran to the end (the server keeps them the same way)
     const rows = keys
       .map((k) => {
@@ -147,11 +150,25 @@ class ResultsDialog {
     const focused = buttons().indexOf(document.activeElement as HTMLElement);
     this.body.innerHTML = `<button type="button" class="auth-close" data-results aria-label="Close" title="Close (Esc)">✕</button><p class="auth-kicker">${escapeHtml(r.title)} · ${
       r.completed ? 'Round complete' : 'Round over'
-    }</p><h2 id="results-title">${headline}</h2><p class="auth-lead" id="results-lead">${lead}</p>${rows ? `<dl class="results-stats">${rows}</dl>` : ''}<p class="results-meta" aria-live="polite">${this.metaHtml(r)}</p><div class="results-actions">${this.actionsHtml(r)}</div>`;
+    }</p><h2 id="results-title">${headline}</h2><p class="auth-lead" id="results-lead">${lead}</p>${rows ? `<dl class="results-stats">${rows}</dl>` : ''}${this.boardHtml(r)}<p class="results-meta" aria-live="polite">${this.metaHtml(r)}</p><div class="results-actions">${this.actionsHtml(r)}</div>`;
     if (focused >= 0) {
       const now = buttons();
       now[Math.min(focused, now.length - 1)]?.focus({ preventScroll: true });
     }
+  }
+
+  /** A Rally Trail run on today's leaderboard: where it put the member, once the server has it. */
+  private boardHtml(r: RoundResult) {
+    if (r.ride !== 'trail' || r.stats.runTimeS === undefined) return '';
+    if (this.status.state !== 'saved') return '';
+    const t = this.status.res.trail;
+    if (!t) return `<p class="results-board">This time couldn't go on the leaderboard.</p>`;
+    const best = t.improved ? '' : ` (with your best ${t.closed ? 'on it' : 'today'}, ${escapeHtml(trailTime(t.bestMs))})`;
+    // over the line just before noon: it counts on the board that has just closed
+    if (t.closed) return `<p class="results-board">${t.rank === 1 ? '👑' : '🏁'} Just in time: you crossed the line before noon, so you're <strong>#${t.rank}</strong> of ${t.players} on the board that has just closed${best}. Today's new board has started.</p>`;
+    const where = `<strong>#${t.rank}</strong> of ${t.players} on today's leaderboard`;
+    const left = resetIn(msUntil(t.resetsAt));
+    return `<p class="results-board">${t.rank === 1 ? '👑' : '🏁'} You're ${where}${best}. A new board starts in ${escapeHtml(left)}.</p>`;
   }
 
   /** Saving… / "Your 3rd completed round of the Sky Falcon · 🎟️ 12 left" / why it couldn't be saved. */

@@ -10,6 +10,7 @@ export const ICONS: Record<AttractionId, string> = {
   flip: '🌀',
   ship: '🛸',
   speedway: '🏎️',
+  trail: '🚙',
   drone: '🚁',
   crates: '🥫',
   striker: '🔔',

@@ -1945,6 +1945,117 @@ kbd {
   }
 }
 
+/* The Rally Trail: the race HUD's place, a clock to the hundredth, the splits and today's leaderboard */
+.trail-hud {
+  width: 272px;
+}
+/* the checkpoint count stacks under its label, so the clock keeps its room */
+.trail-hud .rc-lap {
+  flex-direction: column;
+  align-items: flex-end;
+  gap: 2px;
+}
+.tr-time b {
+  font: 400 2.5rem/1 var(--display);
+  font-variant-numeric: tabular-nums;
+  color: var(--mustard);
+}
+.tr-split {
+  margin: 8px 0 0;
+  padding: 4px 10px;
+  border-radius: 10px;
+  background: rgba(255, 245, 227, 0.14);
+  font-size: 0.85rem;
+  font-weight: 700;
+  font-variant-numeric: tabular-nums;
+  animation: slide-in 0.3s ease-out;
+}
+.tr-split.is-ahead {
+  background: color-mix(in srgb, var(--teal) 45%, transparent);
+}
+.tr-split.is-behind {
+  background: color-mix(in srgb, var(--candy) 45%, transparent);
+}
+.tr-board {
+  margin: 10px 0 0;
+}
+.tr-board-head {
+  display: flex;
+  justify-content: space-between;
+  gap: 8px;
+  margin: 0 0 4px;
+  font-size: 0.68rem;
+  font-weight: 700;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  opacity: 0.75;
+}
+.tr-actions {
+  margin: 10px 0 0;
+}
+.tr-actions .btn {
+  width: 100%;
+}
+
+/* A leaderboard list: in the trail's HUD (on dark glass) and on its card (on paper) */
+.lb-list {
+  display: grid;
+  gap: 2px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+  font-size: 0.82rem;
+}
+.lb-list li {
+  display: grid;
+  grid-template-columns: 2.1em 1fr auto;
+  align-items: center;
+  gap: 6px;
+  padding: 2px 8px;
+  border-radius: 8px;
+}
+.lb-list li:nth-child(odd) {
+  background: color-mix(in srgb, currentColor 7%, transparent);
+}
+.lb-list li.is-me {
+  background: color-mix(in srgb, var(--mustard) 38%, transparent);
+  font-weight: 700;
+}
+.lb-list li.lb-gap {
+  display: block;
+  padding: 0;
+  text-align: center;
+  background: none;
+  opacity: 0.6;
+}
+.lb-list span {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.lb-list em {
+  font-style: normal;
+  font-weight: 700;
+  font-variant-numeric: tabular-nums;
+}
+.lb-empty {
+  margin: 4px 0;
+  font-size: 0.85rem;
+  opacity: 0.8;
+}
+.panel .lb-list {
+  margin: 10px 0;
+  font-size: 0.92rem;
+}
+.lb-me {
+  margin: 8px 0 0;
+}
+@media (max-width: 720px) {
+  .tr-board {
+    display: none;
+  }
+}
+
 /* ---------- Full-screen park map ---------- */
 .world-map {
   position: fixed;
@@ -2595,7 +2706,8 @@ kbd {
     bottom: auto;
   }
   .rh-keys,
-  .rc-board {
+  .rc-board,
+  .tr-board {
     display: none;
   }
   .rh-top b {
@@ -3062,6 +3174,14 @@ kbd {
   margin: 0 0 16px;
   font-size: 0.9rem;
   color: var(--muted);
+}
+/* a Rally Trail run: its place on today's leaderboard */
+.results-board {
+  margin: 0 0 12px;
+  padding: 10px 14px;
+  border-radius: 12px;
+  background: color-mix(in srgb, var(--mustard) 22%, transparent);
+  font-size: 0.95rem;
 }
 .results-meta strong {
   color: var(--text);

@@ -46,6 +46,11 @@
       "open": true,
       "closedMessage": null
     },
+    "trail": {
+      "tickets": 1,
+      "open": true,
+      "closedMessage": null
+    },
     "drone": {
       "tickets": 1,
       "open": true,

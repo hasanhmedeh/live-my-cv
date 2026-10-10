@@ -1,6 +1,7 @@
 import { FLIP_YAW, LAYOUT, PATHS, PLAZAS, ZONES, type ZoneId } from './layout';
 import { FALCON_TRACK, STACK_TRACK } from './rides';
 import { CIRCUIT, CIRCUIT_BOUNDS, circuitPoint, ROAD_HALF, START_S, WALL } from './attractions/speedway-track';
+import { START_S as TRAIL_START, TRAIL, TRAIL_BOUNDS, TRAIL_HALF, trailPoint, WALL as TRAIL_WALL } from './attractions/trail-track';
 import { PALETTE } from './textures';
 
 type Place = { icon: string; label: string; blurb: string };
@@ -15,6 +16,7 @@ const PLACES: Record<ZoneId, Place> = {
   flip: { icon: '🌀', label: 'Sky Flip', blurb: 'Swing 125 m up and flip over the top' },
   ship: { icon: '🛸', label: 'Nebula 360', blurb: 'A pendulum ship that loops all the way round' },
   speedway: { icon: '🏎️', label: 'Turbo Speedway', blurb: 'Race the karts round the circuit' },
+  trail: { icon: '🚙', label: 'Rally Trail', blurb: 'A buggy time trial with jumps: today’s fastest top the leaderboard' },
   crates: { icon: '🥫', label: 'Crate Smash', blurb: 'Kick, roll and smash the crate stacks' },
   striker: { icon: '🔔', label: 'High Striker', blurb: 'Swing the hammer and ring the bell' },
   drone: { icon: '🚁', label: 'Drone Flights', blurb: 'Rent a drone and see it all from the sky' },
@@ -28,10 +30,11 @@ const SHEET_SCALE = 3;
 /** Metres visible from the centre to the edge of the minimap. */
 const VIEW = 55;
 
-/** The area worth mapping: the park itself plus both coaster tracks and the kart circuit. */
+/** The area worth mapping: the park itself plus both coaster tracks, the kart circuit and the Rally Trail. */
 export function fairBounds() {
   const c = CIRCUIT_BOUNDS;
-  let x0 = Math.min(-LAYOUT.boundary, c.x0), x1 = Math.max(LAYOUT.boundary, c.x1), z0 = Math.min(-LAYOUT.boundary, c.z0), z1 = Math.max(LAYOUT.boundary, c.z1);
+  const t = TRAIL_BOUNDS;
+  let x0 = Math.min(-LAYOUT.boundary, c.x0, t.x0), x1 = Math.max(LAYOUT.boundary, c.x1, t.x1), z0 = Math.min(-LAYOUT.boundary, c.z0, t.z0), z1 = Math.max(LAYOUT.boundary, c.z1, t.z1);
   for (const d of [STACK_TRACK, FALCON_TRACK])
     for (const p of d.pos) {
       x0 = Math.min(x0, p.x);
@@ -103,6 +106,39 @@ export function paintFair(g: CanvasRenderingContext2D, X: (x: number) => number,
   g.beginPath();
   g.moveTo(X(a.x), Z(a.z));
   g.lineTo(X(b.x), Z(b.z));
+  g.stroke();
+
+  // the Rally Trail outside the south fence: its meadow, the dirt and the start line
+  const loop = (d: number) => {
+    g.beginPath();
+    for (let i = 0; i <= TRAIL.n; i++) {
+      const p = trailPoint(i * TRAIL.ds, d);
+      if (i) g.lineTo(X(p.x), Z(p.z));
+      else g.moveTo(X(p.x), Z(p.z));
+    }
+    g.closePath();
+  };
+  g.fillStyle = g.strokeStyle = '#5c9a4e';
+  g.lineWidth = (TRAIL_WALL + 2) * 2 * s;
+  loop(0);
+  g.fill();
+  g.stroke();
+  for (const [stroke, width] of [
+    ['rgba(29, 18, 56, 0.55)', TRAIL_HALF * 2 + 2],
+    ['#a07c52', TRAIL_HALF * 2],
+  ] as const) {
+    g.strokeStyle = stroke;
+    g.lineWidth = Math.max(width * s, 2);
+    loop(0);
+    g.stroke();
+  }
+  const ta = trailPoint(TRAIL_START, TRAIL_HALF);
+  const tb = trailPoint(TRAIL_START, -TRAIL_HALF);
+  g.strokeStyle = '#fff';
+  g.lineWidth = Math.max(1.6 * s, 1.5);
+  g.beginPath();
+  g.moveTo(X(ta.x), Z(ta.z));
+  g.lineTo(X(tb.x), Z(tb.z));
   g.stroke();
 
   // coaster tracks (dark casing under a coloured line so they read on any ground)

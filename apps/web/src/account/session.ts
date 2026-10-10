@@ -72,6 +72,7 @@ class Session {
   private _souvenirs: Souvenir[] | null = null;
   private _orders: { orders: ShopOrder[]; total: number } | null = null;
   private shopListeners = new Set<Listener>();
+  private leaderboardListeners = new Set<Listener>();
   private _suggestions: { suggestions: Suggestion[]; total: number; unread: number } | null = null;
   private suggestionListeners = new Set<Listener>();
   private _inFair = false;
@@ -291,6 +292,13 @@ class Session {
     });
     // staff answered one of the member's suggestions (or another of their tabs read the answer)
     live.addEventListener('suggestions', () => void this.loadSuggestions());
+    // someone posted a time on the Rally Trail (or staff took one off): the boards look again; and
+    // on every (re)connect, for anything posted while the stream was down or the tab was hidden
+    const boardNews = () => {
+      for (const fn of this.leaderboardListeners) fn();
+    };
+    live.addEventListener('leaderboard', boardNews);
+    live.addEventListener('open', boardNews);
     live.addEventListener('account', (e) => {
       const news = parseEvent<AccountNews>(e);
       if (news) this.applyAccount(news);
@@ -396,6 +404,12 @@ class Session {
   onShop(fn: Listener) {
     this.shopListeners.add(fn);
     return () => void this.shopListeners.delete(fn);
+  }
+
+  /** Calls `fn` when the Rally Trail's leaderboard changes (GET /trail/leaderboard has the new one). Returns an unsubscribe. */
+  onLeaderboard(fn: Listener) {
+    this.leaderboardListeners.add(fn);
+    return () => void this.leaderboardListeners.delete(fn);
   }
 
   /**

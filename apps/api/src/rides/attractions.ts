@@ -18,6 +18,7 @@ export const DEFAULT_TICKET_COSTS: Readonly<Record<Attraction, number>> = {
   flip: 1,
   ship: 1,
   speedway: 1,
+  trail: 1,
   drone: 1,
   crates: 1,
   striker: 1,

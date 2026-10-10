@@ -2,7 +2,7 @@
 // so every request goes out with credentials and the page never sees the token.
 
 /** Every attraction that costs tickets (they match the zone ids in world/layout.ts). */
-export const ATTRACTION_IDS = ['coaster', 'falcon', 'rocket', 'ferris', 'flip', 'ship', 'speedway', 'drone', 'crates', 'striker'] as const;
+export const ATTRACTION_IDS = ['coaster', 'falcon', 'rocket', 'ferris', 'flip', 'ship', 'speedway', 'trail', 'drone', 'crates', 'striker'] as const;
 export type AttractionId = (typeof ATTRACTION_IDS)[number];
 
 export const isAttraction = (id: string | null | undefined): id is AttractionId => !!id && (ATTRACTION_IDS as readonly string[]).includes(id);
@@ -16,6 +16,7 @@ export const DEFAULT_COSTS: Record<AttractionId, number> = {
   flip: 1,
   ship: 1,
   speedway: 1,
+  trail: 1,
   drone: 1,
   crates: 1,
   striker: 1,
@@ -188,6 +189,58 @@ export interface FinishedRound {
   round: Round;
   /** `rounds` counts the completed rounds of this attraction, this one included; `best` leaves it out. */
   history: { rounds: number; best: Bests };
+  /** A Rally Trail run that made it onto today's leaderboard: where the member stands now. Missing otherwise. */
+  trail?: TrailPlacement;
+}
+
+// ---------- The Rally Trail's daily leaderboard ----------
+
+/** One player on a leaderboard: their best time on that board. */
+export interface TrailEntry {
+  rank: number;
+  username: string;
+  timeMs: number;
+  /** When they set it. */
+  at: string;
+  /** The member asking. */
+  me?: boolean;
+}
+
+/**
+ * GET /trail/leaderboard: today's board. Boards run from noon to noon in `timeZone` (Beirut), and a
+ * new one starts empty at `resetsAt`; the old ones stay on the server.
+ */
+export interface TrailBoard {
+  /** The board's day: the date its noon-to-noon window started on, YYYY-MM-DD. */
+  day: string;
+  startsAt: string;
+  resetsAt: string;
+  timeZone: string;
+  resetHour: number;
+  /** Players with a time on it, and runs finished on it. */
+  players: number;
+  runs: number;
+  /** The top ten. */
+  entries: TrailEntry[];
+  /** The member asking, wherever they are on it (null without a time today, or for a guest). */
+  me: TrailEntry | null;
+  /** The server's clock as it answered (countdowns follow it). Missing from an older server. */
+  now?: string;
+}
+
+/** Where a finished run left the member on today's board. */
+export interface TrailPlacement {
+  day: string;
+  timeMs: number;
+  /** The member's best today (this run, or an earlier faster one) and its rank. */
+  bestMs: number;
+  rank: number;
+  players: number;
+  /** This run is the member's best on its board. */
+  improved: boolean;
+  resetsAt: string;
+  /** It crossed the line just before noon: it counts on the board that has closed since, not today's. */
+  closed?: boolean;
 }
 
 export interface AttractionStats {
@@ -373,6 +426,57 @@ export interface AdminAction {
   target: string | null;
   details: unknown;
   createdAt: string;
+}
+
+/** A player's best run on one of the Rally Trail's boards, as the office lists it. */
+export interface TrailOfficeEntry {
+  /** The run that set it (the one to disqualify). */
+  runId: string;
+  rank: number;
+  userId: string;
+  username: string;
+  timeMs: number;
+  at: string;
+  /** Their runs on this board, the slower ones too. */
+  runs: number;
+}
+
+/** A run taken off a board by staff (kept, and can be put back). */
+export interface TrailDisqualifiedRun {
+  id: string;
+  userId: string;
+  username: string;
+  timeMs: number;
+  at: string;
+}
+
+/** GET /ringmaster/trail?day=: one of the Rally Trail's daily boards, and how the trail does. */
+export interface TrailOffice {
+  day: string;
+  startsAt: string;
+  endsAt: string;
+  /** The board players see right now (`day` is `today`). */
+  current: boolean;
+  /** Today's board's day. */
+  today: string;
+  timeZone: string;
+  resetHour: number;
+  /** Every player's best on the board, fastest first (top 100). */
+  board: TrailOfficeEntry[];
+  disqualified: TrailDisqualifiedRun[];
+  stats: {
+    runs: number;
+    players: number;
+    /** Rally Trail rounds started in the board's window, and those that ran to the end. */
+    rounds: number;
+    completed: number;
+    avgMs: number | null;
+    medianMs: number | null;
+  };
+  /** The fastest run ever (not disqualified). */
+  record: { timeMs: number; username: string; at: string; day: string } | null;
+  /** The last 30 boards, oldest first, zero-filled. */
+  daily: { day: string; runs: number; players: number; bestMs: number | null; winner: string | null }[];
 }
 
 /** One page of a list: `limit` rows from `offset`. */
@@ -647,6 +751,9 @@ export const api = {
   /** Open or closed, what is under maintenance, the prices and the pack rules. No account needed. */
   park: () => request<Park>('GET', '/park'),
 
+  /** The Rally Trail's leaderboard for today (anyone; a member also hears where they stand). */
+  trailBoard: () => request<TrailBoard>('GET', '/trail/leaderboard'),
+
   /** The booth's shop: what's for sale (anyone), the member's souvenirs, buying and wearing. */
   shop: () => request<{ items: ShopItem[] }>('GET', '/shop'),
   souvenirs: () => request<{ souvenirs: Souvenir[] }>('GET', '/shop/souvenirs'),
@@ -708,4 +815,9 @@ export const ringmaster = {
   /** The reply is given once: a second one gets a 409. */
   updateSuggestion: (id: string, body: { status?: SuggestionStatus; reply?: string }) =>
     request<AdminSuggestion>('PATCH', `/ringmaster/suggestions/${encodeURIComponent(id)}`, body),
+  /** One of the Rally Trail's daily boards (today's without a day). */
+  trail: (day?: string | null) => request<TrailOffice>('GET', `/ringmaster/trail${query({ day })}`),
+  /** Takes a run off its board, or puts it back. */
+  updateTrailRun: (id: string, disqualified: boolean) =>
+    request<{ id: string; disqualified: boolean }>('PATCH', `/ringmaster/trail/runs/${encodeURIComponent(id)}`, { disqualified }),
 };

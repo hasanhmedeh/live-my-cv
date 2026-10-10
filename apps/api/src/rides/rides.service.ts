@@ -3,6 +3,7 @@ import { Prisma, type Attraction, type User } from '../generated/prisma/client.j
 import { isStaff, ParkService } from '../park/park.service.js';
 import { announce, announceQuietly } from '../live/announce.js';
 import { PrismaService } from '../prisma/prisma.service.js';
+import { TrailService, type TrailPlacement } from '../trail/trail.service.js';
 import { ATTRACTIONS } from './attractions.js';
 import type { FinishRoundDto } from './dto/finish-round.dto.js';
 import { toRoundJson, type RoundJson } from './round-json.js';
@@ -22,6 +23,8 @@ export interface FinishResult {
     /** Over the user's previous completed rounds of this ride, this one excluded, so the client can spot new records. */
     best: StatBests;
   };
+  /** A Rally Trail run that went on today's leaderboard: where it left the player. */
+  trail?: TrailPlacement;
 }
 
 export interface RefundResult {
@@ -69,6 +72,7 @@ export class RidesService {
   constructor(
     private readonly prisma: PrismaService,
     private readonly park: ParkService,
+    private readonly trail: TrailService,
   ) {}
 
   /**
@@ -119,7 +123,8 @@ export class RidesService {
 
   /**
    * Records how a round went. Only its owner can, and only once: the update matches open rounds of
-   * this user, so a second (or concurrent) finish finds nothing to update.
+   * this user, so a second (or concurrent) finish finds nothing to update. A Rally Trail run that
+   * crossed the line also goes on the daily leaderboard (see TrailService.record).
    */
   async finish(userId: string, roundId: string, { completed, stats }: FinishRoundDto): Promise<FinishResult> {
     const { count } = await this.prisma.rideRound.updateMany({
@@ -135,11 +140,13 @@ export class RidesService {
     await announceQuietly(this.prisma, { t: 'office', kind: 'rounds' });
 
     const round = await this.prisma.rideRound.findUniqueOrThrow({ where: { id: roundId } });
-    const [rounds, bestRows] = await Promise.all([
+    const [rounds, bestRows, trail] = await Promise.all([
       this.prisma.rideRound.count({ where: { userId, ride: round.ride, completed: true } }),
       this.bestRows(userId, { ride: round.ride, excludeRoundId: round.id }),
+      // a Rally Trail run that crossed the line goes on the daily leaderboard
+      round.ride === 'trail' ? this.trail.recordQuietly(round) : null,
     ]);
-    return { round: toRoundJson(round), history: { rounds, best: toBests(bestRows) } };
+    return { round: toRoundJson(round), history: { rounds, best: toBests(bestRows) }, ...(trail ? { trail } : {}) };
   }
 
   /**

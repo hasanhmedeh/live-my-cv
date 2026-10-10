@@ -25,6 +25,7 @@ enum Attraction {
   flip
   ship
   speedway
+  trail
   drone
   crates
   striker
@@ -81,6 +82,7 @@ model User {
   shopOrders      ShopOrder[]
   souvenirs       Souvenir[]
   suggestions     Suggestion[]     @relation("SuggestionAuthor")
+  trailRuns       TrailRun[]
   /// Staff only: the suggestions they answered.
   repliedTo       Suggestion[]     @relation("SuggestionReplier")
 
@@ -169,6 +171,8 @@ model RideRound {
   /// What the game measured, e.g. { "topSpeedKmh": 92.4, "maxG": 3.1 }: a flat object of numbers,
   /// client-reported, so informational only.
   stats        Json?
+  /// A Rally Trail round that crossed the line: its run on the daily leaderboard.
+  trailRun     TrailRun?
 
   @@index([userId, ride])
   @@index([userId, endedAt])
@@ -187,10 +191,10 @@ model AdminAction {
   /// What happened: park.open, park.close, park.maintenance.on, park.maintenance.off, settings.update,
   /// access.on, access.off, access.ip.add, access.ip.remove, attraction.open, attraction.close,
   /// price.update, attraction.update, shop.price, shop.stock, shop.update, user.tickets, user.role,
-  /// user.cooldown, user.delete, suggestion.reply or suggestion.status.
+  /// user.cooldown, user.delete, suggestion.reply, suggestion.status, trail.disqualify or trail.reinstate.
   action    String
   /// What it happened to: an attraction id, a shop item id, an allowed address or a user's email (for
-  /// a suggestion, its author's). Null for the park's settings.
+  /// a suggestion, its author's; for a Rally Trail run, its driver's). Null for the park's settings.
   target    String?
   /// Before and after, e.g. { "before": { "tickets": 5 }, "after": { "tickets": 3 } }.
   details   Json?
@@ -337,4 +341,31 @@ model Suggestion {
   @@index([status, createdAt])
   @@index([createdAt])
   @@map("suggestions")
+}
+
+/// One Rally Trail run that crossed the line, timed for the daily leaderboard. A board runs from noon
+/// to noon, Beirut time (src/trail/board-day.ts): each run is kept with the board day it counts for,
+/// so a new board simply starts empty at 12:00 and the earlier ones stay, for the office. A player's
+/// place on a board is their fastest run on it. The time is measured in the browser and checked
+/// against how long its round lasted (src/trail/trail.service.ts).
+model TrailRun {
+  id           String    @id @default(cuid())
+  /// The round it was driven in (one run per round).
+  roundId      String    @unique @map("round_id")
+  round        RideRound @relation(fields: [roundId], references: [id], onDelete: Cascade)
+  userId       String    @map("user_id")
+  user         User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+  /// Start lights to the line, in milliseconds (positive: a CHECK constraint in the migration).
+  timeMs       Int       @map("time_ms")
+  /// The board it counts for: the date (Beirut) its noon-to-noon window started on.
+  day          DateTime  @db.Date
+  /// Taken off the board by staff, e.g. an impossible time. Kept, so it can be put back.
+  disqualified Boolean   @default(false)
+  /// When the run was handed in (it counts on the board open then).
+  createdAt    DateTime  @default(now()) @map("created_at")
+
+  @@index([day, timeMs])
+  @@index([userId, day])
+  @@index([createdAt])
+  @@map("trail_runs")
 }

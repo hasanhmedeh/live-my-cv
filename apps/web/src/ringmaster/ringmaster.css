@@ -278,6 +278,11 @@ textarea {
   resize: vertical;
   min-height: 60px;
 }
+/* the Rally Trail's board picker sits in a row with its arrows */
+select.board-pick {
+  width: auto;
+  max-width: 100%;
+}
 input:focus-visible,
 select:focus-visible,
 textarea:focus-visible {
@@ -467,6 +472,24 @@ textarea:focus-visible {
 .notice p {
   margin: 0;
 }
+/* news rather than a warning (the Rally Trail's board) */
+.notice-info {
+  background: color-mix(in srgb, var(--series) 14%, transparent);
+  box-shadow: inset 0 0 0 1.5px var(--series);
+}
+.notice .btn {
+  margin-left: 6px;
+  vertical-align: baseline;
+}
+.visually-hidden {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  margin: -1px;
+  overflow: hidden;
+  clip: rect(0 0 0 0);
+  white-space: nowrap;
+}
 
 /* KPI tiles */
 .tiles {
@@ -611,6 +634,9 @@ tr.clickable {
 }
 tr.clickable:hover td {
   background: var(--card-2);
+}
+tr.is-current td {
+  background: color-mix(in srgb, var(--series) 12%, transparent);
 }
 .cell-main {
   font-weight: 700;

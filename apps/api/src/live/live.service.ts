@@ -47,7 +47,7 @@ interface Stream {
 
 /**
  * Live updates, as Server-Sent Events: the park (open or closed, maintenance, prices, the pack
- * rules) and word that the shop's prices or stock changed for everyone, their own account (and word of
+ * rules) and word that the shop's prices or stock (or the Rally Trail's leaderboard) changed for everyone, their own account (and word of
  * staff answering their suggestions) for members, and for staff, what's going on (signups,
  * packs, rounds, the logbook, who's in the fair) so The Ringmaster's Office keeps up. Changes are
  * announced with Postgres NOTIFY (see announce.ts), so one made through any API instance reaches
@@ -62,6 +62,7 @@ export class LiveService implements OnModuleDestroy {
   private idleTimer: ReturnType<typeof setTimeout> | null = null;
   private parkTimer: ReturnType<typeof setTimeout> | null = null;
   private shopTimer: ReturnType<typeof setTimeout> | null = null;
+  private boardTimer: ReturnType<typeof setTimeout> | null = null;
   private officeKinds = new Set<OfficeKind>();
   private officeTimer: ReturnType<typeof setTimeout> | null = null;
   private presenceTimer: ReturnType<typeof setInterval> | null = null;
@@ -224,6 +225,12 @@ export class LiveService implements OnModuleDestroy {
       this.shopTimer ??= setTimeout(() => {
         this.shopTimer = null;
         for (const { res } of this.streams) send(res, 'shop', {});
+      }, DEBOUNCE_MS);
+    } else if (notice.t === 'leaderboard') {
+      // just the word: the trail's boards and HUD fetch GET /trail/leaderboard (a burst of times is one look)
+      this.boardTimer ??= setTimeout(() => {
+        this.boardTimer = null;
+        for (const { res } of this.streams) send(res, 'leaderboard', {});
       }, DEBOUNCE_MS);
     } else if (notice.t === 'office') {
       this.officeKinds.add(notice.kind);

@@ -21,6 +21,15 @@ export const clock = (s: number) => {
   const r = t - m * 60;
   return `${m}:${r < 10 ? '0' : ''}${r.toFixed(1)}`;
 };
+/** 42.173 s → "0:42.17" (the Rally Trail's times, to the hundredth, as on its leaderboard). */
+export const clockHundredths = (s: number) => {
+  const t = Math.round(s * 100) / 100;
+  const m = Math.floor(t / 60);
+  const r = t - m * 60;
+  return `${m}:${r < 10 ? '0' : ''}${r.toFixed(2)}`;
+};
+/** 42 170 ms → "0:42.17" (a time on the Rally Trail's leaderboard). */
+export const trailTime = (ms: number) => clockHundredths(ms / 1000);
 /** 151 s → "2:31" (how long a round lasted). */
 const minutes = (s: number) => {
   const t = Math.round(s);
@@ -59,6 +68,11 @@ export const STATS: Record<string, StatDef> = {
   bestLapTimeS: def('Best lap', 'min', clock),
   cones: def('Cones scattered', 'none', whole),
   crashes: def('Crashes', 'none', whole),
+  // trail
+  runTimeS: def('Trail time', 'min', clockHundredths),
+  airS: def('Airtime', 'max', tenths, 's'),
+  bigAirS: def('Biggest jump', 'max', tenths, 's'),
+  rescues: def('Back on the trail', 'none', whole),
   // drone
   distanceM: def('Distance flown', 'max', (v) => (v >= 1000 ? (v / 1000).toFixed(2) : whole(v)), 'm'),
   // crates
@@ -79,10 +93,14 @@ export const ATTRACTION_STATS: Record<AttractionId, string[]> = {
   flip: ['maxHeightM', 'topSpeedKmh', 'maxG', 'loops', 'flips', 'durationS'],
   ship: ['maxG', 'minG', 'maxHeightM', 'topSpeedKmh', 'durationS'],
   speedway: ['position', 'raceTimeS', 'bestLapTimeS', 'topSpeedKmh', 'cones', 'crashes'],
+  trail: ['runTimeS', 'topSpeedKmh', 'airS', 'bigAirS', 'cratesSmashed', 'crashes', 'rescues'],
   drone: ['durationS', 'maxAltitudeM', 'distanceM', 'topSpeedKmh'],
   crates: ['score', 'cratesSmashed', 'clearTimeS', 'durationS'],
   striker: ['score', 'bestHit', 'bellsRung'],
 };
+
+/** Stats the game sends for the server's sake, not for show (when the trail's run crossed the line). */
+export const HIDDEN_STATS: ReadonlySet<string> = new Set(['lineAgoS']);
 
 /** The direction for any key, including ones this table doesn't know yet. */
 export function betterOf(key: string): Better {

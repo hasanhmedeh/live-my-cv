@@ -12,10 +12,11 @@ import { LogbookView } from './logbook';
 import { MembersView } from './members';
 import { OverviewView } from './overview';
 import { ShopView } from './shop';
+import { TrailView } from './trail';
 import { errorText, isEditing, num, setApiErrorHandler, toast } from './util';
 
-type Tab = 'overview' | 'attractions' | 'shop' | 'ideas' | 'gates' | 'members' | 'ledger' | 'logbook';
-const TABS: Tab[] = ['overview', 'attractions', 'shop', 'ideas', 'gates', 'members', 'ledger', 'logbook'];
+type Tab = 'overview' | 'attractions' | 'trail' | 'shop' | 'ideas' | 'gates' | 'members' | 'ledger' | 'logbook';
+const TABS: Tab[] = ['overview', 'attractions', 'trail', 'shop', 'ideas', 'gates', 'members', 'ledger', 'logbook'];
 type Gate = 'loading' | 'login' | 'denied' | 'offline' | 'private';
 
 const $ = <T extends HTMLElement = HTMLElement>(id: string) => document.getElementById(id) as T;
@@ -31,6 +32,7 @@ let current: Tab = 'overview';
 const views = {
   overview: new OverviewView($('view-overview')),
   attractions: new AttractionsView($('view-attractions')),
+  trail: new TrailView($('view-trail')),
   shop: new ShopView($('view-shop')),
   ideas: new IdeasView($('view-ideas'), (counts) => renderIdeasBadge(counts.pending)),
   gates: new GatesView($('view-gates')),
@@ -45,12 +47,13 @@ const views = {
 const AFFECTS: Record<string, Tab[]> = {
   members: ['overview', 'members'],
   purchases: ['overview', 'members', 'ledger', 'shop'],
-  rounds: ['overview', 'members', 'ledger'],
+  rounds: ['overview', 'members', 'ledger', 'trail'],
   logbook: ['logbook', 'overview', 'members'],
   park: ['overview', 'attractions', 'gates'],
   shop: ['shop'],
   suggestions: ['ideas'],
   access: ['gates'],
+  trail: ['trail', 'logbook'],
 };
 /** News is gathered this long, then the view is refreshed once. */
 const SETTLE_MS = 800;

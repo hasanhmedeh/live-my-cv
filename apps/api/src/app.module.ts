@@ -13,6 +13,7 @@ import { RingmasterModule } from './ringmaster/ringmaster.module.js';
 import { ShopModule } from './shop/shop.module.js';
 import { SuggestionsModule } from './suggestions/suggestions.module.js';
 import { TicketsModule } from './tickets/tickets.module.js';
+import { TrailModule } from './trail/trail.module.js';
 
 @Module({
   imports: [
@@ -28,6 +29,7 @@ import { TicketsModule } from './tickets/tickets.module.js';
     AuthModule,
     TicketsModule,
     RidesModule,
+    TrailModule,
     ShopModule,
     SuggestionsModule,
     RingmasterModule,

@@ -223,6 +223,29 @@
         <p class="rh-keys"><span id="rc-keys"></span> · Cam: <span id="rc-cam">Chase</span></p>
         <p class="rh-toast" id="rc-toast" hidden></p>
       </div>
+      <div id="trail-hud" class="ride-hud race-hud trail-hud" hidden>
+        <div class="rc-top">
+          <p class="tr-time"><b id="tr-time">0:00.00</b></p>
+          <p class="rc-lap"><span>Checkpoint</span><b id="tr-cp">0/3</b></p>
+        </div>
+        <p class="tr-split" id="tr-split" aria-live="polite" hidden></p>
+        <div class="rc-nitro">
+          <span>Nitro</span>
+          <div class="dh-bar" id="tr-nitro" aria-hidden="true"><i></i></div>
+        </div>
+        <dl class="rh-stats">
+          <div><dt>Your best</dt><dd id="tr-best">—</dd></div>
+          <div><dt>Today</dt><dd id="tr-today">—</dd></div>
+          <div><dt>Speed</dt><dd id="tr-speed">0 km/h</dd></div>
+        </dl>
+        <section class="tr-board" aria-labelledby="tr-board-title">
+          <p class="tr-board-head"><span id="tr-board-title">🏆 Today's top 10</span><span id="tr-reset"></span></p>
+          <div id="tr-board"></div>
+        </section>
+        <p class="tr-actions"><button type="button" class="btn btn-small btn-cream" id="tr-restart">↺ Start again <kbd>T</kbd></button></p>
+        <p class="rh-keys"><span id="tr-keys"></span> · Cam: <span id="tr-cam">Chase</span></p>
+        <p class="rh-toast" id="tr-toast" hidden></p>
+      </div>
       <div id="gloc" class="gloc" aria-hidden="true"></div>
       <div id="ride-exit" class="ride-exit" hidden><button type="button" class="btn btn-small btn-cream">Exit ride <kbd>Esc</kbd></button></div>
       <!-- the guide to the fair, or to the ride you're on: opens by itself the first time, then only from here (or I) -->

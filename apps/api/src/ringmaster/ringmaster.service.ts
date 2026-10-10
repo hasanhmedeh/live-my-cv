@@ -540,6 +540,31 @@ export class RingmasterService {
     });
   }
 
+  /**
+   * Takes a Rally Trail run off its leaderboard (the player's next-best run takes its place), or
+   * puts it back. The run is kept either way. Logged as trail.disqualify or trail.reinstate, and the
+   * boards in the fair catch up at once.
+   */
+  async updateTrailRun(actor: User, id: string, disqualified: boolean): Promise<{ id: string; disqualified: boolean }> {
+    const run = await this.prisma.trailRun.findUnique({ where: { id }, include: { user: { select: { email: true, username: true } } } });
+    if (!run) throw new NotFoundException('There is no such run');
+    await this.prisma.$transaction(async (tx) => {
+      // only if it isn't so already: two staff clicking at once change (and log) it once
+      const { count } = await tx.trailRun.updateMany({ where: { id, disqualified: !disqualified }, data: { disqualified } });
+      if (!count) return;
+      await log(tx, actor, disqualified ? 'trail.disqualify' : 'trail.reinstate', run.user.email, {
+        before: { disqualified: !disqualified },
+        after: { disqualified },
+        username: run.user.username,
+        timeMs: run.timeMs,
+        day: run.day.toISOString().slice(0, 10),
+      });
+      await announce(tx, { t: 'leaderboard' });
+      await announce(tx, { t: 'office', kind: 'trail' });
+    });
+    return { id, disqualified };
+  }
+
   async actions({ limit, offset }: PageQuery): Promise<{ actions: AdminActionJson[]; total: number }> {
     const [rows, total] = await Promise.all([
       this.prisma.adminAction.findMany({ orderBy: [{ createdAt: 'desc' }, { id: 'desc' }], take: limit, skip: offset }),

@@ -1,6 +1,7 @@
 // What staff changed, and when: the admin_actions table, in words.
 import { isAttraction, ringmaster, type AdminAction, type SuggestionStatus } from '../account/api';
 import { STATUSES } from '../account/ideas';
+import { trailTime } from '../account/stats';
 import { esc, onApiError, pagerHtml, rideName, when } from './util';
 
 const LIMIT = 30;
@@ -109,6 +110,16 @@ function describe(a: AdminAction): [string, string] {
       return ['💡', `Marked <strong>${target}</strong>'s idea ${idea(d)} ${statusName(after.status)} (was ${statusName(before.status)}).`];
     case 'user.delete':
       return ['🗑️', `Deleted the account <strong>${target}</strong>${before.username ? ` (${esc(before.username)})` : ''}.`];
+    case 'trail.disqualify':
+    case 'trail.reinstate': {
+      const run = d as Change & { username?: unknown; timeMs?: unknown; day?: unknown };
+      const who = typeof run.username === 'string' ? esc(run.username) : target;
+      const time = typeof run.timeMs === 'number' ? ` ${trailTime(run.timeMs)}` : '';
+      const board = typeof run.day === 'string' ? ` on the Rally Trail's board of ${esc(run.day)}` : ' on the Rally Trail';
+      return a.action === 'trail.disqualify'
+        ? ['🚩', `Disqualified <strong>${who}</strong>'s${time}${board}.`]
+        : ['🏁', `Put <strong>${who}</strong>'s${time} back${board}.`];
+    }
     default:
       return ['📝', `${esc(a.action)} ${target}`];
   }

@@ -41,6 +41,8 @@ import { Drone } from './attractions/drone';
 import { SkyFlip } from './attractions/sky-flip';
 import { Ship } from './attractions/ship';
 import { Speedway } from './attractions/speedway';
+import { Trail } from './attractions/trail';
+import { boardListHtml, leaderboard, resetClock, resetIn, trailTime } from '../account/leaderboard';
 import { ApiError, ATTRACTION_IDS, isAttraction, NotEnoughTicketsError, ParkClosedError, RideClosedError, type AttractionId } from '../account/api';
 import { everyHours, formatWait, session } from '../account/session';
 import { authDialog, type AuthMode } from '../account/auth-dialog';
@@ -56,7 +58,7 @@ const TIME_CONTROLS = false;
 /** How many guests walk the park, by graphics tier. */
 const CROWD_SIZE = { high: 64, medium: 44, low: 26, lowest: 12 } as const;
 
-type Mode = 'drive' | 'coaster' | 'rocket' | 'striker' | 'wheel' | 'drone' | 'flip' | 'ship' | 'race' | 'shop' | 'ideas';
+type Mode = 'drive' | 'coaster' | 'rocket' | 'striker' | 'wheel' | 'drone' | 'flip' | 'ship' | 'race' | 'trail' | 'shop' | 'ideas';
 
 const nextFrame = () => new Promise<void>((r) => requestAnimationFrame(() => r()));
 
@@ -108,6 +110,7 @@ export class Game {
   private flip!: SkyFlip;
   private ship!: Ship;
   private speedway!: Speedway;
+  private trail!: Trail;
   private updatables: { update(dt: number, t: number): void }[] = [];
   private mode: Mode = 'drive';
   private camTarget = new THREE.Vector3();
@@ -119,6 +122,8 @@ export class Game {
   private panelZone: ZoneId | null = null;
   /** The crates card auto-opens in its ring; once closed it stays closed until you leave. */
   private cratesDismissed = false;
+  /** The same for the Rally Trail's card (today's leaderboard). */
+  private trailDismissed = false;
   /** The attraction whose round is being paid for (the board request is in flight). */
   private boarding: AttractionId | null = null;
   /** The round being played: the server's id for it, the attraction, and what it cost. */
@@ -307,6 +312,10 @@ export class Game {
       this.updatables.push(this.speedway);
     });
     step(2, () => {
+      this.trail = new Trail(this.ctx);
+      this.updatables.push(this.trail);
+    });
+    step(2, () => {
       this.rocket = new Rocket(this.ctx, this.env);
       this.updatables.push(this.rocket);
     });
@@ -455,15 +464,17 @@ export class Game {
     this.input.on('reset', () => {
       if (this.mode === 'drive') this.teleport('entrance');
       else if (this.mode === 'race') this.speedway.rescue();
+      else if (this.mode === 'trail') this.trail.rescue();
     });
+    this.input.on('restart', () => this.mode === 'trail' && this.trail.restart());
     this.input.on('honk', () => {
       if (this.mode === 'drive') this.player.wave();
       else if (this.mode === 'drone') this.drone.flyHome();
     });
-    // Space rolls on foot, climbs in the drone and drifts a kart; on rides and the striker it keeps working as the action key
+    // Space rolls on foot, climbs in the drone and drifts a kart or the buggy; on rides and the striker it keeps working as the action key
     this.input.on('roll', () => {
       if (this.mode === 'drive') this.player.roll();
-      else if (this.mode !== 'drone' && this.mode !== 'race') this.onAction();
+      else if (this.mode !== 'drone' && this.mode !== 'race' && this.mode !== 'trail') this.onAction();
     });
     this.input.on('kick', () => this.mode === 'drive' && this.player.kick());
     this.input.on('camera', () => {
@@ -473,11 +484,18 @@ export class Game {
       else if (this.mode === 'flip') this.flip.cycleCamera();
       else if (this.mode === 'ship') this.ship.cycleCamera();
       else if (this.mode === 'race') this.speedway.cycleCamera();
+      else if (this.mode === 'trail') this.trail.cycleCamera();
     });
     this.wheel.input = this.input;
     this.flip.input = this.input;
     this.ship.input = this.input;
     this.speedway.input = this.input;
+    this.trail.input = this.input;
+    // the trail HUD's ↺ button: another go from the grid (the focus goes back to the game)
+    document.getElementById('tr-restart')!.addEventListener('click', (e) => {
+      (e.currentTarget as HTMLElement).blur();
+      if (this.mode === 'trail') this.trail.restart();
+    });
     this.stack.input = this.input;
     this.falcon.input = this.input;
     this.drone.input = this.input;
@@ -485,6 +503,7 @@ export class Game {
     this.ui.onRideExit = () => this.onEscape();
     this.ui.onPanelClose = () => {
       if (this.zones.active === 'crates') this.cratesDismissed = true;
+      if (this.zones.active === 'trail') this.trailDismissed = true;
       this.panelZone = null;
     };
     // the cards' buttons: sign up / log in (from an attraction's gate, boarding it after), pay for a
@@ -510,7 +529,9 @@ export class Game {
       const round = this.round;
       if (!round || this.lockedOut) return;
       this.round = null;
-      session.finishOnExit(round.id, false, this.measuredStats(round.ride));
+      // a trail run already over the line ran to its end (its time still counts)
+      const done = round.ride === 'trail' && this.trail.crossedLine;
+      session.finishOnExit(round.id, done, this.measuredStats(round.ride));
     });
     // the sign-up form, the results screen and "leave early?" have the keyboard while they're open
     for (const dialog of [authDialog, results, leaveEarly]) {
@@ -583,8 +604,15 @@ export class Game {
     this.flip.onFinish = () => this.endRide();
     this.ship.onFinish = () => this.endRide();
     this.speedway.onFinish = () => this.endRide();
+    this.trail.onFinish = () => this.endRide();
     // each attraction ends on its own after one round: back to walking, with the results
-    for (const a of [this.stack, this.falcon, this.rocket, this.wheel, this.flip, this.ship, this.speedway, this.striker, this.crates]) a.onComplete = () => this.leave(true);
+    for (const a of [this.stack, this.falcon, this.rocket, this.wheel, this.flip, this.ship, this.speedway, this.trail, this.striker, this.crates]) a.onComplete = () => this.leave(true);
+    // the Rally Trail's leaderboard: on its boards and its HUD, and on its card while that's open
+    leaderboard.onChange((board) => {
+      this.trail.setBoard(board);
+      if (this.mode === 'drive' && this.panelZone === 'trail' && this.ui.panelOpenKey.startsWith('trail-board')) this.showZonePanel('trail');
+    });
+    void leaderboard.load();
     this.drone.onLanded = () => this.leave(true);
     // (the round's badge with the clock and the score is drawn in updateZones)
     this.crates.onScore = (n, total) => {
@@ -639,6 +667,7 @@ export class Game {
         <li>🌀 <strong>Sky Flip</strong> — swing 125 m up, right over the top, flipping head over heels ${cost('flip')}</li>
         <li>🛸 <strong>Nebula 360</strong> — a pendulum ship that loops right round and hangs you upside down ${cost('ship')}</li>
         <li>🏎️ <strong>Turbo Speedway</strong> — race three rivals round a kart circuit full of obstacles ${cost('speedway')}</li>
+        <li>🚙 <strong>Rally Trail</strong> — a buggy time trial with jumps, mud and crates: beat today's fastest on the leaderboard ${cost('trail')}</li>
       </ul><h3>🎯 Games</h3><ul>
         <li>🥫 <strong>Crate Smash</strong> — ${CRATES_ROUND} seconds to knock down as many crates as you can ${cost('crates')}</li>
         <li>🔔 <strong>High Striker</strong> — three swings to ring the bell ${cost('striker')}</li>
@@ -659,6 +688,7 @@ export class Game {
     if (this.mode === 'flip') return this.flip.cycleCamera();
     if (this.mode === 'ship') return this.ship.cycleCamera();
     if (this.mode === 'race') return this.speedway.cycleCamera();
+    if (this.mode === 'trail') return this.trail.cycleCamera();
     if (this.mode !== 'drive') return;
     const z = this.zones.active;
     if (!z) return;
@@ -750,6 +780,12 @@ export class Game {
         break;
       case 'speedway':
         this.startRide('race', () => this.speedway.start());
+        break;
+      case 'trail':
+        // the trail's card (today's board) gives way to the run's own HUD
+        this.ui.hidePanel();
+        this.panelZone = null;
+        this.startRide('trail', () => this.trail.start());
         break;
       case 'drone':
         this.launchDrone();
@@ -908,6 +944,9 @@ export class Game {
         this.ui.hidePanel();
         this.panelZone = null;
       }
+    } else if (this.mode === 'drive' && key.startsWith('trail-board') && this.panelZone === 'trail') {
+      // the trail's card keeps its leaderboard; only its button follows the gates
+      this.showZonePanel('trail');
     } else if (this.mode === 'drive' && /^(gate|short|drone-offer|crates)-/.test(key) && !session.isStaff && !this.boarding && !this.round) {
       // closed while its offer is up (the office pushes it live): the sign replaces the offer
       const ride = this.panelZone;
@@ -981,6 +1020,7 @@ export class Game {
       this.ui.hidePanel();
       this.panelZone = null;
     } else if (switched && (key.startsWith('drone-offer') || (key.startsWith('crates') && !this.round))) this.showZonePanel(key.startsWith('drone') ? 'drone' : 'crates');
+    else if (key.startsWith('trail-board') && this.panelZone === 'trail') this.showZonePanel('trail');
     else if (key.startsWith('short-') && !this.ui.panelElement.querySelector('.ticket-wait')) {
       // the wallet arrived: add the countdown to the next pack
       const wait = session.msUntilPurchase();
@@ -1017,6 +1057,30 @@ export class Game {
       this.ui.panel(`crates-${Date.now()}`, this.crates.panelHtml(this.cratesExtraHtml()), { accent: PALETTE.teal });
       return;
     }
+    if (z === 'trail') {
+      this.ui.panel(`trail-board-${Date.now()}`, this.trailPanelHtml(), { accent: PALETTE.orange });
+      return;
+    }
+  }
+
+  /** The Rally Trail's card: today's leaderboard, where the member stands, and the way to drive. */
+  private trailPanelHtml() {
+    const board = leaderboard.board;
+    const cost = session.cost('trail');
+    const me = board?.me;
+    const standing = !session.user
+      ? ''
+      : me
+        ? `<p class="lb-me">You're <strong>#${me.rank}</strong> today with <strong>${trailTime(me.timeMs)}</strong>. Beat it!</p>`
+        : '<p class="lb-me">No time from you today yet.</p>';
+    const reset = board ? `<p class="sub">A new board starts every day at ${escapeHtml(resetClock(board))}: ${escapeHtml(resetIn(leaderboard.msUntilReset() ?? 0))} to go. Earlier boards are kept.</p>` : '';
+    const closed = !session.parkOpen || session.maintenance('trail') !== undefined;
+    const drive = !session.user
+      ? `<p class="drone-gate">🎟️ A run costs ${ticketsText(cost)}, and tickets come free with an account.</p>${accountButtons('trail')}`
+      : closed && !session.isStaff
+        ? ''
+        : `<p class="panel-actions"><button class="btn btn-primary btn-small" type="button" data-board data-ride="trail">Drive the trail · ${cost} 🎟️</button></p>`;
+    return `<p class="eyebrow">Rally Trail · today's leaderboard</p><h2>Today's fastest 🏁</h2>${boardListHtml(board)}${standing}${reset}${drive}`;
   }
 
   /**
@@ -1170,8 +1234,11 @@ export class Game {
   private onEscape() {
     if (this.mode === 'shop') return this.leaveShop();
     if (this.mode === 'ideas') return this.leaveIdeas();
+    // past the line already: the run's done, so this is no early exit
+    if (this.mode === 'trail' && this.trail.finished) return this.leave(true);
     if (this.mode !== 'drive' || this.round?.ride === 'crates') return this.askToLeave();
     if (this.zones.active === 'crates') this.cratesDismissed = true;
+    if (this.zones.active === 'trail') this.trailDismissed = true;
     this.ui.hidePanel();
     this.panelZone = null;
   }
@@ -1216,6 +1283,7 @@ export class Game {
       flip: () => this.flip.exit(),
       ship: () => this.ship.exit(),
       race: () => this.speedway.exit(),
+      trail: () => this.trail.exit(),
     };
     // each exit() hands back to endRide() (its onFinish)
     if (this.mode === 'striker') this.striker.exit();
@@ -1225,7 +1293,8 @@ export class Game {
   private endRide() {
     this.camera.up.set(0, 1, 0);
     this.ui.endIntro();
-    const wasRide = this.mode === 'coaster' || this.mode === 'rocket' || this.mode === 'wheel' || this.mode === 'drone' || this.mode === 'flip' || this.mode === 'ship' || this.mode === 'race';
+    const wasRide =
+      this.mode === 'coaster' || this.mode === 'rocket' || this.mode === 'wheel' || this.mode === 'drone' || this.mode === 'flip' || this.mode === 'ship' || this.mode === 'race' || this.mode === 'trail';
     if (this.mode === 'wheel' || this.mode === 'drone' || this.mode === 'flip') this.env.setHaze(1);
     const from = this.mode;
     this.mode = 'drive';
@@ -1234,8 +1303,8 @@ export class Game {
     this.ui.cinematic(false);
     this.ui.rideExit(false);
     this.ui.countdown(null);
-    this.panelZone =
-      from === 'striker' ? 'striker' : from === 'drone' ? 'drone' : from === 'flip' ? 'flip' : from === 'ship' ? 'ship' : from === 'race' ? 'speedway' : from === 'coaster' ? (this.ride === this.falcon ? 'falcon' : 'coaster') : from === 'wheel' ? 'ferris' : 'rocket';
+    const zoneOf: Partial<Record<Mode, ZoneId>> = { striker: 'striker', drone: 'drone', flip: 'flip', ship: 'ship', race: 'speedway', trail: 'trail', wheel: 'ferris' };
+    this.panelZone = from === 'coaster' ? (this.ride === this.falcon ? 'falcon' : 'coaster') : (zoneOf[from] ?? 'rocket');
     if (wasRide) this.updateDriveCamera(1, true);
     const completed = this.leaveCompleted;
     this.leaving = this.leaveCompleted = false;
@@ -1283,6 +1352,7 @@ export class Game {
       flip: this.flip,
       ship: this.ship,
       speedway: this.speedway,
+      trail: this.trail,
       drone: this.drone,
       crates: this.crates,
       striker: this.striker,
@@ -1372,10 +1442,12 @@ export class Game {
     }
     this.player.sync();
 
+    // the demo buggy's engine is heard from the park, not over the kart you're racing
+    this.trail.ambient = this.mode === 'drive';
     for (const u of this.updatables) u.update(dt, t);
     this.wardrobe?.update(dt);
     this.updateCoasterAudio();
-    if (this.mode === 'drive' || this.mode === 'drone' || this.mode === 'race') this.updateMinimap(dt);
+    if (this.mode === 'drive' || this.mode === 'drone' || this.mode === 'race' || this.mode === 'trail') this.updateMinimap(dt);
     wind.uTime.value = t;
     wind.uCar.value.copy(this.player.position);
 
@@ -1412,6 +1484,10 @@ export class Game {
       this.zones.setVisible(false);
       this.speedway.updateCamera(this.camera, dt);
       this.env.follow(this.speedway.focus);
+    } else if (this.mode === 'trail') {
+      this.zones.setVisible(false);
+      this.trail.updateCamera(this.camera, dt);
+      this.env.follow(this.trail.focus);
     } else if (this.mode === 'shop' && this.shop) {
       this.camera.up.set(0, 1, 0);
       this.zones.setVisible(false);
@@ -1474,8 +1550,15 @@ export class Game {
     // drone, on the circuit your kart
     const flying = this.mode === 'drone';
     const racing = this.mode === 'race';
-    const heading = flying ? this.drone.yaw : racing ? this.speedway.yaw : Math.atan2(2 * (q.w * q.y + q.x * q.z), 1 - 2 * (q.y * q.y + q.z * q.z));
-    const p = flying ? this.drone.position : racing ? this.speedway.position : this.player.position;
+    const trailing = this.mode === 'trail';
+    const heading = flying
+      ? this.drone.yaw
+      : racing
+        ? this.speedway.yaw
+        : trailing
+          ? this.trail.yaw
+          : Math.atan2(2 * (q.w * q.y + q.x * q.z), 1 - 2 * (q.y * q.y + q.z * q.z));
+    const p = flying ? this.drone.position : racing ? this.speedway.position : trailing ? this.trail.position : this.player.position;
     const visitor = { x: p.x, z: p.z, heading };
     const karts = this.speedway.markers;
     const trains = [
@@ -1483,6 +1566,8 @@ export class Game {
       { x: this.falcon.trainPosition.x, z: this.falcon.trainPosition.z, color: PALETTE.teal },
       // the rivals (and, unless it's yours, the candy-red kart)
       ...(racing ? karts.slice(1) : karts),
+      // the trail's demo buggy (yours is the arrow)
+      ...(trailing ? [] : [this.trail.marker]),
     ];
     this.minimap.update(visitor, trains);
     this.worldMap.update(dt, visitor, trains);
@@ -1557,10 +1642,13 @@ export class Game {
               : z.action;
       this.ui.prompt(`${zone}:${action}`, z.title, action);
       if (zone === 'crates' && this.panelZone !== 'crates' && !this.cratesDismissed) this.showZonePanel('crates');
+      // the trail's card (today's leaderboard) opens by itself in its ring, unless something else is showing
+      if (zone === 'trail' && this.panelZone !== 'trail' && !this.trailDismissed && !this.ui.panelOpenKey && !this.boarding && !this.round) this.showZonePanel('trail');
     } else {
       this.ui.prompt('', '', '');
     }
     if (zone !== 'crates') this.cratesDismissed = false;
+    if (zone !== 'trail') this.trailDismissed = false;
 
     // close a zone's panel once you walk well away from it
     if (this.panelZone) {

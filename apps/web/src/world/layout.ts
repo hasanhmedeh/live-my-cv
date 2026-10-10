@@ -16,6 +16,7 @@ export const LAYOUT = {
   flip: { x: -52, z: -70 }, // the Sky Flip's tower, in the park's north-west corner
   ship: { x: 22, z: 66 }, // the Nebula 360 pendulum ship, on the lawn south of the entrance
   speedway: { x: -55, z: 53 }, // the kart garage; the circuit itself lies outside the south-west fence
+  trail: { x: -12, z: 80 }, // the Rally Trail's shed; the trail itself lies outside the south fence
   boundary: 92,
 };
 
@@ -31,7 +32,7 @@ export function flipLocal(x: number, z: number): [number, number] {
   return [dx * c - dz * s, dx * s + dz * c];
 }
 
-export type ZoneId = 'entrance' | 'coaster' | 'falcon' | 'rocket' | 'crates' | 'striker' | 'ferris' | 'booth' | 'ideas' | 'drone' | 'flip' | 'ship' | 'speedway';
+export type ZoneId = 'entrance' | 'coaster' | 'falcon' | 'rocket' | 'crates' | 'striker' | 'ferris' | 'booth' | 'ideas' | 'drone' | 'flip' | 'ship' | 'speedway' | 'trail';
 
 /** Where the visitor is placed when teleporting to a zone, and the zone trigger. */
 export const ZONES: Record<ZoneId, { x: number; z: number; radius: number; title: string; action: string; heading: number }> = {
@@ -55,6 +56,8 @@ export const ZONES: Record<ZoneId, { x: number; z: number; radius: number; title
   ship: { x: 22, z: 52, radius: 3.4, title: 'Nebula 360', action: 'Loop the pendulum ship', heading: Math.PI },
   // at the kart garage's counter, facing south-west towards the circuit
   speedway: { x: -48, z: 46, radius: 3.4, title: 'Turbo Speedway', action: 'Race the karts', heading: (3 * Math.PI) / 4 },
+  // at the Rally Trail's counter, facing south towards the shed and the trail beyond the fence
+  trail: { x: -13, z: 73, radius: 3.4, title: 'Rally Trail', action: 'Drive the time trial', heading: Math.PI },
 };
 
 export const PATHS: { points: [number, number][]; width: number }[] = [
@@ -77,6 +80,8 @@ export const PATHS: { points: [number, number][]; width: number }[] = [
   { points: [[4, 21], [14, 34], [22, 48]], width: 4.5 },
   // entrance plaza south-west to the kart garage
   { points: [[-4, 21], [-20, 26], [-36, 36], [-48, 46]], width: 4.5 },
+  // off the kart garage's path, south between the trees to the Rally Trail's shed
+  { points: [[-20, 26], [-18, 48], [-14, 66], [-13, 72]], width: 4.5 },
 ];
 
 export const PLAZAS: [number, number, number][] = [
@@ -94,6 +99,7 @@ export const PLAZAS: [number, number, number][] = [
   [-37, -56.1, 3.4], // the Sky Flip's gate
   [22, 52, 5], // the Nebula 360's queue
   [-50, 48, 5], // the kart garage
+  [-13, 73, 5], // the Rally Trail's shed
 ];
 
 /** The road out to the giant wheel: the one stretch of ground outside the fence you can walk on. */
