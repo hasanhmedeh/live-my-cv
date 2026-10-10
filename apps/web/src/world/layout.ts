@@ -17,6 +17,7 @@ export const LAYOUT = {
   ship: { x: 22, z: 66 }, // the Nebula 360 pendulum ship, on the lawn south of the entrance
   speedway: { x: -55, z: 53 }, // the kart garage; the circuit itself lies outside the south-west fence
   trail: { x: -12, z: 80 }, // the Rally Trail's shed; the trail itself lies outside the south fence
+  museum: { x: 66.5, z: -40 }, // the Career Museum's hall, east of the Rocket Ride; its door faces west
   boundary: 92,
 };
 
@@ -32,7 +33,38 @@ export function flipLocal(x: number, z: number): [number, number] {
   return [dx * c - dz * s, dx * s + dz * c];
 }
 
-export type ZoneId = 'entrance' | 'coaster' | 'falcon' | 'rocket' | 'crates' | 'striker' | 'ferris' | 'booth' | 'ideas' | 'drone' | 'flip' | 'ship' | 'speedway' | 'trail';
+/**
+ * The Career Museum: a hall `halfL` either side of its centre along its length and `halfW` across,
+ * inside walls `wall` thick, with a porch `porch` deep in front of the door. In its own frame the
+ * hall runs from the door (lz = +halfL) to the end wall (lz = -halfL); it is turned by `yaw`, so
+ * its door faces the Rocket Ride's plaza.
+ */
+export const MUSEUM = { yaw: -Math.PI / 2, halfW: 6, halfL: 12.5, wall: 0.4, porch: 2.4, height: 6.6 };
+
+/** (x, z) in the museum's own frame, out in the fair. */
+export function museumPoint(lx: number, lz: number) {
+  const c = Math.cos(MUSEUM.yaw);
+  const s = Math.sin(MUSEUM.yaw);
+  return { x: LAYOUT.museum.x + lx * c + lz * s, z: LAYOUT.museum.z - lx * s + lz * c };
+}
+
+/** A point in the fair, in the museum's own frame. */
+export function museumLocal(x: number, z: number) {
+  const dx = x - LAYOUT.museum.x;
+  const dz = z - LAYOUT.museum.z;
+  const c = Math.cos(MUSEUM.yaw);
+  const s = Math.sin(MUSEUM.yaw);
+  return { lx: dx * c - dz * s, lz: dx * s + dz * c };
+}
+
+/** True on the museum's footprint (walls and porch), grown by `margin`. */
+export function onMuseum(x: number, z: number, margin = 0) {
+  const { lx, lz } = museumLocal(x, z);
+  const m = MUSEUM;
+  return Math.abs(lx) < m.halfW + m.wall + margin && lz > -m.halfL - m.wall - margin && lz < m.halfL + m.wall + m.porch + margin;
+}
+
+export type ZoneId = 'entrance' | 'coaster' | 'falcon' | 'rocket' | 'crates' | 'striker' | 'ferris' | 'booth' | 'ideas' | 'drone' | 'flip' | 'ship' | 'speedway' | 'trail' | 'museum';
 
 /** Where the visitor is placed when teleporting to a zone, and the zone trigger. */
 export const ZONES: Record<ZoneId, { x: number; z: number; radius: number; title: string; action: string; heading: number }> = {
@@ -58,6 +90,8 @@ export const ZONES: Record<ZoneId, { x: number; z: number; radius: number; title
   speedway: { x: -48, z: 46, radius: 3.4, title: 'Turbo Speedway', action: 'Race the karts', heading: (3 * Math.PI) / 4 },
   // at the Rally Trail's counter, facing south towards the shed and the trail beyond the fence
   trail: { x: -13, z: 73, radius: 3.4, title: 'Rally Trail', action: 'Drive the time trial', heading: Math.PI },
+  // on the museum's porch, facing east through its door
+  museum: { x: 52.4, z: -40, radius: 1.6, title: 'Career Museum', action: 'Take the guided tour', heading: -Math.PI / 2 },
 };
 
 export const PATHS: { points: [number, number][]; width: number }[] = [
@@ -82,6 +116,8 @@ export const PATHS: { points: [number, number][]; width: number }[] = [
   { points: [[-4, 21], [-20, 26], [-36, 36], [-48, 46]], width: 4.5 },
   // off the kart garage's path, south between the trees to the Rally Trail's shed
   { points: [[-20, 26], [-18, 48], [-14, 66], [-13, 72]], width: 4.5 },
+  // the Rocket Ride's plaza east to the Career Museum's door
+  { points: [[42, -40], [51, -40]], width: 4.5 },
 ];
 
 export const PLAZAS: [number, number, number][] = [
@@ -100,6 +136,7 @@ export const PLAZAS: [number, number, number][] = [
   [22, 52, 5], // the Nebula 360's queue
   [-50, 48, 5], // the kart garage
   [-13, 73, 5], // the Rally Trail's shed
+  [49.5, -40, 3.6], // the Career Museum's steps
 ];
 
 /** The road out to the giant wheel: the one stretch of ground outside the fence you can walk on. */

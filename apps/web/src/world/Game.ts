@@ -17,6 +17,7 @@ import { Zones } from './zones';
 import { perks } from './perks';
 import { Shop, VENDOR_LOOK } from './shop';
 import { Ideas } from './ideas';
+import { Gallery } from './gallery';
 import { Wardrobe } from './souvenirs';
 import { Minimap } from './minimap';
 import { WorldMap } from './world-map';
@@ -36,6 +37,7 @@ import { Crates, CRATES_ROUND } from './attractions/crates';
 import { Striker } from './attractions/striker';
 import { Arch, Booth, Carousel } from './attractions/landmarks';
 import { IdeaKiosk } from './attractions/idea-kiosk';
+import { Museum, STOPS } from './attractions/museum';
 import { GiantWheel } from './attractions/giant-wheel';
 import { Drone } from './attractions/drone';
 import { SkyFlip } from './attractions/sky-flip';
@@ -58,7 +60,7 @@ const TIME_CONTROLS = false;
 /** How many guests walk the park, by graphics tier. */
 const CROWD_SIZE = { high: 64, medium: 44, low: 26, lowest: 12 } as const;
 
-type Mode = 'drive' | 'coaster' | 'rocket' | 'striker' | 'wheel' | 'drone' | 'flip' | 'ship' | 'race' | 'trail' | 'shop' | 'ideas';
+type Mode = 'drive' | 'coaster' | 'rocket' | 'striker' | 'wheel' | 'drone' | 'flip' | 'ship' | 'race' | 'trail' | 'shop' | 'ideas' | 'museum';
 
 const nextFrame = () => new Promise<void>((r) => requestAnimationFrame(() => r()));
 
@@ -106,6 +108,7 @@ export class Game {
   private wheel!: GiantWheel;
   private booth!: Booth;
   private ideaKiosk!: IdeaKiosk;
+  private museum!: Museum;
   private drone!: Drone;
   private flip!: SkyFlip;
   private ship!: Ship;
@@ -145,6 +148,10 @@ export class Game {
   private ideas: Ideas | null = null;
   /** Staff answered an idea while the visitor was busy (on a ride, a card open): the news waits for them. */
   private ideaNews = false;
+  /** The Career Museum's guided tour: the sheet beside each frame. */
+  private gallery: Gallery | null = null;
+  /** The museum's frame whose viewing spot the visitor is standing on (-1: none). */
+  private museumStop = -1;
   /** What the visitor wears from the shop. */
   private wardrobe: Wardrobe | null = null;
   /** The crates round's HUD badge, as last drawn. */
@@ -192,6 +199,10 @@ export class Game {
       this.ideaKiosk = new IdeaKiosk(this.ctx);
       this.updatables.push(this.ideaKiosk);
     });
+    step(1, () => {
+      this.museum = new Museum(this.ctx);
+      this.updatables.push(this.museum);
+    });
     step(3, () => {
       this.stack = new Coaster(this.ctx, {
         id: 'stack',
@@ -224,6 +235,7 @@ export class Game {
       // landmarks a support column must never land on
       const keep: [number, number, number][] = [
         [0, 5, 14], [0, -8, 10], [0, -30, 9], [34, -14, 9], [42, -52, 9], [20, 12, 4], [-20, -40, 4], [-26, 3, 6], [12, -53, 10],
+        [LAYOUT.museum.x, LAYOUT.museum.z, 16],
       ];
       // the giant hill's crest stands on its own lattice tower
       const crest = FALCON_TRACK.pos[Trackside.hillCrest()];
@@ -562,6 +574,12 @@ export class Game {
       onAuth: (mode) => void this.signIn(mode, null),
       onLeave: () => this.leaveIdeas(),
     });
+    this.gallery = new Gallery({
+      root: document.getElementById('museum')!,
+      sfx: this.sfx,
+      onGo: () => this.sfx.whoosh(),
+      onLeave: () => this.leaveMuseum(),
+    });
     // staff answered one of the member's ideas: a card says so, once they're free to read it
     let unread = session.suggestions?.unread ?? 0;
     session.onSuggestions(() => {
@@ -673,6 +691,7 @@ export class Game {
         <li>🔔 <strong>High Striker</strong> — three swings to ring the bell ${cost('striker')}</li>
         <li>🎟️ <strong>Ticket Booth</strong> — Rosa's counter: your free tickets, treats with perks, and souvenirs to wear</li>
         <li>💡 <strong>Idea Box</strong> — on the entrance plaza: tell us what you'd love to see in the fair, and follow what becomes of it</li>
+        <li>🏛️ <strong>Career Museum</strong> — past the Rocket Ride: Hasan Hmedeh's work from 2019 to today, one framed picture at a time. Free, no ticket</li>
       </ul>${
         user ? '<p class="panel-actions"><button class="btn btn-primary btn-small" type="button" data-goto="booth">Take me to the Ticket Booth 🎟️</button></p>' : accountButtons()
       }<p>${this.mobile ? 'Use the joystick to walk (push it all the way to run) and the <kbd>E</kbd> button to play.' : 'Walk with <kbd>WASD</kbd> or arrows, hold <kbd>Shift</kbd> to run, <kbd>Space</kbd> to roll, <kbd>F</kbd> to kick, <kbd>H</kbd> to wave and <kbd>E</kbd> to play. Try kicking the big letters over!'}</p><p class="sub">Open this again any time with the ℹ️ button (top right) or <kbd>I</kbd>.</p>`;
@@ -689,10 +708,14 @@ export class Game {
     if (this.mode === 'ship') return this.ship.cycleCamera();
     if (this.mode === 'race') return this.speedway.cycleCamera();
     if (this.mode === 'trail') return this.trail.cycleCamera();
+    if (this.mode === 'museum') return this.gallery?.step(1);
     if (this.mode !== 'drive') return;
     const z = this.zones.active;
-    if (!z) return;
-    if (z === 'booth') {
+    // inside the museum, at a frame: a closer look (the tour, from there)
+    if (!z) return this.museumStop >= 0 ? this.enterMuseum(this.museumStop) : undefined;
+    if (z === 'museum') {
+      this.enterMuseum(0);
+    } else if (z === 'booth') {
       this.enterShop();
     } else if (z === 'ideas') {
       this.enterIdeas();
@@ -862,6 +885,7 @@ export class Game {
     if (!this.inFair) return;
     if (this.mode === 'shop') this.leaveShop();
     if (this.mode === 'ideas') this.leaveIdeas();
+    if (this.mode === 'museum') this.leaveMuseum(true);
     this.inFair = false;
     session.setInFair(false);
     if (this.round) this.lockOut();
@@ -1168,6 +1192,59 @@ export class Game {
     this.teleport('ideas', () => this.enterIdeas());
   }
 
+  /**
+   * The Career Museum's tour, at stop `i` (0: the porch, then each frame, then the toolbox): the
+   * visitor steps aside (behind a quick fade), the camera glides to the frame, and the sheet with
+   * its story opens beside it.
+   */
+  private enterMuseum(i: number) {
+    if (this.mode !== 'drive' || this.round || this.boarding || !this.gallery) return;
+    this.ui.hidePanel();
+    this.panelZone = null;
+    this.ui.prompt('', '', '');
+    this.player.enabled = false;
+    // the shot starts from where the camera is, and glides over
+    this.camPos.copy(this.camera.position);
+    this.fade(() => {
+      this.mode = 'museum';
+      // the camera is the visitor's eyes on the tour
+      this.player.group.visible = false;
+      document.body.classList.add('is-shopping');
+      this.gallery!.open(i);
+      this.resize();
+    });
+  }
+
+  /** Back from the tour: the visitor stands in front of the last frame they looked at, facing it. */
+  private leaveMuseum(now = false) {
+    if (this.mode !== 'museum' || !this.gallery?.isOpen) return;
+    const spot = this.museum.standSpot(this.gallery.index);
+    this.gallery.close();
+    document.body.classList.remove('is-shopping');
+    const back = () => {
+      this.mode = 'drive';
+      this.player.reset(spot.x, spot.z, spot.heading);
+      this.player.group.visible = true;
+      this.player.enabled = this.inFair;
+      this.camYaw = spot.heading; // behind the visitor, looking where they look
+      this.camPitch = 0.2;
+      this.resize();
+      this.updateDriveCamera(1, true);
+    };
+    if (now) return back();
+    // the camera holds its shot until the fade covers the move
+    this.fade(back);
+    this.sfx.chime();
+  }
+
+  /** What the tour's camera has to fit around: the screen, minus the sheet. */
+  private museumFit() {
+    const w = this.container.clientWidth || innerWidth;
+    const h = this.container.clientHeight || innerHeight;
+    const off = this.gallery?.viewOffset(w, h) ?? { x: 0, y: 0 };
+    return { aspect: this.camera.aspect, fov: this.camera.fov, fx: Math.max(0.3, 1 - (2 * off.x) / w), fy: Math.max(0.3, 1 - (2 * off.y) / h) };
+  }
+
   /** Staff answered an idea: once the visitor is on foot with no card open, one says so. */
   private showIdeaNews() {
     if (!this.ideaNews || this.mode !== 'drive' || this.round || this.boarding || this.ui.panelOpenKey || !session.user) return;
@@ -1234,6 +1311,7 @@ export class Game {
   private onEscape() {
     if (this.mode === 'shop') return this.leaveShop();
     if (this.mode === 'ideas') return this.leaveIdeas();
+    if (this.mode === 'museum') return this.leaveMuseum();
     // past the line already: the run's done, so this is no early exit
     if (this.mode === 'trail' && this.trail.finished) return this.leave(true);
     if (this.mode !== 'drive' || this.round?.ride === 'crates') return this.askToLeave();
@@ -1275,7 +1353,8 @@ export class Game {
     this.leaveCompleted = completed;
     if (this.mode === 'shop') return this.leaveShop();
     if (this.mode === 'ideas') return this.leaveIdeas();
-    const exit: Record<Exclude<Mode, 'drive' | 'striker' | 'shop' | 'ideas'>, () => void> = {
+    if (this.mode === 'museum') return this.leaveMuseum();
+    const exit: Record<Exclude<Mode, 'drive' | 'striker' | 'shop' | 'ideas' | 'museum'>, () => void> = {
       coaster: () => this.ride.exit(),
       rocket: () => this.rocket.exit(),
       wheel: () => this.wheel.exit(),
@@ -1397,7 +1476,14 @@ export class Game {
     // portrait screens need a wider view
     this.camera.fov = w / h < 0.8 ? 58 : 42;
     // at the counter, the picture slides aside so Rosa shows beside the shop, not under it
-    const off = this.mode === 'shop' && this.shop ? this.shop.viewOffset(w, h) : this.mode === 'ideas' && this.ideas ? this.ideas.viewOffset(w, h) : null;
+    const off =
+      this.mode === 'shop' && this.shop
+        ? this.shop.viewOffset(w, h)
+        : this.mode === 'ideas' && this.ideas
+          ? this.ideas.viewOffset(w, h)
+          : this.mode === 'museum' && this.gallery
+            ? this.gallery.viewOffset(w, h)
+            : null;
     if (off && (off.x || off.y)) this.camera.setViewOffset(w, h, off.x, off.y, w, h);
     else this.camera.clearViewOffset();
     this.camera.updateProjectionMatrix();
@@ -1415,12 +1501,15 @@ export class Game {
     const offset = new THREE.Vector3(Math.sin(this.camYaw) * cp, Math.sin(this.camPitch), Math.cos(this.camYaw) * cp).multiplyScalar(dist);
     const target = new THREE.Vector3(p.x + vel.x * 0.3, 1.7, p.z + vel.z * 0.3);
     this.player.camYaw = this.camYaw;
+    const goal = target.clone().add(offset);
+    // in the museum's hall the camera stays between its walls, under the roof
+    if (this.museum.inside(p)) this.museum.clampCamera(target, goal);
     const k = snap ? 1 : 1 - Math.exp(-dt * 4);
     this.camTarget.lerp(target, k);
-    this.camPos.lerp(target.clone().add(offset), k);
+    this.camPos.lerp(goal, k);
     if (snap) {
       this.camTarget.copy(target);
-      this.camPos.copy(target).add(offset);
+      this.camPos.copy(goal);
     }
     this.camera.position.copy(this.camPos);
     this.camera.lookAt(this.camTarget);
@@ -1507,6 +1596,16 @@ export class Game {
       this.camera.position.copy(this.camPos);
       this.camera.lookAt(this.camTarget);
       this.env.follow(this.player.position);
+    } else if (this.mode === 'museum' && this.gallery) {
+      this.camera.up.set(0, 1, 0);
+      this.zones.setVisible(false);
+      const { pos, look } = this.museum.shot(this.gallery.index, this.museumFit());
+      const k = 1 - Math.exp(-dt * 2.2);
+      this.camPos.lerp(pos, k);
+      this.camTarget.lerp(look, k);
+      this.camera.position.copy(this.camPos);
+      this.camera.lookAt(this.camTarget);
+      this.env.follow(this.camTarget);
     } else if (this.mode === 'striker') {
       this.camera.up.set(0, 1, 0);
       this.zones.setVisible(false);
@@ -1640,12 +1739,19 @@ export class Game {
             : isAttraction(zone)
               ? zoneAction(zone)
               : z.action;
+      this.museumStop = -1;
       this.ui.prompt(`${zone}:${action}`, z.title, action);
       if (zone === 'crates' && this.panelZone !== 'crates' && !this.cratesDismissed) this.showZonePanel('crates');
       // the trail's card (today's leaderboard) opens by itself in its ring, unless something else is showing
       if (zone === 'trail' && this.panelZone !== 'trail' && !this.trailDismissed && !this.ui.panelOpenKey && !this.boarding && !this.round) this.showZonePanel('trail');
     } else {
-      this.ui.prompt('', '', '');
+      // in the museum, each frame offers a closer look from the spot in front of it
+      this.museumStop = this.museum.stopAt(this.player.position);
+      const stop = STOPS[this.museumStop];
+      if (stop) {
+        const title = stop.kind === 'exhibit' ? stop.exhibit.title : stop.kind === 'toolbox' ? 'The Toolbox' : 'Career Museum';
+        this.ui.prompt(`museum-${this.museumStop}`, title, 'Look closer');
+      } else this.ui.prompt('', '', '');
     }
     if (zone !== 'crates') this.cratesDismissed = false;
     if (zone !== 'trail') this.trailDismissed = false;

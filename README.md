@@ -17,6 +17,7 @@ Walk around a low-poly funfair at dusk as a fully animated visitor:
 | 🛸 Nebula 360 | A looping pendulum ship, after the 360° rides at travelling fairs |
 | 🚁 Drone Flights | Rent a camera drone and fly over the whole fair |
 | 🎟️ Ticket Booth | Park guide |
+| 🏛️ Career Museum | Hasan Hmedeh's CV as a walk-in gallery past the Rocket Ride: a framed picture per job, project and achievement, year by year from 2019 to today, and a guided tour. Free |
 
 Stack: **Vite + TypeScript + Three.js + cannon-es + postprocessing + N8AO** for the game, **NestJS + Prisma + PostgreSQL** for accounts, in a **pnpm + Turborepo** monorepo. The world is built procedurally and all sound is synthesized with WebAudio; the one model file is the visitor, "Casual Character" by [Quaternius](https://quaternius.com) (CC0, from [Poly Pizza](https://poly.pizza/m/kZ3DmIoGip)).
 
@@ -227,6 +228,14 @@ Walk the path south from the kart garage's to the trail's shed and press `E` (it
 - **The daily leaderboard** (`apps/api/src/trail/`): a run that crosses the line is kept in `trail_runs` with the board day it counts for. A board runs from **12:00 to 12:00, Beirut time** (`board-day.ts`, clock changes included) and is named for the date it opened. A player's place is their fastest run on the board, ties going to whoever set it first. **Nothing is deleted at the turnover**: today's board is just today's runs, so a new one starts empty at noon and every earlier board stays in the database (staff see them in The Ringmaster's Office). Times are measured in the browser, so the server only takes a time of at least 25 s and no longer than its round lasted, and staff can disqualify one. Today's top ten is on two boards (by the shed, and at the start line), on the trail's card in the park, in its HUD, and on the results screen (your place, out of how many). All of them update live when someone posts a time, and turn over by themselves at noon.
 - **HUD**: the clock to the hundredth, checkpoints passed, the split, nitro, your best and your place today, speed, today's top ten with the time to the next board, and the restart button. While nobody's driving, a demo buggy laps the trail.
 
+## Career Museum (free)
+
+A gallery hall under a glass roof, east of the Rocket Ride's plaza (`apps/web/src/world/attractions/museum.ts`). Hasan Hmedeh's CV hangs down both walls in order, one framed print per job, project or achievement, zig-zagging from the door (2019) to the end wall (today). A banner over the aisle and a gold bar on the red carpet mark where each year starts; each print shows its dates (with months), the year, a picture, the title and who it was for. The **Toolbox** on the end wall has every skill on the CV, and the languages. No ticket needed.
+
+- **Walk in** and look around: the follow camera stays inside the hall (it slides in toward the visitor rather than through a wall). Step up to a frame (to its rope) and press `E` to look closer.
+- **The guided tour** (`E` on the porch's ring, or at any frame): the visitor steps aside, the camera glides to the frame and a sheet beside it tells its story (`apps/web/src/world/gallery.ts`): when, where, what was done, with what, links, and where the picture comes from. `←` / `→` (or `E`, or the buttons) step through the collection, the years along the top jump to where each one starts, `Esc` leaves the tour standing in front of the last frame.
+- **The collection** is one data file, `apps/web/src/data/museum.ts`: the years (`SECTIONS`), the profile on the porch's banners, the exhibits (`EXHIBITS`, in the order they hang) and the skills (`SKILLS`). Add an exhibit there and the hall re-hangs itself. Pictures live in `apps/web/public/museum/` (logos are the companies' own, from their sites; the skill icons are from devicon); an exhibit without one, or whose file fails to load, shows a "picture to come" placeholder with its emoji.
+
 ## Graphics
 
 - **Physically based sunset sky** (Preetham scattering with drifting clouds). The same sky is baked into an environment map, so every glossy surface reflects it: clearcoat paint on the rocket and letters, chrome, gilded lettering and metallic coaster rails.
@@ -283,6 +292,7 @@ On each deployment, `apps/web/vercel.json`'s build command runs from the repo ro
 ## Content and settings
 
 - Rocket stages and High Striker tiers: `apps/web/src/data/fair.ts`
+- The Career Museum's collection (exhibits, years, skills): `apps/web/src/data/museum.ts`, pictures in `apps/web/public/museum/`
 - Park layout / zone positions: `apps/web/src/world/layout.ts` (attraction zone ids must match the `Attraction` enum in `apps/api/prisma/schema.prisma`, `ATTRACTIONS` in `apps/api/src/rides/attractions.ts` and `ATTRACTION_IDS` in `apps/web/src/account/api.ts`)
 - Colors: `PALETTE` in `apps/web/src/world/textures.ts` and CSS variables in `apps/web/src/styles.css`
 - 3D font: `node apps/web/scripts/build-font.mjs` regenerates `apps/web/src/assets/lilita.typeface.json` (add characters to `CHARS` if you need more glyphs in 3D text)
@@ -310,7 +320,9 @@ public/models/dog-*.glb        Shiba Inu and Husky by Quaternius (CC0, via Poly 
 src/world/subdivide.ts  rounds off faceted models at load: welds, one Loop subdivision, smooth normals, blended skin weights
 src/world/environment.ts sky, lights, ground, trees, lamps, tents, balloons
 src/world/attractions/  coaster, rocket, crates, striker, ferris/carousel/booth/arch, speedway (+ speedway-track),
-                        trail (+ trail-track), sky-flip, ship (Nebula 360), drone
+                        trail (+ trail-track), sky-flip, ship (Nebula 360), drone, museum (the Career Museum's hall)
+src/world/gallery.ts    the Career Museum's guided tour: the sheet beside each frame
+src/data/museum.ts      the museum's collection: the CV's exhibits, years and skills
 src/account/leaderboard.ts  the Rally Trail's daily leaderboard as the game shows it (fetched, kept live, turned over at noon)
 ```
 

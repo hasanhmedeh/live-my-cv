@@ -295,6 +295,25 @@
         </section>
       </div>
 
+      <div id="museum" class="shop museum" hidden>
+        <section class="shop-sheet museum-sheet" role="dialog" aria-modal="false" aria-labelledby="museum-title">
+          <header class="shop-head">
+            <div class="shop-title">
+              <p class="eyebrow" data-museum-eyebrow>Career Museum</p>
+              <h2 id="museum-title" data-museum-title>Career Museum</h2>
+            </div>
+            <button type="button" class="shop-leave" data-museum-leave>Back to the fair <kbd>Esc</kbd></button>
+          </header>
+          <nav class="shop-aisles museum-years" aria-label="Years" data-museum-years></nav>
+          <div class="shop-shelf museum-body" tabindex="0" aria-live="polite" data-museum-body></div>
+          <footer class="museum-foot">
+            <button type="button" class="btn btn-outline btn-small" data-museum-step="-1" aria-label="Previous exhibit">← Previous</button>
+            <span class="museum-count" data-museum-count></span>
+            <button type="button" class="btn btn-primary btn-small" data-museum-step="1" aria-label="Next exhibit">Next →</button>
+          </footer>
+        </section>
+      </div>
+
       <div id="minimap" class="minimap" title="Open the park map (M)">
         <canvas aria-hidden="true"></canvas>
         <button type="button" class="minimap-open" aria-label="Open the park map" aria-haspopup="dialog" aria-controls="world-map">⤢</button>

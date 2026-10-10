@@ -3868,6 +3868,144 @@ kbd {
   }
 }
 
+/* ---------- The Career Museum's tour (world/gallery.ts): the shop's sheet, in teal, beside each frame ---------- */
+.museum-sheet {
+  border-top-color: var(--teal);
+  width: min(520px, 46vw);
+}
+.museum .shop-head {
+  grid-template-columns: 1fr auto;
+}
+.museum .shop-title .eyebrow {
+  color: #178a80;
+}
+.museum-years button {
+  font-variant-numeric: tabular-nums;
+}
+.museum-years button[aria-current='true'] {
+  background: var(--teal);
+  color: #fff;
+}
+.museum-body p {
+  margin: 0 0 12px;
+}
+.museum-body h3 {
+  margin: 18px 0 8px;
+  font-size: 1.15rem;
+  color: var(--ink);
+}
+.museum-when {
+  display: inline-block;
+  margin: 0 0 10px !important;
+  padding: 6px 12px;
+  border-radius: 999px;
+  background: color-mix(in srgb, var(--accent, var(--teal)) 16%, #fff);
+  box-shadow: inset 0 0 0 2px color-mix(in srgb, var(--accent, var(--teal)) 45%, transparent);
+  font-weight: 700;
+  font-variant-numeric: tabular-nums;
+}
+.museum-kicker {
+  font: 700 1.05rem/1.35 var(--body);
+  color: var(--ink);
+}
+.museum-kicker span {
+  font-weight: 500;
+  color: var(--muted);
+}
+.museum-lines {
+  margin: 0 0 14px;
+  padding-left: 1.2em;
+}
+.museum-lines li {
+  margin: 0 0 8px;
+}
+.museum-lines li::marker {
+  color: var(--teal);
+}
+.museum-tags,
+.museum-langs {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  margin: 0 0 14px;
+  padding: 0;
+  list-style: none;
+}
+.museum-tags li {
+  padding: 4px 10px;
+  border-radius: 999px;
+  background: rgba(34, 22, 63, 0.07);
+  font: 700 0.8rem/1.3 var(--body);
+}
+.museum-tags-big li {
+  font-size: 0.88rem;
+}
+.museum-langs li {
+  padding: 8px 12px;
+  border-radius: 12px;
+  background: rgba(46, 196, 182, 0.12);
+}
+.museum-langs strong {
+  margin-right: 4px;
+}
+.museum-links {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+.museum-link {
+  padding: 6px 12px;
+  border-radius: 999px;
+  background: var(--ink);
+  color: var(--cream);
+  font: 700 0.85rem/1.2 var(--body);
+  text-decoration: none;
+}
+.museum-link:hover {
+  background: var(--violet);
+}
+.museum-link:focus-visible {
+  outline: 3px solid var(--mustard);
+  outline-offset: 2px;
+}
+.museum-how {
+  margin-top: 14px;
+  padding: 14px 16px;
+  border-radius: 16px;
+  background: linear-gradient(135deg, #e3f7f4, #fff1d6);
+  box-shadow: inset 0 0 0 2px rgba(46, 196, 182, 0.25);
+}
+.museum-how p:last-child {
+  margin-bottom: 0;
+}
+.museum-credit {
+  font-size: 0.8rem;
+  font-style: italic;
+  color: var(--muted);
+}
+.museum-foot {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  padding: 12px 18px 16px;
+  border-top: 2px solid rgba(34, 22, 63, 0.08);
+}
+.museum-foot .btn-primary {
+  background: var(--teal);
+  box-shadow: 0 var(--lift) 0 #178a80;
+}
+.museum-foot .btn:disabled {
+  opacity: 0.4;
+  cursor: default;
+  transform: none;
+}
+.museum-count {
+  font: 700 0.85rem/1 var(--body);
+  color: var(--muted);
+  font-variant-numeric: tabular-nums;
+}
+
 /* treats running: little chips at the top left */
 .perks {
   position: absolute;
@@ -3962,6 +4100,13 @@ kbd {
   .is-shopping .perks {
     top: auto;
     bottom: calc(64% + 16px);
+  }
+  /* in the museum the frame needs more of the screen than Rosa does */
+  .museum-sheet {
+    height: 52%;
+  }
+  .museum-foot {
+    padding: 10px 14px 12px;
   }
 }
 @media (prefers-reduced-motion: reduce) {

@@ -4,7 +4,7 @@ import { Sky } from 'three/addons/objects/Sky.js';
 import { mergeGeometries } from 'three/addons/utils/BufferGeometryUtils.js';
 import { std, staticCylinder, type Ctx } from './context';
 import { Grass } from './grass';
-import { flipLocal, LAYOUT, onPath, PATHS, PLAZAS, WHEEL_LAWN, WHEEL_ROAD } from './layout';
+import { flipLocal, LAYOUT, onMuseum, onPath, PATHS, PLAZAS, WHEEL_LAWN, WHEEL_ROAD } from './layout';
 import type { Quality } from './quality';
 import { mulberry } from './random';
 import { detailNormalTexture, glowTexture, groundTexture, hdr, PALETTE, lawnPatchTexture, poolTexture, stripeTexture } from './textures';
@@ -223,7 +223,7 @@ export class Environment {
     // grass grows on the park's lawn and on the lawn along the wheel road (thinning out where it fades)
     const R = LAYOUT.boundary + 1;
     const growth = (x: number, z: number) => {
-      if (Math.hypot(x, z) < R) return ground.isSand(x, z) ? 0 : 1;
+      if (Math.hypot(x, z) < R) return ground.isSand(x, z) || onMuseum(x, z, 0.6) ? 0 : 1;
       if (Math.abs(x) > L.half || z < L.z0 || z > 0 || onPath(x, z, 1.2)) return 0;
       const edge = Math.min(L.half - Math.abs(x), z - L.z0);
       return THREE.MathUtils.smoothstep(edge, L.fade * 0.25, L.fade);
@@ -366,13 +366,13 @@ export class Environment {
     let nl = 0;
     let np = 0;
     // nothing may grow through a coaster, on the road out to the giant wheel, where the Sky Flip swings
-    // low, on the kart circuit and its grandstand, or on the Rally Trail
+    // low, on the kart circuit and its grandstand, on the Rally Trail, or on the Career Museum
     const underFlip = (x: number, z: number) => {
       const [lx, lz] = flipLocal(x, z);
       return Math.abs(lx) < 34 && lz > -3 && lz < 21;
     };
     for (let i = spots.length - 1; i >= 0; i--)
-      if (nearTrack(spots[i][0], spots[i][1], 5, 9) || (spots[i][1] < 0 && Math.abs(spots[i][0]) < WHEEL_ROAD.half + 5) || underFlip(spots[i][0], spots[i][1]) || nearCircuit(spots[i][0], spots[i][1], WALL + 9) || nearTrail(spots[i][0], spots[i][1], TRAIL_WALL + 7))
+      if (nearTrack(spots[i][0], spots[i][1], 5, 9) || (spots[i][1] < 0 && Math.abs(spots[i][0]) < WHEEL_ROAD.half + 5) || underFlip(spots[i][0], spots[i][1]) || onMuseum(spots[i][0], spots[i][1], 4) || nearCircuit(spots[i][0], spots[i][1], WALL + 9) || nearTrail(spots[i][0], spots[i][1], TRAIL_WALL + 7))
         spots.splice(i, 1);
     spots.forEach(([x, z, sc], i) => {
       q.setFromAxisAngle(THREE.Object3D.DEFAULT_UP, rnd() * 6);

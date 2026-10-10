@@ -1,4 +1,4 @@
-import { FLIP_YAW, LAYOUT, PATHS, PLAZAS, ZONES, type ZoneId } from './layout';
+import { FLIP_YAW, LAYOUT, MUSEUM, museumPoint, PATHS, PLAZAS, ZONES, type ZoneId } from './layout';
 import { FALCON_TRACK, STACK_TRACK } from './rides';
 import { CIRCUIT, CIRCUIT_BOUNDS, circuitPoint, ROAD_HALF, START_S, WALL } from './attractions/speedway-track';
 import { START_S as TRAIL_START, TRAIL, TRAIL_BOUNDS, TRAIL_HALF, trailPoint, WALL as TRAIL_WALL } from './attractions/trail-track';
@@ -22,6 +22,7 @@ const PLACES: Record<ZoneId, Place> = {
   drone: { icon: '🚁', label: 'Drone Flights', blurb: 'Rent a drone and see it all from the sky' },
   booth: { icon: '🎟️', label: 'Ticket Booth', blurb: 'Free tickets, treats and souvenirs at Rosa’s counter' },
   ideas: { icon: '💡', label: 'Idea Box', blurb: 'Tell us what you’d love to see in the fair' },
+  museum: { icon: '🏛️', label: 'Career Museum', blurb: 'Hasan Hmedeh’s work from 2019 to today, in framed pictures' },
 };
 export const MAP_PLACES = (Object.entries(PLACES) as [ZoneId, Place][]).map(([id, p]) => ({ id, ...p }));
 
@@ -175,6 +176,33 @@ export function paintFair(g: CanvasRenderingContext2D, X: (x: number) => number,
   g.beginPath();
   g.moveTo(X(LAYOUT.ferris.x - 124), Z(wz));
   g.lineTo(X(LAYOUT.ferris.x + 124), Z(wz));
+  g.stroke();
+
+  // the Career Museum from above: its glass roof (with the ridge down the middle) and the porch
+  const m = MUSEUM;
+  const outline = (hw: number, z0: number, z1: number) => {
+    g.beginPath();
+    for (const [lx, lz] of [[-hw, z0], [hw, z0], [hw, z1], [-hw, z1]]) {
+      const p = museumPoint(lx, lz);
+      g.lineTo(X(p.x), Z(p.z));
+    }
+    g.closePath();
+  };
+  outline(m.halfW + m.wall + 0.35, -m.halfL - m.wall - 0.35, m.halfL + m.wall + 0.35);
+  g.fillStyle = '#bcd9e6';
+  g.fill();
+  g.strokeStyle = 'rgba(29, 18, 56, 0.6)';
+  g.lineWidth = Math.max(0.8 * s, 1);
+  g.stroke();
+  outline(m.halfW + m.wall + 0.3, m.halfL + m.wall, m.halfL + m.wall + m.porch);
+  g.fillStyle = '#f7f0e2';
+  g.fill();
+  g.stroke();
+  const a0 = museumPoint(0, -m.halfL - m.wall);
+  const a1 = museumPoint(0, m.halfL + m.wall);
+  g.beginPath();
+  g.moveTo(X(a0.x), Z(a0.z));
+  g.lineTo(X(a1.x), Z(a1.z));
   g.stroke();
 
   // the Sky Flip from above: its fenced swing and the tower
